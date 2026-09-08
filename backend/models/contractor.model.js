@@ -9,8 +9,8 @@ const paymentSchema = new mongoose.Schema({
     enum: ['direct_slip', 'bill_then_payment'],
     default: 'direct_slip',
   },
-  billUrl: { type: String },   // used when paymentType = bill_then_payment
-  slipUrl: { type: String },   // bank payment slip (used in both cases)
+  billUrl: { type: String },
+  slipUrl: { type: String },
 });
 
 const contractorSchema = new mongoose.Schema({
