@@ -4,7 +4,6 @@ const crypto = require('crypto');
 const User = require('../models/user.model');
 const transporter = require('../config/email');
 
-// SIGNUP
 const signup = async (req, res) => {
   try {
     const { name, email, password, role, department, adminCode } = req.body;
@@ -46,7 +45,6 @@ const signup = async (req, res) => {
   }
 };
 
-// LOGIN
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -85,14 +83,12 @@ const login = async (req, res) => {
   }
 };
 
-// FORGOT PASSWORD - generates a reset token and emails a reset link
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
 
     const user = await User.findOne({ email });
     if (!user) {
-      // Don't reveal whether the email exists, for security
       return res.json({ message: 'If that email is registered, a reset link has been sent.' });
     }
 
@@ -100,7 +96,7 @@ const forgotPassword = async (req, res) => {
     const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
 
     user.resetPasswordToken = hashedToken;
-    user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
+    user.resetPasswordExpires = Date.now() + 15 * 60 * 1000;
     await user.save();
 
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
@@ -124,7 +120,6 @@ const forgotPassword = async (req, res) => {
   }
 };
 
-// RESET PASSWORD - verifies token and updates password
 const resetPassword = async (req, res) => {
   try {
     const { token } = req.params;
