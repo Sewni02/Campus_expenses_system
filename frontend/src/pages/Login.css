@@ -7,30 +7,31 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fafafa;
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--slate-50);
+  font-family: var(--font-main);
 }
 
 .auth-card {
   width: 380px;
-  background: #ffffff;
-  border: 1px solid #e5e5e5;
+  background: var(--white);
+  border: 1px solid var(--slate-200);
   border-radius: 10px;
   padding: 36px 32px;
+  box-shadow: var(--shadow-sm);
 }
 
 .auth-title {
   margin: 0;
   font-size: 24px;
   font-weight: 600;
-  color: #111;
+  color: var(--slate-900);
   letter-spacing: -0.3px;
 }
 
 .auth-subtitle {
   margin: 6px 0 24px;
   font-size: 14px;
-  color: #777;
+  color: var(--slate-500);
 }
 
 .auth-field {
@@ -41,7 +42,7 @@
   display: block;
   font-size: 13px;
   font-weight: 600;
-  color: #333;
+  color: var(--slate-700);
   margin-bottom: 6px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
@@ -50,16 +51,17 @@
 .auth-field input {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--slate-300);
   border-radius: 6px;
   font-size: 14px;
-  color: #111;
-  transition: border-color 0.15s ease;
+  color: var(--slate-900);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .auth-field input:focus {
   outline: none;
-  border-color: #111;
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 3px var(--primary-100);
 }
 
 .auth-forgot-row {
@@ -70,12 +72,12 @@
 
 .auth-link-small {
   font-size: 13px;
-  color: #666;
+  color: var(--slate-500);
   text-decoration: none;
 }
 
 .auth-link-small:hover {
-  color: #111;
+  color: var(--primary-600);
   text-decoration: underline;
 }
 
@@ -83,8 +85,8 @@
   width: 100%;
   padding: 11px;
   border-radius: 6px;
-  border: 1px solid #111;
-  background: #111;
+  border: 1px solid var(--primary-600);
+  background: var(--primary-600);
   color: white;
   font-weight: 600;
   font-size: 14px;
@@ -93,15 +95,15 @@
 }
 
 .auth-submit-btn:hover {
-  background: #333;
+  background: var(--primary-700);
 }
 
 .auth-message {
   margin-top: 14px;
   padding: 10px 12px;
-  background: #faf0f0;
-  border: 1px solid #ecd0d0;
-  color: #a33232;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
   border-radius: 6px;
   font-size: 13px;
   text-align: center;
@@ -111,11 +113,11 @@
   text-align: center;
   margin-top: 24px;
   font-size: 13px;
-  color: #666;
+  color: var(--slate-500);
 }
 
 .auth-link {
-  color: #111;
+  color: var(--primary-600);
   font-weight: 600;
   text-decoration: none;
 }

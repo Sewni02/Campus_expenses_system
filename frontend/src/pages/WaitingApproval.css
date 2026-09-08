@@ -1,0 +1,43 @@
+.wa-page {
+  max-width: 480px;
+  margin: 100px auto;
+  text-align: center;
+  font-family: var(--font-main);
+  padding: 0 20px;
+}
+
+.wa-icon {
+  font-size: 56px;
+  margin-bottom: 20px;
+}
+
+.wa-title {
+  margin: 0 0 12px;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--slate-900);
+}
+
+.wa-text {
+  color: var(--slate-500);
+  line-height: 1.6;
+  font-size: 14px;
+  margin: 0;
+}
+
+.wa-back-btn {
+  margin-top: 24px;
+  padding: 10px 24px;
+  border-radius: var(--radius);
+  border: 1px solid var(--primary-600);
+  background: var(--primary-600);
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.wa-back-btn:hover {
+  background: var(--primary-700);
+}
