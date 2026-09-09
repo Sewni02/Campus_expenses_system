@@ -863,17 +863,25 @@ function ConstructionPayments() {
 
 // ---------- Sub-section: Hardware ----------
 function Hardware() {
+  const [hwTab, setHwTab] = useState('suppliers'); // 'suppliers' | 'finder'
+
   const [hardwareList, setHardwareList] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ supplierName: '', phone: '' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [addingItemTo, setAddingItemTo] = useState(null);
   const [itemForm, setItemForm] = useState({ name: '', unitPrice: '', quantity: '' });
+  const [isItemSubmitting, setIsItemSubmitting] = useState(false);
+
+  const [editingItem, setEditingItem] = useState(null); // { hwId, itemId, name, unitPrice, quantity }
+  const [isEditSubmitting, setIsEditSubmitting] = useState(false);
 
   // Order form state: hardwareId -> { itemId: { checked, quantity } }
   const [orderingFor, setOrderingFor] = useState(null);
   const [orderSelections, setOrderSelections] = useState({});
   const [lastOrderTotal, setLastOrderTotal] = useState(null);
+  const [isOrderSubmitting, setIsOrderSubmitting] = useState(false);
 
   useEffect(() => {
     fetchHardware();
@@ -890,13 +898,17 @@ function Hardware() {
 
   const handleAddSupplier = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
-      await axios.post('http://localhost:5000/api/hardware', formData);
+      const res = await axios.post('http://localhost:5000/api/hardware', formData);
+      setHardwareList((prev) => [...prev, res.data.hardware]);
       setFormData({ supplierName: '', phone: '' });
       setShowForm(false);
-      fetchHardware();
     } catch (err) {
       console.error(err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -907,22 +919,61 @@ function Hardware() {
 
   const handleAddItem = async (e) => {
     e.preventDefault();
-    if (!addingItemTo) return;
+    if (!addingItemTo || isItemSubmitting) return;
+    setIsItemSubmitting(true);
     try {
-      await axios.post(`http://localhost:5000/api/hardware/${addingItemTo._id}/items`, itemForm);
+      const res = await axios.post(`http://localhost:5000/api/hardware/${addingItemTo._id}/items`, itemForm);
+      const updatedHardware = res.data.hardware;
+      setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
       setAddingItemTo(null);
-      fetchHardware();
     } catch (err) {
       console.error(err);
+    } finally {
+      setIsItemSubmitting(false);
     }
   };
 
-  const handleUpdateQuantity = async (hardwareId, itemId, newQty) => {
+  const openEditItem = (hardwareId, item) => {
+    setEditingItem({
+      hwId: hardwareId,
+      itemId: item._id,
+      name: item.name,
+      unitPrice: item.unitPrice,
+      quantity: item.quantity,
+    });
+  };
+
+  const closeEditItem = () => setEditingItem(null);
+
+  const handleUpdateItem = async (e) => {
+    e.preventDefault();
+    if (!editingItem || isEditSubmitting) return;
+    setIsEditSubmitting(true);
     try {
-      await axios.put(`http://localhost:5000/api/hardware/${hardwareId}/items/${itemId}`, {
-        quantity: newQty,
-      });
-      fetchHardware();
+      const res = await axios.put(
+        `http://localhost:5000/api/hardware/${editingItem.hwId}/items/${editingItem.itemId}`,
+        {
+          name: editingItem.name,
+          unitPrice: editingItem.unitPrice,
+          quantity: editingItem.quantity,
+        }
+      );
+      const updatedHardware = res.data.hardware;
+      setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
+      closeEditItem();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsEditSubmitting(false);
+    }
+  };
+
+  const handleDeleteItem = async (hardwareId, itemId) => {
+    if (!window.confirm('Delete this item? This cannot be undone.')) return;
+    try {
+      const res = await axios.delete(`http://localhost:5000/api/hardware/${hardwareId}/items/${itemId}`);
+      const updatedHardware = res.data.hardware;
+      setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
     } catch (err) {
       console.error(err);
     }
@@ -966,200 +1017,409 @@ function Hardware() {
 
   const handleSubmitOrder = async (e, hardware) => {
     e.preventDefault();
+    if (isOrderSubmitting) return;
+
     const items = Object.entries(orderSelections)
       .filter(([, sel]) => sel.quantity > 0)
       .map(([itemId, sel]) => ({ itemId, quantity: sel.quantity }));
 
     if (items.length === 0) return;
 
+    setIsOrderSubmitting(true);
     try {
       const res = await axios.post(`http://localhost:5000/api/hardware/${hardware._id}/order`, { items });
+      const updatedHardware = res.data.hardware;
       setLastOrderTotal(res.data.order.total);
+      setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
       setOrderSelections({});
-      fetchHardware();
     } catch (err) {
       console.error(err);
+    } finally {
+      setIsOrderSubmitting(false);
     }
   };
 
   return (
     <div>
-      <div className="ge-header">
-        <h3 style={{ margin: 0 }}>Hardware Suppliers</h3>
-        <button className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
-          {showForm ? 'Cancel' : '+ Add Hardware Supplier'}
+      <div className="hw-subtabs">
+        <button
+          type="button"
+          className={`hw-subtab-btn ${hwTab === 'suppliers' ? 'active' : ''}`}
+          onClick={() => setHwTab('suppliers')}
+        >
+          Suppliers
+        </button>
+        <button
+          type="button"
+          className={`hw-subtab-btn ${hwTab === 'finder' ? 'active' : ''}`}
+          onClick={() => setHwTab('finder')}
+        >
+          Best Price Finder
         </button>
       </div>
 
-      {showForm && (
-        <form className="ge-form" onSubmit={handleAddSupplier}>
-          <div className="ge-form-row">
-            <input
-              type="text"
-              placeholder="Hardware name"
-              value={formData.supplierName}
-              onChange={(e) => setFormData({ ...formData, supplierName: e.target.value })}
-              required
-            />
-            <input
-              type="text"
-              placeholder="Phone number"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              required
-            />
-          </div>
-          <button type="submit" className="ge-save-btn">Save Hardware</button>
-        </form>
-      )}
-
-      {hardwareList.length === 0 && (
-        <p style={{ textAlign: 'center', padding: '20px', color: '#999' }}>No hardware suppliers found</p>
-      )}
-
-      {hardwareList.map((hw) => (
-        <div key={hw._id} className="ge-form" style={{ marginBottom: '16px' }}>
+      {hwTab === 'finder' ? (
+        <HardwarePriceFinder />
+      ) : (
+        <>
           <div className="ge-header">
-            <div>
-              <h4 style={{ margin: 0 }}>{hw.supplierName}</h4>
-              <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#888' }}>{hw.phone}</p>
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="sa-manage-btn" onClick={() => openItemForm(hw)}>+ Add Item</button>
-              <button className="sa-manage-btn" onClick={() => openOrderForm(hw)}>Place Order</button>
-            </div>
+            <h3 className="hw-inline-heading">Hardware Suppliers</h3>
+            <button className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
+              {showForm ? 'Cancel' : '+ Add Hardware Supplier'}
+            </button>
           </div>
 
-          {/* ADD NEW ITEM TO CATALOG */}
-          {addingItemTo?._id === hw._id && (
-            <form onSubmit={handleAddItem} style={{ marginTop: '10px' }}>
+          {showForm && (
+            <form className="ge-form" onSubmit={handleAddSupplier}>
               <div className="ge-form-row">
                 <input
                   type="text"
-                  placeholder="Item name"
-                  value={itemForm.name}
-                  onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })}
+                  placeholder="Hardware name"
+                  value={formData.supplierName}
+                  onChange={(e) => setFormData({ ...formData, supplierName: e.target.value })}
                   required
                 />
                 <input
-                  type="number"
-                  placeholder="Unit price (Rs.)"
-                  value={itemForm.unitPrice}
-                  onChange={(e) => setItemForm({ ...itemForm, unitPrice: e.target.value })}
-                  required
-                />
-                <input
-                  type="number"
-                  placeholder="Quantity"
-                  value={itemForm.quantity}
-                  onChange={(e) => setItemForm({ ...itemForm, quantity: e.target.value })}
+                  type="text"
+                  placeholder="Phone number"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   required
                 />
               </div>
-              <button type="submit" className="ge-save-btn">Save Item</button>
+              <button type="submit" className="ge-save-btn" disabled={isSubmitting}>
+                {isSubmitting ? 'Saving...' : 'Save Hardware'}
+              </button>
             </form>
           )}
 
-          {/* PLACE ORDER - checklist of existing items with quantity, live total below */}
-          {orderingFor?._id === hw._id && (
-            <form onSubmit={(e) => handleSubmitOrder(e, hw)} className="ge-form" style={{ marginTop: '10px' }}>
-              <p className="sa-group-title">Select items and quantities to order</p>
+          {hardwareList.length === 0 && (
+            <p className="hw-empty-text">No hardware suppliers found</p>
+          )}
 
-              {hw.items.length === 0 ? (
-                <p style={{ color: '#999', fontSize: '13px' }}>No items yet — add items to the catalog first.</p>
-              ) : (
-                hw.items.map((item) => {
-                  const sel = orderSelections[item._id];
-                  const isChecked = !!sel;
-                  return (
-                    <div
-                      key={item._id}
-                      className={`sa-checkbox-row ${isChecked ? 'checked' : ''}`}
-                      style={{ justifyContent: 'space-between' }}
-                    >
-                      <div
-                        style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', flex: 1 }}
-                        onClick={() => toggleOrderItem(item._id)}
-                      >
-                        <span className="sa-checkbox-custom">{isChecked && '✓'}</span>
-                        {item.name} (Rs. {item.unitPrice.toLocaleString()}/unit)
-                      </div>
-                      {isChecked && (
-                        <input
-                          type="number"
-                          min="1"
-                          value={sel.quantity}
-                          onChange={(e) => updateOrderQuantity(item._id, e.target.value)}
-                          className="hw-qty-input"
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      )}
-                    </div>
-                  );
-                })
-              )}
-
-              <div className="ge-summary" style={{ marginTop: '12px' }}>
-                <span>Order Total</span>
-                <span>Rs. {calcLiveOrderTotal(hw).toLocaleString()}</span>
+          {hardwareList.map((hw) => (
+            <div key={hw._id} className="ge-form hw-supplier-card">
+              <div className="ge-header">
+                <div>
+                  <h4 className="hw-inline-heading">{hw.supplierName}</h4>
+                  <p className="hw-supplier-phone">{hw.phone}</p>
+                </div>
+                <div className="hw-supplier-actions">
+                  <button className="sa-manage-btn" onClick={() => openItemForm(hw)}>+ Add Item</button>
+                  <button className="sa-manage-btn" onClick={() => openOrderForm(hw)}>Place Order</button>
+                </div>
               </div>
 
-              <button type="submit" className="ge-save-btn" style={{ marginTop: '10px' }}>
-                Submit Order
-              </button>
+              {/* ADD NEW ITEM TO CATALOG */}
+              {addingItemTo?._id === hw._id && (
+                <form onSubmit={handleAddItem} className="hw-item-form">
+                  <div className="ge-form-row">
+                    <input
+                      type="text"
+                      placeholder="Item name"
+                      value={itemForm.name}
+                      onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })}
+                      required
+                    />
+                    <input
+                      type="number"
+                      placeholder="Unit price (Rs.)"
+                      value={itemForm.unitPrice}
+                      onChange={(e) => setItemForm({ ...itemForm, unitPrice: e.target.value })}
+                      required
+                    />
+                    <input
+                      type="number"
+                      placeholder="Quantity"
+                      value={itemForm.quantity}
+                      onChange={(e) => setItemForm({ ...itemForm, quantity: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <button type="submit" className="ge-save-btn" disabled={isItemSubmitting}>
+                    {isItemSubmitting ? 'Saving...' : 'Save Item'}
+                  </button>
+                </form>
+              )}
 
-              {lastOrderTotal !== null && (
-                <div className="ge-summary" style={{ marginTop: '10px', color: '#2f7a3d', fontWeight: 600 }}>
-                  <span>Last order submitted</span>
-                  <span>Rs. {lastOrderTotal.toLocaleString()}</span>
+              {/* EDIT EXISTING ITEM */}
+              {editingItem?.hwId === hw._id && (
+                <form onSubmit={handleUpdateItem} className="hw-item-form">
+                  <p className="sa-group-title">Edit item</p>
+                  <div className="ge-form-row">
+                    <input
+                      type="text"
+                      placeholder="Item name"
+                      value={editingItem.name}
+                      onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
+                      required
+                    />
+                    <input
+                      type="number"
+                      placeholder="Unit price (Rs.)"
+                      value={editingItem.unitPrice}
+                      onChange={(e) => setEditingItem({ ...editingItem, unitPrice: e.target.value })}
+                      required
+                    />
+                    <input
+                      type="number"
+                      placeholder="Quantity"
+                      value={editingItem.quantity}
+                      onChange={(e) => setEditingItem({ ...editingItem, quantity: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="hw-edit-actions">
+                    <button type="submit" className="ge-save-btn" disabled={isEditSubmitting}>
+                      {isEditSubmitting ? 'Updating...' : 'Update Item'}
+                    </button>
+                    <button type="button" className="sa-reject-btn" onClick={closeEditItem}>
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* PLACE ORDER - checklist of existing items with quantity, live total below */}
+              {orderingFor?._id === hw._id && (
+                <form onSubmit={(e) => handleSubmitOrder(e, hw)} className="ge-form hw-item-form">
+                  <p className="sa-group-title">Select items and quantities to order</p>
+
+                  {hw.items.length === 0 ? (
+                    <p className="hw-empty-text hw-empty-text-inline">No items yet — add items to the catalog first.</p>
+                  ) : (
+                    hw.items.map((item) => {
+                      const sel = orderSelections[item._id];
+                      const isChecked = !!sel;
+                      return (
+                        <div
+                          key={item._id}
+                          className={`sa-checkbox-row hw-order-row ${isChecked ? 'checked' : ''}`}
+                        >
+                          <div
+                            className="hw-order-row-label"
+                            onClick={() => toggleOrderItem(item._id)}
+                          >
+                            <span className="sa-checkbox-custom">{isChecked && '✓'}</span>
+                            {item.name} (Rs. {item.unitPrice.toLocaleString()}/unit)
+                          </div>
+                          {isChecked && (
+                            <input
+                              type="number"
+                              min="1"
+                              value={sel.quantity}
+                              onChange={(e) => updateOrderQuantity(item._id, e.target.value)}
+                              className="hw-qty-input"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+
+                  <div className="ge-summary hw-order-summary">
+                    <span>Order Total</span>
+                    <span>Rs. {calcLiveOrderTotal(hw).toLocaleString()}</span>
+                  </div>
+
+                  <button type="submit" className="ge-save-btn hw-order-submit-btn" disabled={isOrderSubmitting}>
+                    {isOrderSubmitting ? 'Submitting...' : 'Submit Order'}
+                  </button>
+
+                  {lastOrderTotal !== null && (
+                    <div className="ge-summary hw-last-order">
+                      <span>Last order submitted</span>
+                      <span>Rs. {lastOrderTotal.toLocaleString()}</span>
+                    </div>
+                  )}
+                </form>
+              )}
+
+              {hw.items.length > 0 && (
+                <table className="sa-table hw-items-table">
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th>Unit Price (Rs.)</th>
+                      <th>Quantity</th>
+                      <th>Total (Rs.)</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hw.items.map((item) => (
+                      <tr key={item._id}>
+                        <td>{item.name}</td>
+                        <td>{item.unitPrice.toLocaleString()}</td>
+                        <td>{item.quantity}</td>
+                        <td>{itemTotal(item).toLocaleString()}</td>
+                        <td className="hw-item-actions-cell">
+                          <button className="hw-edit-btn" onClick={() => openEditItem(hw._id, item)}>
+                            Edit
+                          </button>
+                          <button className="hw-delete-btn" onClick={() => handleDeleteItem(hw._id, item._id)}>
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              {hw.items.length > 0 && (
+                <div className="ge-summary hw-total-summary">
+                  <span>{hw.items.length} item(s)</span>
+                  <span>Overall Price: Rs. {hardwareTotal(hw).toLocaleString()}</span>
                 </div>
               )}
-            </form>
-          )}
-
-          {hw.items.length > 0 && (
-            <table className="sa-table" style={{ marginTop: '12px' }}>
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>Unit Price (Rs.)</th>
-                  <th>Quantity</th>
-                  <th>Total (Rs.)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {hw.items.map((item) => (
-                  <tr key={item._id}>
-                    <td>{item.name}</td>
-                    <td>{item.unitPrice.toLocaleString()}</td>
-                    <td>
-                      <input
-                        type="number"
-                        defaultValue={item.quantity}
-                        className="hw-qty-input"
-                        onBlur={(e) => {
-                          const newQty = Number(e.target.value);
-                          if (newQty !== item.quantity) {
-                            handleUpdateQuantity(hw._id, item._id, newQty);
-                          }
-                        }}
-                      />
-                    </td>
-                    <td>{itemTotal(item).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          {hw.items.length > 0 && (
-            <div className="ge-summary" style={{ marginTop: '8px' }}>
-              <span>{hw.items.length} item(s)</span>
-              <span>Overall Price: Rs. {hardwareTotal(hw).toLocaleString()}</span>
             </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------- Sub-section: Hardware Best Price Finder ----------
+// Given a wishlist of items + quantities, shows which hardware suppliers can
+// fulfil them for the lowest total, and which items each supplier is missing.
+function HardwarePriceFinder() {
+  const [rows, setRows] = useState([{ name: '', quantity: '' }]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [quoteResult, setQuoteResult] = useState(null);
+  const [error, setError] = useState('');
+
+  const addRow = () => setRows((prev) => [...prev, { name: '', quantity: '' }]);
+
+  const removeRow = (index) => {
+    setRows((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateRow = (index, field, value) => {
+    setRows((prev) => prev.map((r, i) => (i === index ? { ...r, [field]: value } : r)));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+
+    const validRows = rows
+      .map((r) => ({ name: r.name.trim(), quantity: Number(r.quantity) || 0 }))
+      .filter((r) => r.name && r.quantity > 0);
+
+    if (validRows.length === 0) {
+      setError('Add at least one item with a name and quantity.');
+      return;
+    }
+
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const res = await axios.post('http://localhost:5000/api/hardware/quote', { items: validRows });
+      setQuoteResult(res.data);
+    } catch (err) {
+      console.error(err);
+      setError('Something went wrong while fetching the quote.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="hw-finder">
+      <form className="ge-form" onSubmit={handleSubmit}>
+        <p className="sa-group-title">Items you need</p>
+
+        {rows.map((row, index) => (
+          <div key={index} className="hw-finder-row">
+            <input
+              type="text"
+              placeholder="Item name"
+              value={row.name}
+              onChange={(e) => updateRow(index, 'name', e.target.value)}
+            />
+            <input
+              type="number"
+              placeholder="Quantity"
+              min="1"
+              value={row.quantity}
+              onChange={(e) => updateRow(index, 'quantity', e.target.value)}
+            />
+            {rows.length > 1 && (
+              <button
+                type="button"
+                className="hw-finder-remove-btn"
+                onClick={() => removeRow(index)}
+                aria-label="Remove item"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        ))}
+
+        <button type="button" className="hw-finder-add-btn" onClick={addRow}>
+          + Add another item
+        </button>
+
+        {error && <p className="hw-finder-error">{error}</p>}
+
+        <button type="submit" className="ge-save-btn hw-finder-submit-btn" disabled={isSubmitting}>
+          {isSubmitting ? 'Calculating...' : 'Find Best Price'}
+        </button>
+      </form>
+
+      {quoteResult && (
+        <div className="hw-quote-results">
+          {quoteResult.results.length === 0 ? (
+            <p className="hw-empty-text">No hardware supplier stocks any of these items.</p>
+          ) : (
+            quoteResult.results.map((r, i) => (
+              <div key={r.hardwareId} className={`hw-quote-card ${i === 0 ? 'best' : ''}`}>
+                <div className="hw-quote-card-header">
+                  <div>
+                    <h4 className="hw-inline-heading">{r.supplierName}</h4>
+                    <p className="hw-supplier-phone">{r.phone}</p>
+                  </div>
+                  <div className="hw-quote-card-header-right">
+                    {i === 0 && <span className="hw-quote-best-badge">Lowest Budget</span>}
+                    <span className="hw-quote-total">Rs. {r.total.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <table className="sa-table hw-items-table">
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th>Unit Price (Rs.)</th>
+                      <th>Requested Qty</th>
+                      <th>Line Total (Rs.)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {r.matchedItems.map((mi) => (
+                      <tr key={mi.name}>
+                        <td>{mi.name}</td>
+                        <td>{mi.unitPrice.toLocaleString()}</td>
+                        <td>{mi.requestedQuantity}</td>
+                        <td>{mi.lineTotal.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {r.missingItems.length > 0 && (
+                  <p className="hw-quote-missing">
+                    Doesn&apos;t have: {r.missingItems.join(', ')}
+                  </p>
+                )}
+              </div>
+            ))
           )}
         </div>
-      ))}
+      )}
     </div>
   );
 }

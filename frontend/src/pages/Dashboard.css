@@ -1,0 +1,44 @@
+.dash-page {
+  min-height: 100vh;
+  background: var(--slate-50);
+  padding: 40px;
+  font-family: var(--font-main);
+}
+
+.dash-header {
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--slate-200);
+  padding-bottom: 20px;
+}
+
+.dash-title {
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--slate-900);
+  letter-spacing: -0.3px;
+}
+
+.dash-role {
+  display: inline-block;
+  background: var(--primary-50);
+  color: var(--primary-700);
+  border: 1px solid var(--primary-100);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.dash-info-card {
+  background: var(--white);
+  border: 1px solid var(--slate-200);
+  border-radius: var(--radius);
+  padding: 24px;
+  color: var(--slate-500);
+  font-size: 14px;
+  line-height: 1.6;
+  box-shadow: var(--shadow-sm);
+}

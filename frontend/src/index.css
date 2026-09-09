@@ -1,0 +1,131 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+  /* ---- Neutral scale: black -> espresso brown -> cream ----
+     Anchored on the 4 supplied colors:
+     #000000 (black), #1F150C (dark brown),
+     #412D15 (medium brown), #E1DCC9 (cream) */
+  --slate-900: #000000;
+  --slate-800: #1F150C;
+  --slate-700: #34240F;
+  --slate-600: #412D15;
+  --slate-500: #6E5330;
+  --slate-400: #9C8760;
+  --slate-300: #C2B393;
+  --slate-200: #DCD2B8;
+  --slate-100: #E1DCC9;
+  --slate-50: #F5F1E6;
+  --white: #FFFFFF;
+
+  /* ---- Primary accent: espresso brown (buttons, links, active states) ---- */
+  --primary-50: #F0E9DD;
+  --primary-100: #DDCBAE;
+  --primary-500: #5A3E1E;
+  --primary-600: #412D15;
+  --primary-700: #2B1D0E;
+  --primary-rgb: 65, 45, 21;
+
+  /* ---- Secondary accent: warm gold (used sparingly — pending status only) ---- */
+  --accent-100: #F3E4C4;
+  --accent-500: #A8792E;
+  --accent-600: #8C6224;
+  --accent-700: #6B4A1B;
+
+  /* ---- Semantic: status colors (approve/reject only — functional, not decorative) ---- */
+  --success: #3F6B3F;
+  --success-bg: #EAF1E7;
+  --success-border: #C7DAC0;
+  --danger: #8C2F24;
+  --danger-bg: #F5E7E3;
+  --danger-border: #E0C2B8;
+
+  /* ---- Shadows & shared tokens ---- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.10);
+  --shadow-lg: 0 20px 44px rgba(0, 0, 0, 0.16);
+  --radius: 10px;
+  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+/* ---- Bootstrap theme bridge ----
+   Bootstrap is imported in main.jsx BEFORE this file, so these
+   overrides win the cascade and re-point every Bootstrap component
+   (btn, form-control, card, navbar, badge...) at our own
+   black / espresso-brown / cream design tokens instead of
+   Bootstrap's default blue. */
+:root {
+  --bs-primary: var(--primary-600);
+  --bs-primary-rgb: var(--primary-rgb);
+  --bs-primary-text-emphasis: var(--primary-700);
+  --bs-primary-bg-subtle: var(--primary-50);
+  --bs-primary-border-subtle: var(--primary-100);
+
+  --bs-secondary: var(--slate-600);
+  --bs-secondary-rgb: 65, 45, 21;
+
+  --bs-success: var(--success);
+  --bs-success-bg-subtle: var(--success-bg);
+  --bs-success-border-subtle: var(--success-border);
+
+  --bs-danger: var(--danger);
+  --bs-danger-bg-subtle: var(--danger-bg);
+  --bs-danger-border-subtle: var(--danger-border);
+
+  --bs-warning: var(--accent-500);
+  --bs-warning-bg-subtle: var(--accent-100);
+
+  --bs-body-color: var(--slate-900);
+  --bs-body-bg: var(--slate-50);
+  --bs-border-color: var(--slate-200);
+  --bs-border-radius: var(--radius);
+  --bs-border-radius-lg: 14px;
+  --bs-border-radius-sm: 6px;
+  --bs-body-font-family: var(--font-main);
+  --bs-link-color: var(--primary-600);
+  --bs-link-hover-color: var(--primary-700);
+}
+
+.btn-primary {
+  --bs-btn-bg: var(--primary-600);
+  --bs-btn-border-color: var(--primary-600);
+  --bs-btn-hover-bg: var(--primary-700);
+  --bs-btn-hover-border-color: var(--primary-700);
+  --bs-btn-active-bg: var(--primary-700);
+  --bs-btn-active-border-color: var(--primary-700);
+  --bs-btn-focus-shadow-rgb: var(--primary-rgb);
+  font-weight: 600;
+}
+
+.btn-outline-primary {
+  --bs-btn-color: var(--primary-600);
+  --bs-btn-border-color: var(--primary-600);
+  --bs-btn-hover-bg: var(--primary-600);
+  --bs-btn-hover-border-color: var(--primary-600);
+  --bs-btn-active-bg: var(--primary-700);
+  font-weight: 600;
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 0.2rem rgba(var(--primary-rgb), 0.18);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  background: var(--slate-50);
+  font-family: var(--font-main);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  width: 100%;
+  margin: 0;
+}
