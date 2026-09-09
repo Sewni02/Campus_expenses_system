@@ -1,5 +1,13 @@
 const mongoose = require('mongoose');
 
+const estimationPlanSchema = new mongoose.Schema({
+  projectName: { type: String, required: true },
+  totalEstimate: { type: Number, required: true },
+  planFileUrl: { type: String },
+  note: { type: String },
+  uploadedDate: { type: Date, default: Date.now },
+});
+
 const paymentSchema = new mongoose.Schema({
   amount: { type: Number, required: true },
   date: { type: Date, default: Date.now },
@@ -11,12 +19,17 @@ const paymentSchema = new mongoose.Schema({
   },
   billUrl: { type: String },
   slipUrl: { type: String },
+  referenceNo: { type: String },
+  // Which estimation plan (and therefore which project) this payment is against
+  planId: { type: mongoose.Schema.Types.ObjectId },
+  projectName: { type: String },
 });
 
 const contractorSchema = new mongoose.Schema({
   name: { type: String, required: true },
   phone: { type: String, required: true },
   registrationDate: { type: Date, default: Date.now },
+  estimationPlans: [estimationPlanSchema],
   payments: [paymentSchema],
 }, { timestamps: true });
 

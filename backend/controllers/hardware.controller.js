@@ -153,6 +153,43 @@ const placeOrder = async (req, res) => {
   }
 };
 
+// Record a bill received from this hardware supplier + the bank payment made
+// against it, tagged with the project it was bought for.
+const addPayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { projectName, amount, date, referenceNo, note } = req.body;
+
+    if (!projectName || !amount) {
+      return res.status(400).json({ message: 'projectName and amount are required' });
+    }
+
+    const hardware = await Hardware.findById(id);
+    if (!hardware) {
+      return res.status(404).json({ message: 'Hardware supplier not found' });
+    }
+
+    const billUrl = req.files?.bill?.[0]?.path;
+    const slipUrl = req.files?.slip?.[0]?.path;
+
+    hardware.payments.push({
+      projectName,
+      amount,
+      date: date || Date.now(),
+      billUrl,
+      slipUrl,
+      referenceNo,
+      note,
+    });
+    await hardware.save();
+
+    res.json({ message: 'Payment added successfully', hardware });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 // Best-price finder: given a wishlist of { name, quantity }, work out what each
 // hardware supplier would charge for the items they actually stock, and which
 // items they don't have at all. Matching is by item name (case-insensitive).
@@ -229,5 +266,6 @@ module.exports = {
   updateItem,
   deleteItem,
   placeOrder,
+  addPayment,
   getQuote,
 };
