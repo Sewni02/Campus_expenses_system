@@ -34,4 +34,20 @@ const createPayment = async (req, res) => {
   }
 };
 
-module.exports = { getPayments, createPayment };
+const deletePayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const payment = await ConstructionPayment.findByIdAndDelete(id);
+
+    if (!payment) {
+      return res.status(404).json({ message: 'Payment not found' });
+    }
+
+    res.json({ message: 'Payment deleted successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+module.exports = { getPayments, createPayment, deletePayment };
