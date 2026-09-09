@@ -2,6 +2,82 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import './SuperAdminDashboard.css';
 
+// Every project name that currently exists anywhere in the system
+// (estimation plans, contractor/hardware/other payments), sorted A-Z.
+// Shared by every form that needs to tag something with a project.
+function useProjectNames() {
+  const [projectNames, setProjectNames] = useState([]);
+
+  const refetch = async () => {
+    try {
+      const res = await axios.get('http://localhost:5000/api/projects');
+      setProjectNames(res.data.projectNames || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    refetch();
+  }, []);
+
+  return [projectNames, refetch];
+}
+
+// A project-name field that lets the user pick from the existing,
+// alphabetically-sorted list of projects, or add a brand new one inline.
+function ProjectNameField({ value, onChange, projectNames, required = true }) {
+  const isKnownProject = value === '' || projectNames.includes(value);
+  const [addingNew, setAddingNew] = useState(!isKnownProject);
+
+  const handleSelectChange = (e) => {
+    if (e.target.value === '__new__') {
+      setAddingNew(true);
+      onChange('');
+    } else {
+      setAddingNew(false);
+      onChange(e.target.value);
+    }
+  };
+
+  if (addingNew) {
+    return (
+      <div className="project-name-field">
+        <input
+          type="text"
+          placeholder="New project / construction name"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          required={required}
+          autoFocus
+        />
+        {projectNames.length > 0 && (
+          <button
+            type="button"
+            className="project-name-back-link"
+            onClick={() => {
+              setAddingNew(false);
+              onChange('');
+            }}
+          >
+            Choose existing project instead
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <select value={value} onChange={handleSelectChange} required={required}>
+      <option value="">Select project...</option>
+      {projectNames.map((name) => (
+        <option key={name} value={name}>{name}</option>
+      ))}
+      <option value="__new__">+ Add new project...</option>
+    </select>
+  );
+}
+
 const PERMISSION_GROUPS = [
   {
     category: 'Audit',
@@ -262,6 +338,7 @@ function Constructions() {
     { key: 'contractors', label: 'Contractors' },
     { key: 'payments', label: 'Payments' },
     { key: 'hardware', label: 'Hardware' },
+    { key: 'projects', label: 'Project Summary' },
   ];
 
   return (
@@ -283,6 +360,7 @@ function Constructions() {
       {subTab === 'contractors' && <Contractors />}
       {subTab === 'payments' && <ConstructionPayments />}
       {subTab === 'hardware' && <Hardware />}
+      {subTab === 'projects' && <ProjectSummary />}
     </div>
   );
 }
@@ -290,6 +368,7 @@ function Constructions() {
 // ---------- Sub-section: Contractors ----------
 function Contractors() {
   const [contractors, setContractors] = useState([]);
+  const [projectNames, refetchProjectNames] = useProjectNames();
   const [searchTerm, setSearchTerm] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ name: '', phone: '', registrationDate: '' });
@@ -297,6 +376,12 @@ function Contractors() {
   const [viewingContractor, setViewingContractor] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', phone: '', registrationDate: '' });
+
+  // Estimation plans for the contractor currently being viewed
+  const [showPlanForm, setShowPlanForm] = useState(false);
+  const [planForm, setPlanForm] = useState({ projectName: '', totalEstimate: '', note: '' });
+  const [planFile, setPlanFile] = useState(null);
+  const [isPlanSubmitting, setIsPlanSubmitting] = useState(false);
 
   useEffect(() => {
     fetchContractors();
@@ -322,10 +407,10 @@ function Contractors() {
   const handleAddContractor = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:5000/api/contractors', formData);
+      const res = await axios.post('http://localhost:5000/api/contractors', formData);
+      setContractors((prev) => [res.data.contractor, ...prev]);
       setFormData({ name: '', phone: '', registrationDate: '' });
       setShowForm(false);
-      fetchContractors();
     } catch (err) {
       console.error(err);
     }
@@ -334,11 +419,13 @@ function Contractors() {
   const openProfile = (contractor) => {
     setViewingContractor(contractor);
     setIsEditing(false);
+    setShowPlanForm(false);
   };
 
   const closeProfile = () => {
     setViewingContractor(null);
     setIsEditing(false);
+    setShowPlanForm(false);
   };
 
   const startEdit = () => {
@@ -355,9 +442,11 @@ function Contractors() {
   const handleUpdateContractor = async (e) => {
     e.preventDefault();
     try {
-      await axios.put(`http://localhost:5000/api/contractors/${viewingContractor._id}`, editForm);
+      const res = await axios.put(`http://localhost:5000/api/contractors/${viewingContractor._id}`, editForm);
+      const updated = res.data.contractor;
+      setContractors((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
+      setViewingContractor(updated);
       setIsEditing(false);
-      fetchContractors();
     } catch (err) {
       console.error(err);
     }
@@ -367,8 +456,52 @@ function Contractors() {
     if (!window.confirm(`Delete ${viewingContractor.name}? This cannot be undone.`)) return;
     try {
       await axios.delete(`http://localhost:5000/api/contractors/${viewingContractor._id}`);
+      setContractors((prev) => prev.filter((c) => c._id !== viewingContractor._id));
       closeProfile();
-      fetchContractors();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAddPlan = async (e) => {
+    e.preventDefault();
+    if (!viewingContractor || isPlanSubmitting) return;
+    setIsPlanSubmitting(true);
+    try {
+      const data = new FormData();
+      data.append('projectName', planForm.projectName);
+      data.append('totalEstimate', planForm.totalEstimate);
+      data.append('note', planForm.note);
+      if (planFile) data.append('plan', planFile);
+
+      const res = await axios.post(
+        `http://localhost:5000/api/contractors/${viewingContractor._id}/plans`,
+        data,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      const updated = res.data.contractor;
+      setContractors((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
+      setViewingContractor(updated);
+      setPlanForm({ projectName: '', totalEstimate: '', note: '' });
+      setPlanFile(null);
+      setShowPlanForm(false);
+      refetchProjectNames();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsPlanSubmitting(false);
+    }
+  };
+
+  const handleDeletePlan = async (planId) => {
+    if (!window.confirm('Delete this estimation plan? This cannot be undone.')) return;
+    try {
+      const res = await axios.delete(
+        `http://localhost:5000/api/contractors/${viewingContractor._id}/plans/${planId}`
+      );
+      const updated = res.data.contractor;
+      setContractors((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
+      setViewingContractor(updated);
     } catch (err) {
       console.error(err);
     }
@@ -377,16 +510,19 @@ function Contractors() {
   const totalPaid = (contractor) =>
     contractor.payments.reduce((sum, p) => sum + p.amount, 0);
 
+  const totalEstimated = (contractor) =>
+    contractor.estimationPlans.reduce((sum, p) => sum + p.totalEstimate, 0);
+
   return (
     <div>
       <div className="ge-header">
-        <h3 style={{ margin: 0 }}>Registered Contractors</h3>
+        <h3 className="hw-inline-heading">Registered Contractors</h3>
         <button className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
           {showForm ? 'Cancel' : '+ Add Contractor'}
         </button>
       </div>
 
-      <div className="ge-form-row" style={{ marginBottom: '16px' }}>
+      <div className="ge-form-row contractor-search-row">
         <input
           type="text"
           placeholder="Search contractor by name..."
@@ -436,7 +572,7 @@ function Contractors() {
           <tbody>
             {contractors.length === 0 ? (
               <tr>
-                <td colSpan="5" style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
+                <td colSpan="5" className="hw-empty-text">
                   No contractors found
                 </td>
               </tr>
@@ -461,7 +597,7 @@ function Contractors() {
           </tbody>
         </table>
 
-        {/* PROFILE PANEL - view / update / delete only, no payment form here */}
+        {/* PROFILE PANEL - view / update / delete + estimation plans */}
         {viewingContractor && (
           <div className="sa-permission-panel">
             <div className="sa-panel-header">
@@ -472,9 +608,13 @@ function Contractors() {
             {!isEditing ? (
               <>
                 <p className="sa-panel-email">{viewingContractor.phone}</p>
-                <div className="ge-summary" style={{ marginTop: '10px' }}>
+                <div className="ge-summary contractor-summary-row">
                   <span>Registered On</span>
                   <span>{new Date(viewingContractor.registrationDate).toLocaleDateString()}</span>
+                </div>
+                <div className="ge-summary">
+                  <span>Total Estimated (all plans)</span>
+                  <span>Rs. {totalEstimated(viewingContractor).toLocaleString()}</span>
                 </div>
                 <div className="ge-summary">
                   <span>Total Paid</span>
@@ -485,10 +625,87 @@ function Contractors() {
                   <button className="sa-save-btn" onClick={startEdit}>Update</button>
                   <button className="sa-reject-btn" onClick={handleDeleteContractor}>Delete</button>
                 </div>
+
+                {/* ---------- Estimation Plans ---------- */}
+                <div className="plan-section">
+                  <div className="ge-header plan-section-header">
+                    <p className="sa-group-title plan-section-title">Estimation Plans</p>
+                    <button
+                      type="button"
+                      className="hw-finder-add-btn"
+                      onClick={() => setShowPlanForm(!showPlanForm)}
+                    >
+                      {showPlanForm ? 'Cancel' : '+ Add Plan'}
+                    </button>
+                  </div>
+
+                  {showPlanForm && (
+                    <form onSubmit={handleAddPlan} className="hw-item-form">
+                      <div className="ge-form-row">
+                        <ProjectNameField
+                          value={planForm.projectName}
+                          onChange={(val) => setPlanForm({ ...planForm, projectName: val })}
+                          projectNames={projectNames}
+                        />
+                        <input
+                          type="number"
+                          placeholder="Total estimate (Rs.)"
+                          value={planForm.totalEstimate}
+                          onChange={(e) => setPlanForm({ ...planForm, totalEstimate: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="ge-form-row">
+                        <input
+                          type="file"
+                          accept=".jpg,.jpeg,.png,.pdf"
+                          onChange={(e) => setPlanFile(e.target.files[0])}
+                        />
+                      </div>
+                      <textarea
+                        placeholder="Note (optional)"
+                        value={planForm.note}
+                        onChange={(e) => setPlanForm({ ...planForm, note: e.target.value })}
+                        rows={2}
+                      />
+                      <button type="submit" className="ge-save-btn" disabled={isPlanSubmitting}>
+                        {isPlanSubmitting ? 'Saving...' : 'Save Plan'}
+                      </button>
+                    </form>
+                  )}
+
+                  {viewingContractor.estimationPlans.length === 0 ? (
+                    <p className="hw-empty-text hw-empty-text-inline">No estimation plans uploaded yet.</p>
+                  ) : (
+                    <div className="plan-list">
+                      {[...viewingContractor.estimationPlans]
+                        .sort((a, b) => a.projectName.localeCompare(b.projectName, undefined, { sensitivity: 'base' }))
+                        .map((plan) => (
+                        <div key={plan._id} className="plan-card">
+                          <div className="plan-card-top">
+                            <span className="plan-card-project">{plan.projectName}</span>
+                            <span className="plan-card-amount">Rs. {plan.totalEstimate.toLocaleString()}</span>
+                          </div>
+                          <div className="plan-card-bottom">
+                            <span>{new Date(plan.uploadedDate).toLocaleDateString()}</span>
+                            {plan.planFileUrl && (
+                              <a href={plan.planFileUrl} target="_blank" rel="noreferrer" className="ge-slip-link">
+                                View Plan
+                              </a>
+                            )}
+                            <button className="hw-delete-btn" onClick={() => handleDeletePlan(plan._id)}>
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
               <form onSubmit={handleUpdateContractor}>
-                <div className="auth-field" style={{ marginTop: '14px' }}>
+                <div className="auth-field contractor-edit-field">
                   <label>Name</label>
                   <input
                     type="text"
@@ -533,20 +750,24 @@ function Contractors() {
 // ---------- Sub-section: Payments (general construction payments + contractor payments) ----------
 function ConstructionPayments() {
   const [payments, setPayments] = useState([]);
+  const [projectNames, refetchProjectNames] = useProjectNames();
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ title: '', amount: '', paidTo: '', description: '', date: '' });
+  const [formData, setFormData] = useState({ title: '', amount: '', paidTo: '', projectName: '', description: '', date: '' });
   const [bill, setBill] = useState(null);
 
-  // Contractor payment recording
+  // Contractor payment recording - always linked to one of the contractor's estimation plans
   const [contractors, setContractors] = useState([]);
   const [showContractorPayForm, setShowContractorPayForm] = useState(false);
   const [contractorId, setContractorId] = useState('');
+  const [planId, setPlanId] = useState('');
   const [paymentType, setPaymentType] = useState('direct_slip'); // 'direct_slip' | 'bill_then_payment'
   const [payAmount, setPayAmount] = useState('');
   const [payDate, setPayDate] = useState('');
+  const [payReferenceNo, setPayReferenceNo] = useState('');
   const [payNote, setPayNote] = useState('');
   const [slipFile, setSlipFile] = useState(null);
   const [billFile, setBillFile] = useState(null);
+  const [isPaySubmitting, setIsPaySubmitting] = useState(false);
 
   useEffect(() => {
     fetchPayments();
@@ -578,6 +799,7 @@ function ConstructionPayments() {
       data.append('title', formData.title);
       data.append('amount', formData.amount);
       data.append('paidTo', formData.paidTo);
+      data.append('projectName', formData.projectName);
       data.append('description', formData.description);
       if (formData.date) data.append('date', formData.date);
       if (bill) data.append('bill', bill);
@@ -586,10 +808,21 @@ function ConstructionPayments() {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      setFormData({ title: '', amount: '', paidTo: '', description: '', date: '' });
+      setFormData({ title: '', amount: '', paidTo: '', projectName: '', description: '', date: '' });
       setBill(null);
       setShowForm(false);
       fetchPayments();
+      refetchProjectNames();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteOtherPayment = async (paymentId) => {
+    if (!window.confirm('Delete this payment? This cannot be undone.')) return;
+    try {
+      await axios.delete(`http://localhost:5000/api/construction-payments/${paymentId}`);
+      setPayments((prev) => prev.filter((p) => p._id !== paymentId));
     } catch (err) {
       console.error(err);
     }
@@ -597,23 +830,31 @@ function ConstructionPayments() {
 
   const resetContractorPayForm = () => {
     setContractorId('');
+    setPlanId('');
     setPaymentType('direct_slip');
     setPayAmount('');
     setPayDate('');
+    setPayReferenceNo('');
     setPayNote('');
     setSlipFile(null);
     setBillFile(null);
   };
 
+  const selectedContractor = contractors.find((c) => c._id === contractorId);
+  const selectedPlan = selectedContractor?.estimationPlans.find((p) => p._id === planId);
+
   const handleRecordContractorPayment = async (e) => {
     e.preventDefault();
-    if (!contractorId) return;
+    if (!contractorId || !planId || isPaySubmitting) return;
+    setIsPaySubmitting(true);
     try {
       const data = new FormData();
       data.append('amount', payAmount);
       if (payDate) data.append('date', payDate);
       data.append('note', payNote);
       data.append('paymentType', paymentType);
+      data.append('planId', planId);
+      data.append('referenceNo', payReferenceNo);
       if (slipFile) data.append('slip', slipFile);
       if (paymentType === 'bill_then_payment' && billFile) data.append('bill', billFile);
 
@@ -628,6 +869,19 @@ function ConstructionPayments() {
       fetchContractorsList();
     } catch (err) {
       console.error(err);
+    } finally {
+      setIsPaySubmitting(false);
+    }
+  };
+
+  const handleDeleteContractorPayment = async (contractorId, paymentId) => {
+    if (!window.confirm('Delete this payment? This cannot be undone.')) return;
+    try {
+      const res = await axios.delete(`http://localhost:5000/api/contractors/${contractorId}/payments/${paymentId}`);
+      const updated = res.data.contractor;
+      setContractors((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -637,7 +891,7 @@ function ConstructionPayments() {
     <div>
       {/* GENERAL CONSTRUCTION PAYMENTS */}
       <div className="ge-header">
-        <h3 style={{ margin: 0 }}>Construction Payments</h3>
+        <h3 className="hw-inline-heading">Construction Payments</h3>
         <button className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
           {showForm ? 'Cancel' : '+ Add Payment'}
         </button>
@@ -668,11 +922,18 @@ function ConstructionPayments() {
             />
           </div>
           <div className="ge-form-row">
+            <ProjectNameField
+              value={formData.projectName}
+              onChange={(val) => setFormData({ ...formData, projectName: val })}
+              projectNames={projectNames}
+            />
             <input
               type="date"
               value={formData.date}
               onChange={(e) => setFormData({ ...formData, date: e.target.value })}
             />
+          </div>
+          <div className="ge-form-row">
             <input
               type="file"
               accept=".jpg,.jpeg,.png,.pdf"
@@ -699,23 +960,28 @@ function ConstructionPayments() {
           <tr>
             <th>Title</th>
             <th>Paid To</th>
+            <th>Project</th>
             <th>Amount (Rs.)</th>
             <th>Date</th>
             <th>Bill</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           {payments.length === 0 ? (
             <tr>
-              <td colSpan="5" style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
+              <td colSpan="7" className="hw-empty-text">
                 No payments found
               </td>
             </tr>
           ) : (
-            payments.map((p) => (
+            [...payments]
+              .sort((a, b) => (a.projectName || '').localeCompare(b.projectName || '', undefined, { sensitivity: 'base' }))
+              .map((p) => (
               <tr key={p._id}>
                 <td>{p.title}</td>
                 <td>{p.paidTo || '-'}</td>
+                <td>{p.projectName || '-'}</td>
                 <td>{p.amount.toLocaleString()}</td>
                 <td>{new Date(p.date).toLocaleDateString()}</td>
                 <td>
@@ -723,15 +989,18 @@ function ConstructionPayments() {
                     <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a>
                   ) : '-'}
                 </td>
+                <td>
+                  <button className="hw-delete-btn" onClick={() => handleDeleteOtherPayment(p._id)}>Delete</button>
+                </td>
               </tr>
             ))
           )}
         </tbody>
       </table>
 
-      {/* CONTRACTOR PAYMENTS - direct slip OR bill-then-payment */}
-      <div className="ge-header" style={{ marginTop: '36px' }}>
-        <h3 style={{ margin: 0 }}>Contractor Payments</h3>
+      {/* CONTRACTOR PAYMENTS - always linked to one of the contractor's estimation plans */}
+      <div className="ge-header contractor-payments-header">
+        <h3 className="hw-inline-heading">Contractor Payments</h3>
         <button className="ge-add-btn" onClick={() => setShowContractorPayForm(!showContractorPayForm)}>
           {showContractorPayForm ? 'Cancel' : '+ Record Contractor Payment'}
         </button>
@@ -740,12 +1009,45 @@ function ConstructionPayments() {
       {showContractorPayForm && (
         <form className="ge-form" onSubmit={handleRecordContractorPayment}>
           <div className="ge-form-row">
-            <select value={contractorId} onChange={(e) => setContractorId(e.target.value)} required>
+            <select
+              value={contractorId}
+              onChange={(e) => {
+                setContractorId(e.target.value);
+                setPlanId('');
+              }}
+              required
+            >
               <option value="">Select contractor...</option>
               {contractors.map((c) => (
                 <option key={c._id} value={c._id}>{c.name}</option>
               ))}
             </select>
+
+            <select
+              value={planId}
+              onChange={(e) => setPlanId(e.target.value)}
+              disabled={!selectedContractor}
+              required
+            >
+              <option value="">Select estimation plan...</option>
+              {[...(selectedContractor?.estimationPlans || [])]
+                .sort((a, b) => a.projectName.localeCompare(b.projectName, undefined, { sensitivity: 'base' }))
+                .map((plan) => (
+                  <option key={plan._id} value={plan._id}>
+                    {plan.projectName} (Rs. {plan.totalEstimate.toLocaleString()})
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          {selectedPlan && (
+            <div className="ge-summary plan-preview-summary">
+              <span>Project: {selectedPlan.projectName}</span>
+              <span>Plan Total: Rs. {selectedPlan.totalEstimate.toLocaleString()}</span>
+            </div>
+          )}
+
+          <div className="ge-form-row">
             <input
               type="number"
               placeholder="Amount (Rs.)"
@@ -758,32 +1060,36 @@ function ConstructionPayments() {
               value={payDate}
               onChange={(e) => setPayDate(e.target.value)}
             />
+            <input
+              type="text"
+              placeholder="Cheque / Reference No."
+              value={payReferenceNo}
+              onChange={(e) => setPayReferenceNo(e.target.value)}
+            />
           </div>
 
-          <p className="sa-group-title" style={{ marginTop: '10px' }}>Payment Method</p>
+          <p className="sa-group-title plan-preview-title">Payment Method</p>
           <div className="ge-form-row">
             <label
-              className={`sa-checkbox-row ${paymentType === 'direct_slip' ? 'checked' : ''}`}
+              className={`sa-checkbox-row payment-method-option ${paymentType === 'direct_slip' ? 'checked' : ''}`}
               onClick={() => setPaymentType('direct_slip')}
-              style={{ flex: 1 }}
             >
               <span className="sa-checkbox-custom">{paymentType === 'direct_slip' && '✓'}</span>
               Direct Bank Slip
             </label>
             <label
-              className={`sa-checkbox-row ${paymentType === 'bill_then_payment' ? 'checked' : ''}`}
+              className={`sa-checkbox-row payment-method-option ${paymentType === 'bill_then_payment' ? 'checked' : ''}`}
               onClick={() => setPaymentType('bill_then_payment')}
-              style={{ flex: 1 }}
             >
               <span className="sa-checkbox-custom">{paymentType === 'bill_then_payment' && '✓'}</span>
               Get Bill, then Bank Payment
             </label>
           </div>
 
-          <div className="ge-form-row" style={{ marginTop: '10px' }}>
+          <div className="ge-form-row upload-row">
             {paymentType === 'bill_then_payment' && (
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: '12px', color: '#666' }}>Bill from contractor</label>
+              <div className="upload-field">
+                <label className="upload-field-label">Bill from contractor</label>
                 <input
                   type="file"
                   accept=".jpg,.jpeg,.png,.pdf"
@@ -791,8 +1097,8 @@ function ConstructionPayments() {
                 />
               </div>
             )}
-            <div style={{ flex: 1 }}>
-              <label style={{ fontSize: '12px', color: '#666' }}>Bank payment slip</label>
+            <div className="upload-field">
+              <label className="upload-field-label">Bank payment slip</label>
               <input
                 type="file"
                 accept=".jpg,.jpeg,.png,.pdf"
@@ -806,54 +1112,56 @@ function ConstructionPayments() {
             value={payNote}
             onChange={(e) => setPayNote(e.target.value)}
             rows={2}
-            style={{ marginTop: '10px' }}
+            className="payment-note-textarea"
           />
-          <button type="submit" className="ge-save-btn">Save Payment</button>
+          <button type="submit" className="ge-save-btn" disabled={isPaySubmitting}>
+            {isPaySubmitting ? 'Saving...' : 'Save Payment'}
+          </button>
         </form>
       )}
 
-      <table className="sa-table" style={{ marginTop: '12px' }}>
+      <table className="sa-table hw-items-table">
         <thead>
           <tr>
             <th>Contractor</th>
+            <th>Project</th>
             <th>Amount (Rs.)</th>
             <th>Date</th>
+            <th>Reference No.</th>
             <th>Method</th>
             <th>Bill</th>
             <th>Slip</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
-          {contractors.flatMap((c) =>
-            c.payments.map((p, i) => (
-              <tr key={`${c._id}-${i}`}>
-                <td>{c.name}</td>
-                <td>{p.amount.toLocaleString()}</td>
-                <td>{new Date(p.date).toLocaleDateString()}</td>
-                <td>{p.paymentType === 'bill_then_payment' ? 'Bill + Payment' : 'Direct Slip'}</td>
-                <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
-                <td>{p.slipUrl ? <a href={p.slipUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
-              </tr>
-            ))
-          ).length === 0 ? (
+          {contractors.flatMap((c) => c.payments).length === 0 ? (
             <tr>
-              <td colSpan="6" style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
+              <td colSpan="9" className="hw-empty-text">
                 No contractor payments recorded
               </td>
             </tr>
           ) : (
-            contractors.flatMap((c) =>
-              c.payments.map((p, i) => (
-                <tr key={`${c._id}-${i}`}>
-                  <td>{c.name}</td>
+            contractors
+              .flatMap((c) => c.payments.map((p) => ({ ...p, contractorName: c.name, contractorId: c._id })))
+              .sort((a, b) => (a.projectName || '').localeCompare(b.projectName || '', undefined, { sensitivity: 'base' }))
+              .map((p, i) => (
+                <tr key={`${p.contractorId}-${i}`}>
+                  <td>{p.contractorName}</td>
+                  <td>{p.projectName || '-'}</td>
                   <td>{p.amount.toLocaleString()}</td>
                   <td>{new Date(p.date).toLocaleDateString()}</td>
+                  <td>{p.referenceNo || '-'}</td>
                   <td>{p.paymentType === 'bill_then_payment' ? 'Bill + Payment' : 'Direct Slip'}</td>
                   <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
                   <td>{p.slipUrl ? <a href={p.slipUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
+                  <td>
+                    <button className="hw-delete-btn" onClick={() => handleDeleteContractorPayment(p.contractorId, p._id)}>
+                      Delete
+                    </button>
+                  </td>
                 </tr>
               ))
-            )
           )}
         </tbody>
       </table>
@@ -864,6 +1172,7 @@ function ConstructionPayments() {
 // ---------- Sub-section: Hardware ----------
 function Hardware() {
   const [hwTab, setHwTab] = useState('suppliers'); // 'suppliers' | 'finder'
+  const [projectNames, refetchProjectNames] = useProjectNames();
 
   const [hardwareList, setHardwareList] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -882,6 +1191,19 @@ function Hardware() {
   const [orderSelections, setOrderSelections] = useState({});
   const [lastOrderTotal, setLastOrderTotal] = useState(null);
   const [isOrderSubmitting, setIsOrderSubmitting] = useState(false);
+
+  // Bill + bank payment recording, tagged with a project name
+  const [recordingPaymentFor, setRecordingPaymentFor] = useState(null);
+  const [paymentForm, setPaymentForm] = useState({
+    projectName: '',
+    amount: '',
+    date: '',
+    referenceNo: '',
+    note: '',
+  });
+  const [paymentBillFile, setPaymentBillFile] = useState(null);
+  const [paymentSlipFile, setPaymentSlipFile] = useState(null);
+  const [isPaymentSubmitting, setIsPaymentSubmitting] = useState(false);
 
   useEffect(() => {
     fetchHardware();
@@ -979,8 +1301,69 @@ function Hardware() {
     }
   };
 
+  const handleDeleteSupplier = async (hardwareId) => {
+    if (!window.confirm('Delete this hardware supplier? This cannot be undone.')) return;
+    try {
+      await axios.delete(`http://localhost:5000/api/hardware/${hardwareId}`);
+      setHardwareList((prev) => prev.filter((hw) => hw._id !== hardwareId));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteHardwarePayment = async (hardwareId, paymentId) => {
+    if (!window.confirm('Delete this payment? This cannot be undone.')) return;
+    try {
+      const res = await axios.delete(`http://localhost:5000/api/hardware/${hardwareId}/payments/${paymentId}`);
+      const updatedHardware = res.data.hardware;
+      setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const openPaymentForm = (hardware) => {
+    setRecordingPaymentFor(hardware);
+    setPaymentForm({ projectName: '', amount: '', date: '', referenceNo: '', note: '' });
+    setPaymentBillFile(null);
+    setPaymentSlipFile(null);
+  };
+
+  const closePaymentForm = () => setRecordingPaymentFor(null);
+
+  const handleRecordPayment = async (e) => {
+    e.preventDefault();
+    if (!recordingPaymentFor || isPaymentSubmitting) return;
+    setIsPaymentSubmitting(true);
+    try {
+      const data = new FormData();
+      data.append('projectName', paymentForm.projectName);
+      data.append('amount', paymentForm.amount);
+      if (paymentForm.date) data.append('date', paymentForm.date);
+      data.append('referenceNo', paymentForm.referenceNo);
+      data.append('note', paymentForm.note);
+      if (paymentBillFile) data.append('bill', paymentBillFile);
+      if (paymentSlipFile) data.append('slip', paymentSlipFile);
+
+      const res = await axios.post(
+        `http://localhost:5000/api/hardware/${recordingPaymentFor._id}/payments`,
+        data,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      const updatedHardware = res.data.hardware;
+      setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
+      closePaymentForm();
+      refetchProjectNames();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsPaymentSubmitting(false);
+    }
+  };
+
   const itemTotal = (item) => item.unitPrice * item.quantity;
   const hardwareTotal = (hw) => hw.items.reduce((sum, i) => sum + itemTotal(i), 0);
+  const paymentsTotal = (hw) => hw.payments.reduce((sum, p) => sum + p.amount, 0);
 
   // ---------- Order form logic ----------
   const openOrderForm = (hardware) => {
@@ -1107,6 +1490,8 @@ function Hardware() {
                 <div className="hw-supplier-actions">
                   <button className="sa-manage-btn" onClick={() => openItemForm(hw)}>+ Add Item</button>
                   <button className="sa-manage-btn" onClick={() => openOrderForm(hw)}>Place Order</button>
+                  <button className="sa-manage-btn" onClick={() => openPaymentForm(hw)}>+ Record Payment</button>
+                  <button className="hw-delete-btn" onClick={() => handleDeleteSupplier(hw._id)}>Delete</button>
                 </div>
               </div>
 
@@ -1236,6 +1621,73 @@ function Hardware() {
                 </form>
               )}
 
+              {/* RECORD PAYMENT - bill received from supplier + the bank payment made, tagged to a project */}
+              {recordingPaymentFor?._id === hw._id && (
+                <form onSubmit={handleRecordPayment} className="hw-item-form">
+                  <p className="sa-group-title">Record bill &amp; payment</p>
+                  <div className="ge-form-row">
+                    <ProjectNameField
+                      value={paymentForm.projectName}
+                      onChange={(val) => setPaymentForm({ ...paymentForm, projectName: val })}
+                      projectNames={projectNames}
+                    />
+                    <input
+                      type="number"
+                      placeholder="Amount (Rs.)"
+                      value={paymentForm.amount}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="ge-form-row">
+                    <input
+                      type="date"
+                      value={paymentForm.date}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Cheque / Reference No."
+                      value={paymentForm.referenceNo}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, referenceNo: e.target.value })}
+                    />
+                  </div>
+                  <div className="ge-form-row upload-row">
+                    <div className="upload-field">
+                      <label className="upload-field-label">Bill from hardware</label>
+                      <input
+                        type="file"
+                        accept=".jpg,.jpeg,.png,.pdf"
+                        onChange={(e) => setPaymentBillFile(e.target.files[0])}
+                      />
+                    </div>
+                    <div className="upload-field">
+                      <label className="upload-field-label">Bank payment slip</label>
+                      <input
+                        type="file"
+                        accept=".jpg,.jpeg,.png,.pdf"
+                        onChange={(e) => setPaymentSlipFile(e.target.files[0])}
+                      />
+                    </div>
+                  </div>
+                  <textarea
+                    placeholder="Note (optional)"
+                    value={paymentForm.note}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, note: e.target.value })}
+                    rows={2}
+                    className="payment-note-textarea"
+                  />
+                  <div className="hw-edit-actions">
+                    <button type="submit" className="ge-save-btn" disabled={isPaymentSubmitting}>
+                      {isPaymentSubmitting ? 'Saving...' : 'Save Payment'}
+                    </button>
+                    <button type="button" className="sa-reject-btn" onClick={closePaymentForm}>
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+
               {hw.items.length > 0 && (
                 <table className="sa-table hw-items-table">
                   <thead>
@@ -1273,6 +1725,49 @@ function Hardware() {
                   <span>{hw.items.length} item(s)</span>
                   <span>Overall Price: Rs. {hardwareTotal(hw).toLocaleString()}</span>
                 </div>
+              )}
+
+              {/* BILLS & PAYMENTS made to this supplier - shown grouped under its name */}
+              {hw.payments.length > 0 && (
+                <>
+                  <p className="sa-group-title hw-payments-title">Bills &amp; Payments</p>
+                  <table className="sa-table hw-items-table">
+                    <thead>
+                      <tr>
+                        <th>Project</th>
+                        <th>Amount (Rs.)</th>
+                        <th>Date</th>
+                        <th>Reference No.</th>
+                        <th>Bill</th>
+                        <th>Slip</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...hw.payments]
+                        .sort((a, b) => a.projectName.localeCompare(b.projectName, undefined, { sensitivity: 'base' }))
+                        .map((p) => (
+                        <tr key={p._id}>
+                          <td>{p.projectName}</td>
+                          <td>{p.amount.toLocaleString()}</td>
+                          <td>{new Date(p.date).toLocaleDateString()}</td>
+                          <td>{p.referenceNo || '-'}</td>
+                          <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
+                          <td>{p.slipUrl ? <a href={p.slipUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
+                          <td>
+                            <button className="hw-delete-btn" onClick={() => handleDeleteHardwarePayment(hw._id, p._id)}>
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="ge-summary hw-total-summary">
+                    <span>{hw.payments.length} payment(s)</span>
+                    <span>Total Paid: Rs. {paymentsTotal(hw).toLocaleString()}</span>
+                  </div>
+                </>
               )}
             </div>
           ))}
@@ -1419,6 +1914,492 @@ function HardwarePriceFinder() {
             ))
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Sub-section: Project Summary ----------
+// Search by project (construction) name to see, in one place: every
+// contractor's estimation plan + amount paid against it, and every hardware
+// supplier's payments for that project - plus grand totals.
+function ProjectSummary() {
+  const [projectNames, refetchProjectNames] = useProjectNames();
+  const [projectName, setProjectName] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+  const [searchedFor, setSearchedFor] = useState('');
+
+  // Contractors / hardware suppliers, needed for the "add plan / payment
+  // straight from this project" quick-action forms below.
+  const [allContractors, setAllContractors] = useState([]);
+  const [allHardware, setAllHardware] = useState([]);
+  const [quickAction, setQuickAction] = useState(null); // null | 'plan' | 'hardware' | 'other'
+
+  const [planForm, setPlanForm] = useState({ contractorId: '', totalEstimate: '', note: '' });
+  const [planFile, setPlanFile] = useState(null);
+
+  const [hwPayForm, setHwPayForm] = useState({ hardwareId: '', amount: '', date: '', referenceNo: '', note: '' });
+  const [hwBillFile, setHwBillFile] = useState(null);
+  const [hwSlipFile, setHwSlipFile] = useState(null);
+
+  const [otherForm, setOtherForm] = useState({ title: '', amount: '', paidTo: '', description: '', date: '' });
+  const [otherBillFile, setOtherBillFile] = useState(null);
+
+  const [isQuickSubmitting, setIsQuickSubmitting] = useState(false);
+
+  useEffect(() => {
+    axios.get('http://localhost:5000/api/contractors').then((res) => setAllContractors(res.data)).catch(console.error);
+    axios.get('http://localhost:5000/api/hardware').then((res) => setAllHardware(res.data)).catch(console.error);
+  }, []);
+
+  const runSearch = async (trimmed) => {
+    if (!trimmed) return;
+    setIsSearching(true);
+    setError('');
+    try {
+      const res = await axios.get(
+        `http://localhost:5000/api/projects/${encodeURIComponent(trimmed)}/summary`
+      );
+      setResult(res.data);
+      setSearchedFor(trimmed);
+    } catch (err) {
+      console.error(err);
+      setError('Something went wrong while fetching the project summary.');
+      setResult(null);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    const trimmed = projectName.trim();
+    if (!trimmed || isSearching) return;
+    await runSearch(trimmed);
+  };
+
+  const closeQuickAction = () => {
+    setQuickAction(null);
+    setPlanForm({ contractorId: '', totalEstimate: '', note: '' });
+    setPlanFile(null);
+    setHwPayForm({ hardwareId: '', amount: '', date: '', referenceNo: '', note: '' });
+    setHwBillFile(null);
+    setHwSlipFile(null);
+    setOtherForm({ title: '', amount: '', paidTo: '', description: '', date: '' });
+    setOtherBillFile(null);
+  };
+
+  const afterQuickAdd = async () => {
+    closeQuickAction();
+    refetchProjectNames();
+    await runSearch(searchedFor);
+  };
+
+  const handleQuickAddPlan = async (e) => {
+    e.preventDefault();
+    if (!planForm.contractorId || isQuickSubmitting) return;
+    setIsQuickSubmitting(true);
+    try {
+      const data = new FormData();
+      data.append('projectName', searchedFor);
+      data.append('totalEstimate', planForm.totalEstimate);
+      data.append('note', planForm.note);
+      if (planFile) data.append('plan', planFile);
+      await axios.post(
+        `http://localhost:5000/api/contractors/${planForm.contractorId}/plans`,
+        data,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      await afterQuickAdd();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsQuickSubmitting(false);
+    }
+  };
+
+  const handleQuickAddHardwarePayment = async (e) => {
+    e.preventDefault();
+    if (!hwPayForm.hardwareId || isQuickSubmitting) return;
+    setIsQuickSubmitting(true);
+    try {
+      const data = new FormData();
+      data.append('projectName', searchedFor);
+      data.append('amount', hwPayForm.amount);
+      if (hwPayForm.date) data.append('date', hwPayForm.date);
+      data.append('referenceNo', hwPayForm.referenceNo);
+      data.append('note', hwPayForm.note);
+      if (hwBillFile) data.append('bill', hwBillFile);
+      if (hwSlipFile) data.append('slip', hwSlipFile);
+      await axios.post(
+        `http://localhost:5000/api/hardware/${hwPayForm.hardwareId}/payments`,
+        data,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      await afterQuickAdd();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsQuickSubmitting(false);
+    }
+  };
+
+  const handleQuickAddOtherPayment = async (e) => {
+    e.preventDefault();
+    if (isQuickSubmitting) return;
+    setIsQuickSubmitting(true);
+    try {
+      const data = new FormData();
+      data.append('title', otherForm.title);
+      data.append('amount', otherForm.amount);
+      data.append('paidTo', otherForm.paidTo);
+      data.append('projectName', searchedFor);
+      data.append('description', otherForm.description);
+      if (otherForm.date) data.append('date', otherForm.date);
+      if (otherBillFile) data.append('bill', otherBillFile);
+      await axios.post('http://localhost:5000/api/construction-payments', data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      await afterQuickAdd();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsQuickSubmitting(false);
+    }
+  };
+
+  const hasData =
+    result && (result.contractors.length > 0 || result.hardware.length > 0 || (result.otherPayments || []).length > 0);
+
+  return (
+    <div className="project-summary">
+      <form className="ge-form project-search-form" onSubmit={handleSearch}>
+        <p className="sa-group-title">Search by project / construction name</p>
+        <div className="ge-form-row">
+          <select
+            value={projectNames.includes(projectName) ? projectName : ''}
+            onChange={(e) => setProjectName(e.target.value)}
+          >
+            <option value="">
+              {projectNames.length === 0 ? 'No projects yet' : 'Select project (A-Z)...'}
+            </option>
+            {projectNames.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+          <input
+            type="text"
+            placeholder="...or type a project name"
+            value={projectName}
+            onChange={(e) => setProjectName(e.target.value)}
+          />
+          <button type="submit" className="ge-save-btn" disabled={isSearching}>
+            {isSearching ? 'Searching...' : 'Search'}
+          </button>
+        </div>
+        {error && <p className="hw-finder-error">{error}</p>}
+      </form>
+
+      {result && !hasData && (
+        <p className="hw-empty-text">No contractor plans, hardware payments, or other payments found for "{searchedFor}".</p>
+      )}
+
+      {searchedFor && (
+        <div className="ge-header project-quick-actions-header">
+          <p className="sa-group-title project-section-title">Add to "{searchedFor}"</p>
+          <div className="project-quick-actions">
+            <button type="button" className="hw-finder-add-btn" onClick={() => setQuickAction(quickAction === 'plan' ? null : 'plan')}>
+              {quickAction === 'plan' ? 'Cancel' : '+ Upload Estimation Plan'}
+            </button>
+            <button type="button" className="hw-finder-add-btn" onClick={() => setQuickAction(quickAction === 'hardware' ? null : 'hardware')}>
+              {quickAction === 'hardware' ? 'Cancel' : '+ Hardware Payment'}
+            </button>
+            <button type="button" className="hw-finder-add-btn" onClick={() => setQuickAction(quickAction === 'other' ? null : 'other')}>
+              {quickAction === 'other' ? 'Cancel' : '+ Other Payment'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {quickAction === 'plan' && (
+        <form onSubmit={handleQuickAddPlan} className="hw-item-form">
+          <div className="ge-form-row">
+            <select
+              value={planForm.contractorId}
+              onChange={(e) => setPlanForm({ ...planForm, contractorId: e.target.value })}
+              required
+            >
+              <option value="">Select contractor...</option>
+              {allContractors.map((c) => (
+                <option key={c._id} value={c._id}>{c.name}</option>
+              ))}
+            </select>
+            <input
+              type="number"
+              placeholder="Total estimate (Rs.)"
+              value={planForm.totalEstimate}
+              onChange={(e) => setPlanForm({ ...planForm, totalEstimate: e.target.value })}
+              required
+            />
+          </div>
+          <div className="ge-form-row">
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" onChange={(e) => setPlanFile(e.target.files[0])} />
+          </div>
+          <textarea
+            placeholder="Note (optional)"
+            value={planForm.note}
+            onChange={(e) => setPlanForm({ ...planForm, note: e.target.value })}
+            rows={2}
+          />
+          <button type="submit" className="ge-save-btn" disabled={isQuickSubmitting}>
+            {isQuickSubmitting ? 'Saving...' : 'Save Plan'}
+          </button>
+        </form>
+      )}
+
+      {quickAction === 'hardware' && (
+        <form onSubmit={handleQuickAddHardwarePayment} className="hw-item-form">
+          <div className="ge-form-row">
+            <select
+              value={hwPayForm.hardwareId}
+              onChange={(e) => setHwPayForm({ ...hwPayForm, hardwareId: e.target.value })}
+              required
+            >
+              <option value="">Select hardware supplier...</option>
+              {allHardware.map((hw) => (
+                <option key={hw._id} value={hw._id}>{hw.supplierName}</option>
+              ))}
+            </select>
+            <input
+              type="number"
+              placeholder="Amount (Rs.)"
+              value={hwPayForm.amount}
+              onChange={(e) => setHwPayForm({ ...hwPayForm, amount: e.target.value })}
+              required
+            />
+          </div>
+          <div className="ge-form-row">
+            <input
+              type="date"
+              value={hwPayForm.date}
+              onChange={(e) => setHwPayForm({ ...hwPayForm, date: e.target.value })}
+            />
+            <input
+              type="text"
+              placeholder="Reference No."
+              value={hwPayForm.referenceNo}
+              onChange={(e) => setHwPayForm({ ...hwPayForm, referenceNo: e.target.value })}
+            />
+          </div>
+          <div className="ge-form-row upload-row">
+            <div className="upload-field">
+              <label className="upload-field-label">Bill</label>
+              <input type="file" accept=".jpg,.jpeg,.png,.pdf" onChange={(e) => setHwBillFile(e.target.files[0])} />
+            </div>
+            <div className="upload-field">
+              <label className="upload-field-label">Bank slip</label>
+              <input type="file" accept=".jpg,.jpeg,.png,.pdf" onChange={(e) => setHwSlipFile(e.target.files[0])} />
+            </div>
+          </div>
+          <textarea
+            placeholder="Note (optional)"
+            value={hwPayForm.note}
+            onChange={(e) => setHwPayForm({ ...hwPayForm, note: e.target.value })}
+            rows={2}
+          />
+          <button type="submit" className="ge-save-btn" disabled={isQuickSubmitting}>
+            {isQuickSubmitting ? 'Saving...' : 'Save Payment'}
+          </button>
+        </form>
+      )}
+
+      {quickAction === 'other' && (
+        <form onSubmit={handleQuickAddOtherPayment} className="hw-item-form">
+          <div className="ge-form-row">
+            <input
+              type="text"
+              placeholder="Payment title"
+              value={otherForm.title}
+              onChange={(e) => setOtherForm({ ...otherForm, title: e.target.value })}
+              required
+            />
+            <input
+              type="number"
+              placeholder="Amount (Rs.)"
+              value={otherForm.amount}
+              onChange={(e) => setOtherForm({ ...otherForm, amount: e.target.value })}
+              required
+            />
+          </div>
+          <div className="ge-form-row">
+            <input
+              type="text"
+              placeholder="Paid to"
+              value={otherForm.paidTo}
+              onChange={(e) => setOtherForm({ ...otherForm, paidTo: e.target.value })}
+            />
+            <input
+              type="date"
+              value={otherForm.date}
+              onChange={(e) => setOtherForm({ ...otherForm, date: e.target.value })}
+            />
+          </div>
+          <div className="ge-form-row">
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" onChange={(e) => setOtherBillFile(e.target.files[0])} />
+          </div>
+          <textarea
+            placeholder="Description (optional)"
+            value={otherForm.description}
+            onChange={(e) => setOtherForm({ ...otherForm, description: e.target.value })}
+            rows={2}
+          />
+          <button type="submit" className="ge-save-btn" disabled={isQuickSubmitting}>
+            {isQuickSubmitting ? 'Saving...' : 'Save Payment'}
+          </button>
+        </form>
+      )}
+
+      {hasData && (
+        <>
+          <div className="project-summary-totals">
+            <div className="sa-stat-card sa-stat-total">
+              <p>Total Estimated</p>
+              <h2>Rs. {result.summary.totalEstimate.toLocaleString()}</h2>
+            </div>
+            <div className="sa-stat-card sa-stat-approved">
+              <p>Paid to Contractors</p>
+              <h2>Rs. {result.summary.totalContractorPaid.toLocaleString()}</h2>
+            </div>
+            <div className="sa-stat-card">
+              <p>Paid to Hardware</p>
+              <h2>Rs. {result.summary.totalHardwarePaid.toLocaleString()}</h2>
+            </div>
+            <div className="sa-stat-card">
+              <p>Other Payments</p>
+              <h2>Rs. {result.summary.totalOtherPaid.toLocaleString()}</h2>
+            </div>
+            <div className="sa-stat-card sa-stat-rejected">
+              <p>Remaining (vs Estimate)</p>
+              <h2>Rs. {result.summary.remaining.toLocaleString()}</h2>
+            </div>
+          </div>
+
+          {result.contractors.length > 0 && (
+            <div className="project-section">
+              <p className="sa-group-title project-section-title">Contractor Breakdown</p>
+              {result.contractors.map((c) => (
+                <div key={c.contractorId} className="hw-quote-card project-contractor-card">
+                  <div className="hw-quote-card-header">
+                    <div>
+                      <h4 className="hw-inline-heading">{c.name}</h4>
+                      <p className="hw-supplier-phone">{c.phone}</p>
+                    </div>
+                    <div className="hw-quote-card-header-right">
+                      <span className="hw-quote-total">
+                        Rs. {c.totalPaid.toLocaleString()} / {c.totalEstimate.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {c.payments.length > 0 && (
+                    <table className="sa-table hw-items-table">
+                      <thead>
+                        <tr>
+                          <th>Amount (Rs.)</th>
+                          <th>Date</th>
+                          <th>Reference No.</th>
+                          <th>Method</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {c.payments.map((p, i) => (
+                          <tr key={i}>
+                            <td>{p.amount.toLocaleString()}</td>
+                            <td>{new Date(p.date).toLocaleDateString()}</td>
+                            <td>{p.referenceNo || '-'}</td>
+                            <td>{p.paymentType === 'bill_then_payment' ? 'Bill + Payment' : 'Direct Slip'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {result.hardware.length > 0 && (
+            <div className="project-section">
+              <p className="sa-group-title project-section-title">Hardware Breakdown (highest spend first)</p>
+              {result.hardware.map((hw) => (
+                <div key={hw.hardwareId} className="hw-quote-card project-contractor-card">
+                  <div className="hw-quote-card-header">
+                    <div>
+                      <h4 className="hw-inline-heading">{hw.supplierName}</h4>
+                      <p className="hw-supplier-phone">{hw.phone}</p>
+                    </div>
+                    <div className="hw-quote-card-header-right">
+                      <span className="hw-quote-total">Rs. {hw.totalPaid.toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  <table className="sa-table hw-items-table">
+                    <thead>
+                      <tr>
+                        <th>Amount (Rs.)</th>
+                        <th>Date</th>
+                        <th>Reference No.</th>
+                        <th>Bill</th>
+                        <th>Slip</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hw.payments.map((p, i) => (
+                        <tr key={i}>
+                          <td>{p.amount.toLocaleString()}</td>
+                          <td>{new Date(p.date).toLocaleDateString()}</td>
+                          <td>{p.referenceNo || '-'}</td>
+                          <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
+                          <td>{p.slipUrl ? <a href={p.slipUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {(result.otherPayments || []).length > 0 && (
+            <div className="project-section">
+              <p className="sa-group-title project-section-title">Other Payments</p>
+              <table className="sa-table hw-items-table">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Paid To</th>
+                    <th>Amount (Rs.)</th>
+                    <th>Date</th>
+                    <th>Bill</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.otherPayments.map((p) => (
+                    <tr key={p._id}>
+                      <td>{p.title}</td>
+                      <td>{p.paidTo || '-'}</td>
+                      <td>{p.amount.toLocaleString()}</td>
+                      <td>{new Date(p.date).toLocaleDateString()}</td>
+                      <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

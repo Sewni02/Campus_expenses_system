@@ -19,11 +19,24 @@ const orderSchema = new mongoose.Schema({
   date: { type: Date, default: Date.now },
 });
 
+// A bill received from this hardware supplier + the bank payment made
+// against it, tagged with the project it was bought for.
+const paymentSchema = new mongoose.Schema({
+  projectName: { type: String, required: true },
+  amount: { type: Number, required: true },
+  date: { type: Date, default: Date.now },
+  billUrl: { type: String },
+  slipUrl: { type: String },
+  referenceNo: { type: String },
+  note: { type: String },
+});
+
 const hardwareSchema = new mongoose.Schema({
   supplierName: { type: String, required: true },
   phone: { type: String, required: true },
   items: [itemSchema],
   orders: [orderSchema],
+  payments: [paymentSchema],
 }, { timestamps: true });
 
 module.exports = mongoose.model('Hardware', hardwareSchema);
