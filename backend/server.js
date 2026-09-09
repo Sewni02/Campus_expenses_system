@@ -3,8 +3,6 @@ const cors = require('cors');
 require('dotenv').config();
 
 const connectDB = require('./config/db');
-const authRoutes = require('./routes/auth.routes');
-const adminRoutes = require('./routes/admin.routes');
 const expenseRoutes = require('./routes/expense.routes');
 const contractorRoutes = require('./routes/contractor.routes');
 const constructionPaymentRoutes = require('./routes/constructionPayment.routes');
@@ -18,8 +16,6 @@ connectDB();
 app.use(cors());
 app.use(express.json());
 
-app.use('/api/auth', authRoutes);
-app.use('/api/admin', adminRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/contractors', contractorRoutes);
 app.use('/api/construction-payments', constructionPaymentRoutes);
