@@ -2,6 +2,93 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import './SuperAdminDashboard.css';
 
+// ---------- Shared input sanitizers & formatters ----------
+// Name fields: letters and spaces only (no digits, no special characters)
+const sanitizeNameInput = (value) => value.replace(/[^A-Za-z\s]/g, '');
+
+// Phone fields: digits only, capped at 10 digits
+const sanitizePhoneInput = (value) => value.replace(/\D/g, '').slice(0, 10);
+
+// Money fields: digits + a single decimal point only
+const sanitizeAmountInput = (value) => {
+  let cleaned = value.replace(/[^0-9.]/g, '');
+  const firstDot = cleaned.indexOf('.');
+  if (firstDot !== -1) {
+    cleaned = cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+  }
+  return cleaned;
+};
+
+// Displays any number as "LKR 12,345.00"
+const formatLKR = (value) => {
+  const num = Number(value) || 0;
+  return `LKR ${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+// Common Sri Lankan banks shown in every bank-name dropdown.
+const SRI_LANKAN_BANKS = [
+  'Bank of Ceylon',
+  'People\'s Bank',
+  'Commercial Bank of Ceylon',
+  'Hatton National Bank',
+  'Sampath Bank',
+  'Seylan Bank',
+  'National Savings Bank',
+  'Nations Trust Bank',
+  'DFCC Bank',
+  'Pan Asia Banking Corporation',
+  'Union Bank of Colombo',
+  'NDB Bank',
+  'Amana Bank',
+  'Cargills Bank',
+  'HSBC',
+  'Standard Chartered Bank',
+];
+
+// A bank-name field: a dropdown of common Sri Lankan banks, with an
+// "Other" option that reveals a text input for anything not listed
+// (also used so an auto-filled value that isn't in the list still shows up).
+function BankNameField({ value, onChange, required = false }) {
+  const isKnownBank = value === '' || SRI_LANKAN_BANKS.includes(value);
+  const [addingOther, setAddingOther] = useState(!isKnownBank);
+
+  useEffect(() => {
+    setAddingOther(!(value === '' || SRI_LANKAN_BANKS.includes(value)));
+  }, [value]);
+
+  const handleSelectChange = (e) => {
+    if (e.target.value === '__other__') {
+      setAddingOther(true);
+      onChange('');
+    } else {
+      setAddingOther(false);
+      onChange(e.target.value);
+    }
+  };
+
+  if (addingOther) {
+    return (
+      <input
+        type="text"
+        placeholder="Bank name"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required={required}
+      />
+    );
+  }
+
+  return (
+    <select value={value} onChange={handleSelectChange} required={required}>
+      <option value="">Select bank...</option>
+      {SRI_LANKAN_BANKS.map((bank) => (
+        <option key={bank} value={bank}>{bank}</option>
+      ))}
+      <option value="__other__">Other...</option>
+    </select>
+  );
+}
+
 // Every project name that currently exists anywhere in the system
 // (estimation plans, contractor/hardware/other payments), sorted A-Z.
 // Shared by every form that needs to tag something with a project.
@@ -371,11 +458,11 @@ function Contractors() {
   const [projectNames, refetchProjectNames] = useProjectNames();
   const [searchTerm, setSearchTerm] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ name: '', phone: '', registrationDate: '' });
+  const [formData, setFormData] = useState({ name: '', phone: '', registrationDate: '', accountNumber: '', bankName: '', bankBranch: '' });
 
   const [viewingContractor, setViewingContractor] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ name: '', phone: '', registrationDate: '' });
+  const [editForm, setEditForm] = useState({ name: '', phone: '', registrationDate: '', accountNumber: '', bankName: '', bankBranch: '' });
 
   // Estimation plans for the contractor currently being viewed
   const [showPlanForm, setShowPlanForm] = useState(false);
@@ -409,7 +496,7 @@ function Contractors() {
     try {
       const res = await axios.post('http://localhost:5000/api/contractors', formData);
       setContractors((prev) => [res.data.contractor, ...prev]);
-      setFormData({ name: '', phone: '', registrationDate: '' });
+      setFormData({ name: '', phone: '', registrationDate: '', accountNumber: '', bankName: '', bankBranch: '' });
       setShowForm(false);
     } catch (err) {
       console.error(err);
@@ -432,6 +519,9 @@ function Contractors() {
     setEditForm({
       name: viewingContractor.name,
       phone: viewingContractor.phone,
+      accountNumber: viewingContractor.accountNumber || '',
+      bankName: viewingContractor.bankName || '',
+      bankBranch: viewingContractor.bankBranch || '',
       registrationDate: viewingContractor.registrationDate
         ? new Date(viewingContractor.registrationDate).toISOString().slice(0, 10)
         : '',
@@ -460,6 +550,7 @@ function Contractors() {
       closeProfile();
     } catch (err) {
       console.error(err);
+      alert(err.response?.data?.message || 'Could not delete the contractor. Please check the backend server is running and try again.');
     }
   };
 
@@ -477,7 +568,6 @@ function Contractors() {
       const res = await axios.post(
         `http://localhost:5000/api/contractors/${viewingContractor._id}/plans`,
         data,
-        { headers: { 'Content-Type': 'multipart/form-data' } }
       );
       const updated = res.data.contractor;
       setContractors((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
@@ -504,6 +594,7 @@ function Contractors() {
       setViewingContractor(updated);
     } catch (err) {
       console.error(err);
+      alert(err.response?.data?.message || 'Could not delete the plan. Please check the backend server is running and try again.');
     }
   };
 
@@ -538,14 +629,15 @@ function Contractors() {
               type="text"
               placeholder="Contractor name"
               value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              onChange={(e) => setFormData({ ...formData, name: sanitizeNameInput(e.target.value) })}
               required
             />
             <input
               type="text"
               placeholder="Phone number"
               value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              onChange={(e) => setFormData({ ...formData, phone: sanitizePhoneInput(e.target.value) })}
+              maxLength={10}
               required
             />
             <input
@@ -553,6 +645,11 @@ function Contractors() {
               value={formData.registrationDate}
               onChange={(e) => setFormData({ ...formData, registrationDate: e.target.value })}
             />
+          </div>
+          <div className="ge-form-row">
+            <input type="text" placeholder="Account number" value={formData.accountNumber} onChange={(e) => setFormData({ ...formData, accountNumber: e.target.value })} />
+            <BankNameField value={formData.bankName} onChange={(val) => setFormData({ ...formData, bankName: val })} />
+            <input type="text" placeholder="Branch" value={formData.bankBranch} onChange={(e) => setFormData({ ...formData, bankBranch: e.target.value })} />
           </div>
           <button type="submit" className="ge-save-btn">Save Contractor</button>
         </form>
@@ -565,7 +662,7 @@ function Contractors() {
               <th>Name</th>
               <th>Phone</th>
               {!viewingContractor && <th>Registered On</th>}
-              <th>Total Paid (Rs.)</th>
+              <th>Total Paid (LKR)</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -585,7 +682,7 @@ function Contractors() {
                   <td>{c.name}</td>
                   <td>{c.phone}</td>
                   {!viewingContractor && <td>{new Date(c.registrationDate).toLocaleDateString()}</td>}
-                  <td>{totalPaid(c).toLocaleString()}</td>
+                  <td>{formatLKR(totalPaid(c))}</td>
                   <td>
                     <button className="sa-manage-btn" onClick={() => openProfile(c)}>
                       View Profile
@@ -608,17 +705,20 @@ function Contractors() {
             {!isEditing ? (
               <>
                 <p className="sa-panel-email">{viewingContractor.phone}</p>
+                <div className="ge-summary"><span>Account Number</span><span>{viewingContractor.accountNumber || '-'}</span></div>
+                <div className="ge-summary"><span>Bank</span><span>{viewingContractor.bankName || '-'}</span></div>
+                <div className="ge-summary"><span>Branch</span><span>{viewingContractor.bankBranch || '-'}</span></div>
                 <div className="ge-summary contractor-summary-row">
                   <span>Registered On</span>
                   <span>{new Date(viewingContractor.registrationDate).toLocaleDateString()}</span>
                 </div>
                 <div className="ge-summary">
                   <span>Total Estimated (all plans)</span>
-                  <span>Rs. {totalEstimated(viewingContractor).toLocaleString()}</span>
+                  <span>{formatLKR(totalEstimated(viewingContractor))}</span>
                 </div>
                 <div className="ge-summary">
                   <span>Total Paid</span>
-                  <span>Rs. {totalPaid(viewingContractor).toLocaleString()}</span>
+                  <span>{formatLKR(totalPaid(viewingContractor))}</span>
                 </div>
 
                 <div className="sa-panel-actions">
@@ -649,9 +749,9 @@ function Contractors() {
                         />
                         <input
                           type="number"
-                          placeholder="Total estimate (Rs.)"
+                          placeholder="Total estimate (LKR)"
                           value={planForm.totalEstimate}
-                          onChange={(e) => setPlanForm({ ...planForm, totalEstimate: e.target.value })}
+                          onChange={(e) => setPlanForm({ ...planForm, totalEstimate: sanitizeAmountInput(e.target.value) })}
                           required
                         />
                       </div>
@@ -684,7 +784,7 @@ function Contractors() {
                         <div key={plan._id} className="plan-card">
                           <div className="plan-card-top">
                             <span className="plan-card-project">{plan.projectName}</span>
-                            <span className="plan-card-amount">Rs. {plan.totalEstimate.toLocaleString()}</span>
+                            <span className="plan-card-amount">{formatLKR(plan.totalEstimate)}</span>
                           </div>
                           <div className="plan-card-bottom">
                             <span>{new Date(plan.uploadedDate).toLocaleDateString()}</span>
@@ -710,7 +810,7 @@ function Contractors() {
                   <input
                     type="text"
                     value={editForm.name}
-                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    onChange={(e) => setEditForm({ ...editForm, name: sanitizeNameInput(e.target.value) })}
                     required
                   />
                 </div>
@@ -719,7 +819,8 @@ function Contractors() {
                   <input
                     type="text"
                     value={editForm.phone}
-                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                    onChange={(e) => setEditForm({ ...editForm, phone: sanitizePhoneInput(e.target.value) })}
+                    maxLength={10}
                     required
                   />
                 </div>
@@ -730,6 +831,18 @@ function Contractors() {
                     value={editForm.registrationDate}
                     onChange={(e) => setEditForm({ ...editForm, registrationDate: e.target.value })}
                   />
+                </div>
+                <div className="auth-field">
+                  <label>Account Number</label>
+                  <input type="text" value={editForm.accountNumber} onChange={(e) => setEditForm({ ...editForm, accountNumber: e.target.value })} />
+                </div>
+                <div className="auth-field">
+                  <label>Bank Name</label>
+                  <BankNameField value={editForm.bankName} onChange={(val) => setEditForm({ ...editForm, bankName: val })} />
+                </div>
+                <div className="auth-field">
+                  <label>Branch</label>
+                  <input type="text" value={editForm.bankBranch} onChange={(e) => setEditForm({ ...editForm, bankBranch: e.target.value })} />
                 </div>
 
                 <div className="sa-panel-actions">
@@ -752,7 +865,7 @@ function ConstructionPayments() {
   const [payments, setPayments] = useState([]);
   const [projectNames, refetchProjectNames] = useProjectNames();
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ title: '', amount: '', paidTo: '', reason: '', projectName: '', description: '', date: '' });
+  const [formData, setFormData] = useState({ title: '', amount: '', paidTo: '', referenceNo: '', projectName: '', description: '', date: '', accountNumber: '', bankName: '', bankBranch: '' });
   const [bill, setBill] = useState(null);
 
   // Contractor payment recording - always linked to one of the contractor's estimation plans
@@ -764,6 +877,9 @@ function ConstructionPayments() {
   const [payAmount, setPayAmount] = useState('');
   const [payDate, setPayDate] = useState('');
   const [payReferenceNo, setPayReferenceNo] = useState('');
+  const [payAccountNumber, setPayAccountNumber] = useState('');
+  const [payBankName, setPayBankName] = useState('');
+  const [payBankBranch, setPayBankBranch] = useState('');
   const [payReason, setPayReason] = useState('');
   const [payNote, setPayNote] = useState('');
   const [slipFile, setSlipFile] = useState(null);
@@ -800,9 +916,12 @@ function ConstructionPayments() {
       data.append('title', formData.title);
       data.append('amount', formData.amount);
       data.append('paidTo', formData.paidTo);
-      data.append('reason', formData.reason);
+      data.append('referenceNo', formData.referenceNo);
       data.append('projectName', formData.projectName);
       data.append('description', formData.description);
+      data.append('accountNumber', formData.accountNumber);
+      data.append('bankName', formData.bankName);
+      data.append('bankBranch', formData.bankBranch);
       if (formData.date) data.append('date', formData.date);
       if (bill) data.append('bill', bill);
 
@@ -810,7 +929,7 @@ function ConstructionPayments() {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      setFormData({ title: '', amount: '', paidTo: '', reason: '', projectName: '', description: '', date: '' });
+      setFormData({ title: '', amount: '', paidTo: '', referenceNo: '', projectName: '', description: '', date: '', accountNumber: '', bankName: '', bankBranch: '' });
       setBill(null);
       setShowForm(false);
       fetchPayments();
@@ -827,6 +946,7 @@ function ConstructionPayments() {
       setPayments((prev) => prev.filter((p) => p._id !== paymentId));
     } catch (err) {
       console.error(err);
+      alert(err.response?.data?.message || 'Could not delete the payment. Please check the backend server is running and try again.');
     }
   };
 
@@ -837,6 +957,9 @@ function ConstructionPayments() {
     setPayAmount('');
     setPayDate('');
     setPayReferenceNo('');
+    setPayAccountNumber('');
+    setPayBankName('');
+    setPayBankBranch('');
     setPayReason('');
     setPayNote('');
     setSlipFile(null);
@@ -859,13 +982,15 @@ function ConstructionPayments() {
       data.append('paymentType', paymentType);
       data.append('planId', planId);
       data.append('referenceNo', payReferenceNo);
+      data.append('accountNumber', payAccountNumber);
+      data.append('bankName', payBankName);
+      data.append('bankBranch', payBankBranch);
       if (slipFile) data.append('slip', slipFile);
       if (paymentType === 'bill_then_payment' && billFile) data.append('bill', billFile);
 
       await axios.post(
         `http://localhost:5000/api/contractors/${contractorId}/payments`,
         data,
-        { headers: { 'Content-Type': 'multipart/form-data' } }
       );
 
       resetContractorPayForm();
@@ -886,6 +1011,7 @@ function ConstructionPayments() {
       setContractors((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
     } catch (err) {
       console.error(err);
+      alert(err.response?.data?.message || 'Could not delete the payment. Please check the backend server is running and try again.');
     }
   };
 
@@ -913,9 +1039,9 @@ function ConstructionPayments() {
             />
             <input
               type="number"
-              placeholder="Amount (Rs.)"
+              placeholder="Amount (LKR)"
               value={formData.amount}
-              onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+              onChange={(e) => setFormData({ ...formData, amount: sanitizeAmountInput(e.target.value) })}
               required
             />
             <input
@@ -928,10 +1054,25 @@ function ConstructionPayments() {
           <div className="ge-form-row">
             <input
               type="text"
-              placeholder="Reason for payment"
-              value={formData.reason}
-              onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+              placeholder="Cheque / Reference No."
+              value={formData.referenceNo}
+              onChange={(e) => setFormData({ ...formData, referenceNo: e.target.value })}
               required
+            />
+          </div>
+          <div className="ge-form-row">
+            <input
+              type="text"
+              placeholder="Payee account number"
+              value={formData.accountNumber}
+              onChange={(e) => setFormData({ ...formData, accountNumber: e.target.value })}
+            />
+            <BankNameField value={formData.bankName} onChange={(val) => setFormData({ ...formData, bankName: val })} />
+            <input
+              type="text"
+              placeholder="Payee branch"
+              value={formData.bankBranch}
+              onChange={(e) => setFormData({ ...formData, bankBranch: e.target.value })}
             />
           </div>
           <div className="ge-form-row">
@@ -965,7 +1106,7 @@ function ConstructionPayments() {
 
       <div className="ge-summary">
         <span>{payments.length} payment(s)</span>
-        <span>Total: Rs. {totalPaid.toLocaleString()}</span>
+        <span>Total: {formatLKR(totalPaid)}</span>
       </div>
 
       <table className="sa-table">
@@ -973,9 +1114,11 @@ function ConstructionPayments() {
           <tr>
             <th>Title</th>
             <th>Paid To</th>
-            <th>Reason</th>
+            <th>Cheque / Reference No.</th>
             <th>Project</th>
-            <th>Amount (Rs.)</th>
+            <th>Amount (LKR)</th>
+            <th>Account No.</th>
+            <th>Bank / Branch</th>
             <th>Date</th>
             <th>Bill</th>
             <th></th>
@@ -984,7 +1127,7 @@ function ConstructionPayments() {
         <tbody>
           {payments.length === 0 ? (
             <tr>
-              <td colSpan="8" className="hw-empty-text">
+              <td colSpan="10" className="hw-empty-text">
                 No payments found
               </td>
             </tr>
@@ -995,9 +1138,11 @@ function ConstructionPayments() {
               <tr key={p._id}>
                 <td>{p.title}</td>
                 <td>{p.paidTo || '-'}</td>
-                <td>{p.reason || '-'}</td>
+                <td>{p.referenceNo || '-'}</td>
                 <td>{p.projectName || '-'}</td>
-                <td>{p.amount.toLocaleString()}</td>
+                <td>{formatLKR(p.amount)}</td>
+                <td>{p.accountNumber || '-'}</td>
+                <td>{[p.bankName, p.bankBranch].filter(Boolean).join(' / ') || '-'}</td>
                 <td>{new Date(p.date).toLocaleDateString()}</td>
                 <td>
                   {p.billUrl ? (
@@ -1027,8 +1172,13 @@ function ConstructionPayments() {
             <select
               value={contractorId}
               onChange={(e) => {
-                setContractorId(e.target.value);
+                const nextId = e.target.value;
+                const nextContractor = contractors.find((c) => c._id === nextId);
+                setContractorId(nextId);
                 setPlanId('');
+                setPayAccountNumber(nextContractor?.accountNumber || '');
+                setPayBankName(nextContractor?.bankName || '');
+                setPayBankBranch(nextContractor?.bankBranch || '');
               }}
               required
             >
@@ -1049,7 +1199,7 @@ function ConstructionPayments() {
                 .sort((a, b) => a.projectName.localeCompare(b.projectName, undefined, { sensitivity: 'base' }))
                 .map((plan) => (
                   <option key={plan._id} value={plan._id}>
-                    {plan.projectName} (Rs. {plan.totalEstimate.toLocaleString()})
+                    {plan.projectName} ({formatLKR(plan.totalEstimate)})
                   </option>
                 ))}
             </select>
@@ -1058,16 +1208,16 @@ function ConstructionPayments() {
           {selectedPlan && (
             <div className="ge-summary plan-preview-summary">
               <span>Project: {selectedPlan.projectName}</span>
-              <span>Plan Total: Rs. {selectedPlan.totalEstimate.toLocaleString()}</span>
+              <span>Plan Total: {formatLKR(selectedPlan.totalEstimate)}</span>
             </div>
           )}
 
           <div className="ge-form-row">
             <input
               type="number"
-              placeholder="Amount (Rs.)"
+              placeholder="Amount (LKR)"
               value={payAmount}
-              onChange={(e) => setPayAmount(e.target.value)}
+              onChange={(e) => setPayAmount(sanitizeAmountInput(e.target.value))}
               required
             />
             <input
@@ -1081,6 +1231,11 @@ function ConstructionPayments() {
               value={payReferenceNo}
               onChange={(e) => setPayReferenceNo(e.target.value)}
             />
+          </div>
+          <div className="ge-form-row">
+            <input type="text" placeholder="Payee account number" value={payAccountNumber} onChange={(e) => setPayAccountNumber(e.target.value)} />
+            <BankNameField value={payBankName} onChange={setPayBankName} />
+            <input type="text" placeholder="Payee branch" value={payBankBranch} onChange={(e) => setPayBankBranch(e.target.value)} />
           </div>
 
           <div className="ge-form-row">
@@ -1150,9 +1305,11 @@ function ConstructionPayments() {
           <tr>
             <th>Contractor</th>
             <th>Project</th>
-            <th>Amount (Rs.)</th>
+            <th>Amount (LKR)</th>
             <th>Date</th>
             <th>Reference No.</th>
+            <th>Account No.</th>
+            <th>Bank / Branch</th>
             <th>Reason</th>
             <th>Method</th>
             <th>Bill</th>
@@ -1163,7 +1320,7 @@ function ConstructionPayments() {
         <tbody>
           {contractors.flatMap((c) => c.payments).length === 0 ? (
             <tr>
-              <td colSpan="10" className="hw-empty-text">
+              <td colSpan="12" className="hw-empty-text">
                 No contractor payments recorded
               </td>
             </tr>
@@ -1175,9 +1332,11 @@ function ConstructionPayments() {
                 <tr key={`${p.contractorId}-${i}`}>
                   <td>{p.contractorName}</td>
                   <td>{p.projectName || '-'}</td>
-                  <td>{p.amount.toLocaleString()}</td>
+                  <td>{formatLKR(p.amount)}</td>
                   <td>{new Date(p.date).toLocaleDateString()}</td>
                   <td>{p.referenceNo || '-'}</td>
+                  <td>{p.accountNumber || '-'}</td>
+                  <td>{[p.bankName, p.bankBranch].filter(Boolean).join(' / ') || '-'}</td>
                   <td>{p.reason || '-'}</td>
                   <td>{p.paymentType === 'bill_then_payment' ? 'Bill + Payment' : 'Direct Slip'}</td>
                   <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
@@ -1203,8 +1362,12 @@ function Hardware() {
 
   const [hardwareList, setHardwareList] = useState([]);
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ supplierName: '', phone: '' });
+  const [formData, setFormData] = useState({ supplierName: '', phone: '', accountNumber: '', bankName: '', bankBranch: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [editingSupplierId, setEditingSupplierId] = useState(null);
+  const [editSupplierForm, setEditSupplierForm] = useState({ supplierName: '', phone: '', accountNumber: '', bankName: '', bankBranch: '' });
+  const [isEditSupplierSubmitting, setIsEditSupplierSubmitting] = useState(false);
 
   const [addingItemTo, setAddingItemTo] = useState(null);
   const [itemForm, setItemForm] = useState({ name: '', unitPrice: '', quantity: '' });
@@ -1226,10 +1389,12 @@ function Hardware() {
     amount: '',
     date: '',
     referenceNo: '',
-    reason: '',
+    accountNumber: '',
+    bankName: '',
+    bankBranch: '',
     note: '',
   });
-  const [paymentBillFile, setPaymentBillFile] = useState(null);
+  const [paymentBillFiles, setPaymentBillFiles] = useState([]);
   const [paymentSlipFile, setPaymentSlipFile] = useState(null);
   const [isPaymentSubmitting, setIsPaymentSubmitting] = useState(false);
 
@@ -1253,7 +1418,7 @@ function Hardware() {
     try {
       const res = await axios.post('http://localhost:5000/api/hardware', formData);
       setHardwareList((prev) => [...prev, res.data.hardware]);
-      setFormData({ supplierName: '', phone: '' });
+      setFormData({ supplierName: '', phone: '', accountNumber: '', bankName: '', bankBranch: '' });
       setShowForm(false);
     } catch (err) {
       console.error(err);
@@ -1326,6 +1491,34 @@ function Hardware() {
       setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
     } catch (err) {
       console.error(err);
+      alert(err.response?.data?.message || 'Could not delete the item. Please check the backend server is running and try again.');
+    }
+  };
+
+  const startEditSupplier = (hw) => {
+    setEditingSupplierId(hw._id);
+    setEditSupplierForm({ supplierName: hw.supplierName, phone: hw.phone, accountNumber: hw.accountNumber || '', bankName: hw.bankName || '', bankBranch: hw.bankBranch || '' });
+  };
+
+  const cancelEditSupplier = () => {
+    setEditingSupplierId(null);
+    setEditSupplierForm({ supplierName: '', phone: '', accountNumber: '', bankName: '', bankBranch: '' });
+  };
+
+  const handleUpdateSupplier = async (e, hardwareId) => {
+    e.preventDefault();
+    if (isEditSupplierSubmitting) return;
+    setIsEditSupplierSubmitting(true);
+    try {
+      const res = await axios.put(`http://localhost:5000/api/hardware/${hardwareId}`, editSupplierForm);
+      const updatedHardware = res.data.hardware;
+      setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
+      cancelEditSupplier();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not update the supplier. Please check the backend server is running and try again.');
+    } finally {
+      setIsEditSupplierSubmitting(false);
     }
   };
 
@@ -1336,6 +1529,7 @@ function Hardware() {
       setHardwareList((prev) => prev.filter((hw) => hw._id !== hardwareId));
     } catch (err) {
       console.error(err);
+      alert(err.response?.data?.message || 'Could not delete the supplier. Please check the backend server is running and try again.');
     }
   };
 
@@ -1347,13 +1541,14 @@ function Hardware() {
       setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
     } catch (err) {
       console.error(err);
+      alert(err.response?.data?.message || 'Could not delete the payment. Please check the backend server is running and try again.');
     }
   };
 
   const openPaymentForm = (hardware) => {
     setRecordingPaymentFor(hardware);
-    setPaymentForm({ projectName: '', amount: '', date: '', referenceNo: '', reason: '', note: '' });
-    setPaymentBillFile(null);
+    setPaymentForm({ projectName: '', amount: '', date: '', referenceNo: '', accountNumber: hardware.accountNumber || '', bankName: hardware.bankName || '', bankBranch: hardware.bankBranch || '', note: '' });
+    setPaymentBillFiles([]);
     setPaymentSlipFile(null);
   };
 
@@ -1362,6 +1557,14 @@ function Hardware() {
   const handleRecordPayment = async (e) => {
     e.preventDefault();
     if (!recordingPaymentFor || isPaymentSubmitting) return;
+    if (paymentBillFiles.length === 0) {
+      alert('Please select at least one hardware bill.');
+      return;
+    }
+    if (!paymentSlipFile) {
+      alert('Please select the bank payment slip.');
+      return;
+    }
     setIsPaymentSubmitting(true);
     try {
       const data = new FormData();
@@ -1369,15 +1572,16 @@ function Hardware() {
       data.append('amount', paymentForm.amount);
       if (paymentForm.date) data.append('date', paymentForm.date);
       data.append('referenceNo', paymentForm.referenceNo);
-      data.append('reason', paymentForm.reason);
+      data.append('accountNumber', paymentForm.accountNumber);
+      data.append('bankName', paymentForm.bankName);
+      data.append('bankBranch', paymentForm.bankBranch);
       data.append('note', paymentForm.note);
-      if (paymentBillFile) data.append('bill', paymentBillFile);
+      paymentBillFiles.forEach((file) => data.append('bills', file));
       if (paymentSlipFile) data.append('slip', paymentSlipFile);
 
       const res = await axios.post(
         `http://localhost:5000/api/hardware/${recordingPaymentFor._id}/payments`,
-        data,
-        { headers: { 'Content-Type': 'multipart/form-data' } }
+        data
       );
       const updatedHardware = res.data.hardware;
       setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
@@ -1385,6 +1589,7 @@ function Hardware() {
       refetchProjectNames();
     } catch (err) {
       console.error(err);
+      alert(err.response?.data?.message || 'Payment upload failed. Please check the backend server and try again.');
     } finally {
       setIsPaymentSubmitting(false);
     }
@@ -1488,16 +1693,22 @@ function Hardware() {
                   type="text"
                   placeholder="Hardware name"
                   value={formData.supplierName}
-                  onChange={(e) => setFormData({ ...formData, supplierName: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, supplierName: sanitizeNameInput(e.target.value) })}
                   required
                 />
                 <input
                   type="text"
                   placeholder="Phone number"
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, phone: sanitizePhoneInput(e.target.value) })}
+                  maxLength={10}
                   required
                 />
+              </div>
+              <div className="ge-form-row">
+                <input type="text" placeholder="Account number" value={formData.accountNumber} onChange={(e) => setFormData({ ...formData, accountNumber: e.target.value })} />
+                <BankNameField value={formData.bankName} onChange={(val) => setFormData({ ...formData, bankName: val })} />
+                <input type="text" placeholder="Branch" value={formData.bankBranch} onChange={(e) => setFormData({ ...formData, bankBranch: e.target.value })} />
               </div>
               <button type="submit" className="ge-save-btn" disabled={isSubmitting}>
                 {isSubmitting ? 'Saving...' : 'Save Hardware'}
@@ -1511,18 +1722,55 @@ function Hardware() {
 
           {hardwareList.map((hw) => (
             <div key={hw._id} className="ge-form hw-supplier-card">
-              <div className="ge-header">
-                <div>
-                  <h4 className="hw-inline-heading">{hw.supplierName}</h4>
-                  <p className="hw-supplier-phone">{hw.phone}</p>
+              {editingSupplierId === hw._id ? (
+                <form onSubmit={(e) => handleUpdateSupplier(e, hw._id)} className="hw-item-form">
+                  <div className="ge-form-row">
+                    <input
+                      type="text"
+                      placeholder="Supplier name"
+                      value={editSupplierForm.supplierName}
+                      onChange={(e) => setEditSupplierForm({ ...editSupplierForm, supplierName: sanitizeNameInput(e.target.value) })}
+                      required
+                    />
+                    <input
+                      type="text"
+                      placeholder="Phone"
+                      value={editSupplierForm.phone}
+                      onChange={(e) => setEditSupplierForm({ ...editSupplierForm, phone: sanitizePhoneInput(e.target.value) })}
+                      maxLength={10}
+                      required
+                    />
+                  </div>
+                  <div className="ge-form-row">
+                    <input type="text" placeholder="Account number" value={editSupplierForm.accountNumber} onChange={(e) => setEditSupplierForm({ ...editSupplierForm, accountNumber: e.target.value })} />
+                    <BankNameField value={editSupplierForm.bankName} onChange={(val) => setEditSupplierForm({ ...editSupplierForm, bankName: val })} />
+                    <input type="text" placeholder="Branch" value={editSupplierForm.bankBranch} onChange={(e) => setEditSupplierForm({ ...editSupplierForm, bankBranch: e.target.value })} />
+                  </div>
+                  <div className="sa-panel-actions">
+                    <button type="submit" className="sa-save-btn" disabled={isEditSupplierSubmitting}>
+                      {isEditSupplierSubmitting ? 'Saving...' : 'Save Changes'}
+                    </button>
+                    <button type="button" className="sa-reject-btn" onClick={cancelEditSupplier}>
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="ge-header">
+                  <div>
+                    <h4 className="hw-inline-heading">{hw.supplierName}</h4>
+                    <p className="hw-supplier-phone">{hw.phone}</p>
+                    <p className="hw-supplier-phone">A/C: {hw.accountNumber || '-'} &nbsp; | &nbsp; Bank: {hw.bankName || '-'} &nbsp; | &nbsp; Branch: {hw.bankBranch || '-'}</p>
+                  </div>
+                  <div className="hw-supplier-actions">
+                    <button className="sa-manage-btn" onClick={() => openItemForm(hw)}>+ Add Item</button>
+                    <button className="sa-manage-btn" onClick={() => openOrderForm(hw)}>Place Order</button>
+                    <button className="sa-manage-btn" onClick={() => openPaymentForm(hw)}>+ Record Payment</button>
+                    <button className="sa-manage-btn" onClick={() => startEditSupplier(hw)}>Edit</button>
+                    <button className="hw-delete-btn" onClick={() => handleDeleteSupplier(hw._id)}>Delete</button>
+                  </div>
                 </div>
-                <div className="hw-supplier-actions">
-                  <button className="sa-manage-btn" onClick={() => openItemForm(hw)}>+ Add Item</button>
-                  <button className="sa-manage-btn" onClick={() => openOrderForm(hw)}>Place Order</button>
-                  <button className="sa-manage-btn" onClick={() => openPaymentForm(hw)}>+ Record Payment</button>
-                  <button className="hw-delete-btn" onClick={() => handleDeleteSupplier(hw._id)}>Delete</button>
-                </div>
-              </div>
+              )}
 
               {/* ADD NEW ITEM TO CATALOG */}
               {addingItemTo?._id === hw._id && (
@@ -1537,9 +1785,9 @@ function Hardware() {
                     />
                     <input
                       type="number"
-                      placeholder="Unit price (Rs.)"
+                      placeholder="Unit price (LKR)"
                       value={itemForm.unitPrice}
-                      onChange={(e) => setItemForm({ ...itemForm, unitPrice: e.target.value })}
+                      onChange={(e) => setItemForm({ ...itemForm, unitPrice: sanitizeAmountInput(e.target.value) })}
                       required
                     />
                     <input
@@ -1570,9 +1818,9 @@ function Hardware() {
                     />
                     <input
                       type="number"
-                      placeholder="Unit price (Rs.)"
+                      placeholder="Unit price (LKR)"
                       value={editingItem.unitPrice}
-                      onChange={(e) => setEditingItem({ ...editingItem, unitPrice: e.target.value })}
+                      onChange={(e) => setEditingItem({ ...editingItem, unitPrice: sanitizeAmountInput(e.target.value) })}
                       required
                     />
                     <input
@@ -1615,7 +1863,7 @@ function Hardware() {
                             onClick={() => toggleOrderItem(item._id)}
                           >
                             <span className="sa-checkbox-custom">{isChecked && '✓'}</span>
-                            {item.name} (Rs. {item.unitPrice.toLocaleString()}/unit)
+                            {item.name} ({formatLKR(item.unitPrice)}/unit)
                           </div>
                           {isChecked && (
                             <input
@@ -1634,7 +1882,7 @@ function Hardware() {
 
                   <div className="ge-summary hw-order-summary">
                     <span>Order Total</span>
-                    <span>Rs. {calcLiveOrderTotal(hw).toLocaleString()}</span>
+                    <span>{formatLKR(calcLiveOrderTotal(hw))}</span>
                   </div>
 
                   <button type="submit" className="ge-save-btn hw-order-submit-btn" disabled={isOrderSubmitting}>
@@ -1644,7 +1892,7 @@ function Hardware() {
                   {lastOrderTotal !== null && (
                     <div className="ge-summary hw-last-order">
                       <span>Last order submitted</span>
-                      <span>Rs. {lastOrderTotal.toLocaleString()}</span>
+                      <span>{formatLKR(lastOrderTotal)}</span>
                     </div>
                   )}
                 </form>
@@ -1662,9 +1910,9 @@ function Hardware() {
                     />
                     <input
                       type="number"
-                      placeholder="Amount (Rs.)"
+                      placeholder="Amount (LKR)"
                       value={paymentForm.amount}
-                      onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, amount: sanitizeAmountInput(e.target.value) })}
                       required
                     />
                   </div>
@@ -1682,28 +1930,56 @@ function Hardware() {
                     />
                   </div>
                   <div className="ge-form-row">
-                    <input
-                      type="text"
-                      placeholder="Reason for payment"
-                      value={paymentForm.reason}
-                      onChange={(e) => setPaymentForm({ ...paymentForm, reason: e.target.value })}
-                      required
-                    />
+                    <input type="text" placeholder="Payee account number" value={paymentForm.accountNumber} onChange={(e) => setPaymentForm({ ...paymentForm, accountNumber: e.target.value })} />
+                    <BankNameField value={paymentForm.bankName} onChange={(val) => setPaymentForm({ ...paymentForm, bankName: val })} />
+                    <input type="text" placeholder="Payee branch" value={paymentForm.bankBranch} onChange={(e) => setPaymentForm({ ...paymentForm, bankBranch: e.target.value })} />
                   </div>
                   <div className="ge-form-row upload-row">
                     <div className="upload-field">
-                      <label className="upload-field-label">Bill from hardware</label>
+                      <label className="upload-field-label">Hardware bills (select one or more)</label>
                       <input
                         type="file"
                         accept=".jpg,.jpeg,.png,.pdf"
-                        onChange={(e) => setPaymentBillFile(e.target.files[0])}
+                        multiple
+                        onChange={(e) => {
+                          const selected = Array.from(e.target.files || []);
+                          if (selected.length) {
+                            setPaymentBillFiles((prev) => {
+                              const merged = [...prev, ...selected];
+                              const seen = new Set();
+                              return merged.filter((file) => {
+                                const key = `${file.name}-${file.size}-${file.lastModified}`;
+                                if (seen.has(key)) return false;
+                                seen.add(key);
+                                return true;
+                              });
+                            });
+                          }
+                          e.target.value = '';
+                        }}
                       />
+                      {paymentBillFiles.length > 0 && (
+                        <div className="selected-file-list">
+                          <small>{paymentBillFiles.length} bill(s) selected</small>
+                          {paymentBillFiles.map((file, index) => (
+                            <div key={`${file.name}-${file.size}-${file.lastModified}`} className="selected-file-row">
+                              <span>{index + 1}. {file.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => setPaymentBillFiles((prev) => prev.filter((_, i) => i !== index))}
+                                aria-label={`Remove ${file.name}`}
+                              >Remove</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="upload-field">
                       <label className="upload-field-label">Bank payment slip</label>
                       <input
                         type="file"
                         accept=".jpg,.jpeg,.png,.pdf"
+                        required
                         onChange={(e) => setPaymentSlipFile(e.target.files[0])}
                       />
                     </div>
@@ -1731,9 +2007,9 @@ function Hardware() {
                   <thead>
                     <tr>
                       <th>Item</th>
-                      <th>Unit Price (Rs.)</th>
+                      <th>Unit Price (LKR)</th>
                       <th>Quantity</th>
-                      <th>Total (Rs.)</th>
+                      <th>Total (LKR)</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -1741,9 +2017,9 @@ function Hardware() {
                     {hw.items.map((item) => (
                       <tr key={item._id}>
                         <td>{item.name}</td>
-                        <td>{item.unitPrice.toLocaleString()}</td>
+                        <td>{formatLKR(item.unitPrice)}</td>
                         <td>{item.quantity}</td>
-                        <td>{itemTotal(item).toLocaleString()}</td>
+                        <td>{formatLKR(itemTotal(item))}</td>
                         <td className="hw-item-actions-cell">
                           <button className="hw-edit-btn" onClick={() => openEditItem(hw._id, item)}>
                             Edit
@@ -1761,7 +2037,7 @@ function Hardware() {
               {hw.items.length > 0 && (
                 <div className="ge-summary hw-total-summary">
                   <span>{hw.items.length} item(s)</span>
-                  <span>Overall Price: Rs. {hardwareTotal(hw).toLocaleString()}</span>
+                  <span>Overall Price: {formatLKR(hardwareTotal(hw))}</span>
                 </div>
               )}
 
@@ -1773,11 +2049,12 @@ function Hardware() {
                     <thead>
                       <tr>
                         <th>Project</th>
-                        <th>Amount (Rs.)</th>
+                        <th>Amount (LKR)</th>
                         <th>Date</th>
                         <th>Reference No.</th>
-                        <th>Reason</th>
-                        <th>Bill</th>
+                        <th>Account No.</th>
+                        <th>Bank / Branch</th>
+                        <th>Bills</th>
                         <th>Slip</th>
                         <th></th>
                       </tr>
@@ -1788,11 +2065,16 @@ function Hardware() {
                         .map((p) => (
                         <tr key={p._id}>
                           <td>{p.projectName}</td>
-                          <td>{p.amount.toLocaleString()}</td>
+                          <td>{formatLKR(p.amount)}</td>
                           <td>{new Date(p.date).toLocaleDateString()}</td>
                           <td>{p.referenceNo || '-'}</td>
-                          <td>{p.reason || '-'}</td>
-                          <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
+                          <td>{p.accountNumber || hw.accountNumber || '-'}</td>
+                          <td>{[p.bankName || hw.bankName, p.bankBranch || hw.bankBranch].filter(Boolean).join(' / ') || '-'}</td>
+                          <td>{p.bills?.length > 0 ? (
+                            <span>{p.bills.length} bill(s) — {p.bills.map((b, i) => (
+                              <span key={b.url || i}>{i > 0 ? ', ' : ''}<a href={b.url} target="_blank" rel="noreferrer" className="ge-slip-link">View {i + 1}</a></span>
+                            ))}</span>
+                          ) : p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
                           <td>{p.slipUrl ? <a href={p.slipUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
                           <td>
                             <button className="hw-delete-btn" onClick={() => handleDeleteHardwarePayment(hw._id, p._id)}>
@@ -1805,7 +2087,7 @@ function Hardware() {
                   </table>
                   <div className="ge-summary hw-total-summary">
                     <span>{hw.payments.length} payment(s)</span>
-                    <span>Total Paid: Rs. {paymentsTotal(hw).toLocaleString()}</span>
+                    <span>Total Paid: {formatLKR(paymentsTotal(hw))}</span>
                   </div>
                 </>
               )}
@@ -1920,7 +2202,7 @@ function HardwarePriceFinder() {
                   </div>
                   <div className="hw-quote-card-header-right">
                     {i === 0 && <span className="hw-quote-best-badge">Lowest Budget</span>}
-                    <span className="hw-quote-total">Rs. {r.total.toLocaleString()}</span>
+                    <span className="hw-quote-total">{formatLKR(r.total)}</span>
                   </div>
                 </div>
 
@@ -1928,18 +2210,18 @@ function HardwarePriceFinder() {
                   <thead>
                     <tr>
                       <th>Item</th>
-                      <th>Unit Price (Rs.)</th>
+                      <th>Unit Price (LKR)</th>
                       <th>Requested Qty</th>
-                      <th>Line Total (Rs.)</th>
+                      <th>Line Total (LKR)</th>
                     </tr>
                   </thead>
                   <tbody>
                     {r.matchedItems.map((mi) => (
                       <tr key={mi.name}>
                         <td>{mi.name}</td>
-                        <td>{mi.unitPrice.toLocaleString()}</td>
+                        <td>{formatLKR(mi.unitPrice)}</td>
                         <td>{mi.requestedQuantity}</td>
-                        <td>{mi.lineTotal.toLocaleString()}</td>
+                        <td>{formatLKR(mi.lineTotal)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1980,11 +2262,11 @@ function ProjectSummary() {
   const [planForm, setPlanForm] = useState({ contractorId: '', totalEstimate: '', note: '' });
   const [planFile, setPlanFile] = useState(null);
 
-  const [hwPayForm, setHwPayForm] = useState({ hardwareId: '', amount: '', date: '', referenceNo: '', reason: '', note: '' });
-  const [hwBillFile, setHwBillFile] = useState(null);
+  const [hwPayForm, setHwPayForm] = useState({ hardwareId: '', amount: '', date: '', referenceNo: '', accountNumber: '', bankName: '', bankBranch: '', note: '' });
+  const [hwBillFiles, setHwBillFiles] = useState([]);
   const [hwSlipFile, setHwSlipFile] = useState(null);
 
-  const [otherForm, setOtherForm] = useState({ title: '', amount: '', paidTo: '', reason: '', description: '', date: '' });
+  const [otherForm, setOtherForm] = useState({ title: '', amount: '', paidTo: '', referenceNo: '', description: '', date: '' });
   const [otherBillFile, setOtherBillFile] = useState(null);
 
   const [isQuickSubmitting, setIsQuickSubmitting] = useState(false);
@@ -2024,10 +2306,10 @@ function ProjectSummary() {
     setQuickAction(null);
     setPlanForm({ contractorId: '', totalEstimate: '', note: '' });
     setPlanFile(null);
-    setHwPayForm({ hardwareId: '', amount: '', date: '', referenceNo: '', reason: '', note: '' });
+    setHwPayForm({ hardwareId: '', amount: '', date: '', referenceNo: '', accountNumber: '', bankName: '', bankBranch: '', reason: '', note: '' });
     setHwBillFile(null);
     setHwSlipFile(null);
-    setOtherForm({ title: '', amount: '', paidTo: '', reason: '', description: '', date: '' });
+    setOtherForm({ title: '', amount: '', paidTo: '', referenceNo: '', description: '', date: '' });
     setOtherBillFile(null);
   };
 
@@ -2063,6 +2345,14 @@ function ProjectSummary() {
   const handleQuickAddHardwarePayment = async (e) => {
     e.preventDefault();
     if (!hwPayForm.hardwareId || isQuickSubmitting) return;
+    if (hwBillFiles.length === 0) {
+      alert('Please select at least one hardware bill.');
+      return;
+    }
+    if (!hwSlipFile) {
+      alert('Please select the bank payment slip.');
+      return;
+    }
     setIsQuickSubmitting(true);
     try {
       const data = new FormData();
@@ -2070,18 +2360,20 @@ function ProjectSummary() {
       data.append('amount', hwPayForm.amount);
       if (hwPayForm.date) data.append('date', hwPayForm.date);
       data.append('referenceNo', hwPayForm.referenceNo);
-      data.append('reason', hwPayForm.reason);
+      data.append('accountNumber', hwPayForm.accountNumber);
+      data.append('bankName', hwPayForm.bankName);
+      data.append('bankBranch', hwPayForm.bankBranch);
       data.append('note', hwPayForm.note);
-      if (hwBillFile) data.append('bill', hwBillFile);
+      hwBillFiles.forEach((file) => data.append('bills', file));
       if (hwSlipFile) data.append('slip', hwSlipFile);
       await axios.post(
         `http://localhost:5000/api/hardware/${hwPayForm.hardwareId}/payments`,
-        data,
-        { headers: { 'Content-Type': 'multipart/form-data' } }
+        data
       );
       await afterQuickAdd();
     } catch (err) {
       console.error(err);
+      alert(err.response?.data?.message || 'Payment upload failed. Please check the backend server and try again.');
     } finally {
       setIsQuickSubmitting(false);
     }
@@ -2096,7 +2388,7 @@ function ProjectSummary() {
       data.append('title', otherForm.title);
       data.append('amount', otherForm.amount);
       data.append('paidTo', otherForm.paidTo);
-      data.append('reason', otherForm.reason);
+      data.append('referenceNo', otherForm.referenceNo);
       data.append('projectName', searchedFor);
       data.append('description', otherForm.description);
       if (otherForm.date) data.append('date', otherForm.date);
@@ -2180,9 +2472,9 @@ function ProjectSummary() {
             </select>
             <input
               type="number"
-              placeholder="Total estimate (Rs.)"
+              placeholder="Total estimate (LKR)"
               value={planForm.totalEstimate}
-              onChange={(e) => setPlanForm({ ...planForm, totalEstimate: e.target.value })}
+              onChange={(e) => setPlanForm({ ...planForm, totalEstimate: sanitizeAmountInput(e.target.value) })}
               required
             />
           </div>
@@ -2206,7 +2498,11 @@ function ProjectSummary() {
           <div className="ge-form-row">
             <select
               value={hwPayForm.hardwareId}
-              onChange={(e) => setHwPayForm({ ...hwPayForm, hardwareId: e.target.value })}
+              onChange={(e) => {
+                const nextId = e.target.value;
+                const nextHardware = allHardware.find((hw) => hw._id === nextId);
+                setHwPayForm({ ...hwPayForm, hardwareId: nextId, accountNumber: nextHardware?.accountNumber || '', bankName: nextHardware?.bankName || '', bankBranch: nextHardware?.bankBranch || '' });
+              }}
               required
             >
               <option value="">Select hardware supplier...</option>
@@ -2216,9 +2512,9 @@ function ProjectSummary() {
             </select>
             <input
               type="number"
-              placeholder="Amount (Rs.)"
+              placeholder="Amount (LKR)"
               value={hwPayForm.amount}
-              onChange={(e) => setHwPayForm({ ...hwPayForm, amount: e.target.value })}
+              onChange={(e) => setHwPayForm({ ...hwPayForm, amount: sanitizeAmountInput(e.target.value) })}
               required
             />
           </div>
@@ -2236,22 +2532,53 @@ function ProjectSummary() {
             />
           </div>
           <div className="ge-form-row">
-            <input
-              type="text"
-              placeholder="Reason for payment"
-              value={hwPayForm.reason}
-              onChange={(e) => setHwPayForm({ ...hwPayForm, reason: e.target.value })}
-              required
-            />
+            <input type="text" placeholder="Payee account number" value={hwPayForm.accountNumber} onChange={(e) => setHwPayForm({ ...hwPayForm, accountNumber: e.target.value })} />
+            <BankNameField value={hwPayForm.bankName} onChange={(val) => setHwPayForm({ ...hwPayForm, bankName: val })} />
+            <input type="text" placeholder="Payee branch" value={hwPayForm.bankBranch} onChange={(e) => setHwPayForm({ ...hwPayForm, bankBranch: e.target.value })} />
           </div>
           <div className="ge-form-row upload-row">
             <div className="upload-field">
-              <label className="upload-field-label">Bill</label>
-              <input type="file" accept=".jpg,.jpeg,.png,.pdf" onChange={(e) => setHwBillFile(e.target.files[0])} />
+              <label className="upload-field-label">Hardware bills (select one or more)</label>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf"
+                multiple
+                onChange={(e) => {
+                  const selected = Array.from(e.target.files || []);
+                  if (selected.length) {
+                    setHwBillFiles((prev) => {
+                      const merged = [...prev, ...selected];
+                      const seen = new Set();
+                      return merged.filter((file) => {
+                        const key = `${file.name}-${file.size}-${file.lastModified}`;
+                        if (seen.has(key)) return false;
+                        seen.add(key);
+                        return true;
+                      });
+                    });
+                  }
+                  e.target.value = '';
+                }}
+              />
+              {hwBillFiles.length > 0 && (
+                <div className="selected-file-list">
+                  <small>{hwBillFiles.length} bill(s) selected</small>
+                  {hwBillFiles.map((file, index) => (
+                    <div key={`${file.name}-${file.size}-${file.lastModified}`} className="selected-file-row">
+                      <span>{index + 1}. {file.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setHwBillFiles((prev) => prev.filter((_, i) => i !== index))}
+                        aria-label={`Remove ${file.name}`}
+                      >Remove</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="upload-field">
               <label className="upload-field-label">Bank slip</label>
-              <input type="file" accept=".jpg,.jpeg,.png,.pdf" onChange={(e) => setHwSlipFile(e.target.files[0])} />
+              <input type="file" accept=".jpg,.jpeg,.png,.pdf" required onChange={(e) => setHwSlipFile(e.target.files[0])} />
             </div>
           </div>
           <textarea
@@ -2278,9 +2605,9 @@ function ProjectSummary() {
             />
             <input
               type="number"
-              placeholder="Amount (Rs.)"
+              placeholder="Amount (LKR)"
               value={otherForm.amount}
-              onChange={(e) => setOtherForm({ ...otherForm, amount: e.target.value })}
+              onChange={(e) => setOtherForm({ ...otherForm, amount: sanitizeAmountInput(e.target.value) })}
               required
             />
           </div>
@@ -2300,9 +2627,9 @@ function ProjectSummary() {
           <div className="ge-form-row">
             <input
               type="text"
-              placeholder="Reason for payment"
-              value={otherForm.reason}
-              onChange={(e) => setOtherForm({ ...otherForm, reason: e.target.value })}
+              placeholder="Cheque / Reference No."
+              value={otherForm.referenceNo}
+              onChange={(e) => setOtherForm({ ...otherForm, referenceNo: e.target.value })}
               required
             />
           </div>
@@ -2326,27 +2653,27 @@ function ProjectSummary() {
           <div className="project-summary-totals">
             <div className="sa-stat-card sa-stat-total">
               <p>Total Estimated</p>
-              <h2>Rs. {result.summary.totalEstimate.toLocaleString()}</h2>
+              <h2>{formatLKR(result.summary.totalEstimate)}</h2>
             </div>
             <div className="sa-stat-card sa-stat-approved">
               <p>Paid to Contractors</p>
-              <h2>Rs. {result.summary.totalContractorPaid.toLocaleString()}</h2>
+              <h2>{formatLKR(result.summary.totalContractorPaid)}</h2>
             </div>
             <div className="sa-stat-card">
               <p>Paid to Hardware</p>
-              <h2>Rs. {result.summary.totalHardwarePaid.toLocaleString()}</h2>
+              <h2>{formatLKR(result.summary.totalHardwarePaid)}</h2>
             </div>
             <div className="sa-stat-card">
               <p>Other Payments</p>
-              <h2>Rs. {result.summary.totalOtherPaid.toLocaleString()}</h2>
+              <h2>{formatLKR(result.summary.totalOtherPaid)}</h2>
             </div>
             <div className="sa-stat-card sa-stat-total">
               <p>Total Paid (All)</p>
-              <h2>Rs. {result.summary.totalPaidOverall.toLocaleString()}</h2>
+              <h2>{formatLKR(result.summary.totalPaidOverall)}</h2>
             </div>
             <div className="sa-stat-card sa-stat-rejected">
               <p>Remaining (vs Estimate)</p>
-              <h2>Rs. {result.summary.remaining.toLocaleString()}</h2>
+              <h2>{formatLKR(result.summary.remaining)}</h2>
             </div>
           </div>
 
@@ -2362,7 +2689,7 @@ function ProjectSummary() {
                     </div>
                     <div className="hw-quote-card-header-right">
                       <span className="hw-quote-total">
-                        Rs. {c.totalPaid.toLocaleString()} / {c.totalEstimate.toLocaleString()}
+                        {formatLKR(c.totalPaid)} / {formatLKR(c.totalEstimate)}
                       </span>
                     </div>
                   </div>
@@ -2371,7 +2698,7 @@ function ProjectSummary() {
                     <table className="sa-table hw-items-table">
                       <thead>
                         <tr>
-                          <th>Amount (Rs.)</th>
+                          <th>Amount (LKR)</th>
                           <th>Date</th>
                           <th>Reference No.</th>
                           <th>Reason</th>
@@ -2381,7 +2708,7 @@ function ProjectSummary() {
                       <tbody>
                         {c.payments.map((p, i) => (
                           <tr key={i}>
-                            <td>{p.amount.toLocaleString()}</td>
+                            <td>{formatLKR(p.amount)}</td>
                             <td>{new Date(p.date).toLocaleDateString()}</td>
                             <td>{p.referenceNo || '-'}</td>
                             <td>{p.reason || '-'}</td>
@@ -2407,29 +2734,31 @@ function ProjectSummary() {
                       <p className="hw-supplier-phone">{hw.phone}</p>
                     </div>
                     <div className="hw-quote-card-header-right">
-                      <span className="hw-quote-total">Rs. {hw.totalPaid.toLocaleString()}</span>
+                      <span className="hw-quote-total">{formatLKR(hw.totalPaid)}</span>
                     </div>
                   </div>
 
                   <table className="sa-table hw-items-table">
                     <thead>
                       <tr>
-                        <th>Amount (Rs.)</th>
+                        <th>Amount (LKR)</th>
                         <th>Date</th>
                         <th>Reference No.</th>
-                        <th>Reason</th>
-                        <th>Bill</th>
+                        <th>Bills</th>
                         <th>Slip</th>
                       </tr>
                     </thead>
                     <tbody>
                       {hw.payments.map((p, i) => (
                         <tr key={i}>
-                          <td>{p.amount.toLocaleString()}</td>
+                          <td>{formatLKR(p.amount)}</td>
                           <td>{new Date(p.date).toLocaleDateString()}</td>
                           <td>{p.referenceNo || '-'}</td>
-                          <td>{p.reason || '-'}</td>
-                          <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
+                          <td>{p.bills?.length > 0 ? (
+                            <span>{p.bills.length} bill(s) — {p.bills.map((b, i) => (
+                              <span key={b.url || i}>{i > 0 ? ', ' : ''}<a href={b.url} target="_blank" rel="noreferrer" className="ge-slip-link">View {i + 1}</a></span>
+                            ))}</span>
+                          ) : p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
                           <td>{p.slipUrl ? <a href={p.slipUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
                         </tr>
                       ))}
@@ -2448,8 +2777,8 @@ function ProjectSummary() {
                   <tr>
                     <th>Title</th>
                     <th>Paid To</th>
-                    <th>Reason</th>
-                    <th>Amount (Rs.)</th>
+                    <th>Cheque / Reference No.</th>
+                    <th>Amount (LKR)</th>
                     <th>Date</th>
                     <th>Bill</th>
                   </tr>
@@ -2459,8 +2788,8 @@ function ProjectSummary() {
                     <tr key={p._id}>
                       <td>{p.title}</td>
                       <td>{p.paidTo || '-'}</td>
-                      <td>{p.reason || '-'}</td>
-                      <td>{p.amount.toLocaleString()}</td>
+                      <td>{p.referenceNo || '-'}</td>
+                      <td>{formatLKR(p.amount)}</td>
                       <td>{new Date(p.date).toLocaleDateString()}</td>
                       <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
                     </tr>

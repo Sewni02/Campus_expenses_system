@@ -12,7 +12,7 @@ const getPayments = async (req, res) => {
 
 const createPayment = async (req, res) => {
   try {
-    const { title, amount, paidTo, referenceNo, description, date, projectName } = req.body;
+    const { title, amount, paidTo, referenceNo, description, date, projectName, accountNumber, bankName, bankBranch } = req.body;
 
     if (!title || !amount) {
       return res.status(400).json({ message: 'title and amount are required' });
@@ -28,6 +28,7 @@ const createPayment = async (req, res) => {
 
     const payment = await ConstructionPayment.create({
       title, amount, paidTo, referenceNo, description, date, billUrl, projectName,
+      accountNumber, bankName, bankBranch,
     });
 
     res.status(201).json({ message: 'Payment added successfully', payment });
