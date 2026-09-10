@@ -460,7 +460,6 @@ function Contractors() {
       closeProfile();
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || 'Could not delete the contractor. Please check the backend server is running and try again.');
     }
   };
 
@@ -505,7 +504,6 @@ function Contractors() {
       setViewingContractor(updated);
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || 'Could not delete the plan. Please check the backend server is running and try again.');
     }
   };
 
@@ -829,7 +827,6 @@ function ConstructionPayments() {
       setPayments((prev) => prev.filter((p) => p._id !== paymentId));
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || 'Could not delete the payment. Please check the backend server is running and try again.');
     }
   };
 
@@ -889,7 +886,6 @@ function ConstructionPayments() {
       setContractors((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || 'Could not delete the payment. Please check the backend server is running and try again.');
     }
   };
 
@@ -1210,10 +1206,6 @@ function Hardware() {
   const [formData, setFormData] = useState({ supplierName: '', phone: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [editingSupplierId, setEditingSupplierId] = useState(null);
-  const [editSupplierForm, setEditSupplierForm] = useState({ supplierName: '', phone: '' });
-  const [isEditSupplierSubmitting, setIsEditSupplierSubmitting] = useState(false);
-
   const [addingItemTo, setAddingItemTo] = useState(null);
   const [itemForm, setItemForm] = useState({ name: '', unitPrice: '', quantity: '' });
   const [isItemSubmitting, setIsItemSubmitting] = useState(false);
@@ -1334,34 +1326,6 @@ function Hardware() {
       setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || 'Could not delete the item. Please check the backend server is running and try again.');
-    }
-  };
-
-  const startEditSupplier = (hw) => {
-    setEditingSupplierId(hw._id);
-    setEditSupplierForm({ supplierName: hw.supplierName, phone: hw.phone });
-  };
-
-  const cancelEditSupplier = () => {
-    setEditingSupplierId(null);
-    setEditSupplierForm({ supplierName: '', phone: '' });
-  };
-
-  const handleUpdateSupplier = async (e, hardwareId) => {
-    e.preventDefault();
-    if (isEditSupplierSubmitting) return;
-    setIsEditSupplierSubmitting(true);
-    try {
-      const res = await axios.put(`http://localhost:5000/api/hardware/${hardwareId}`, editSupplierForm);
-      const updatedHardware = res.data.hardware;
-      setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
-      cancelEditSupplier();
-    } catch (err) {
-      console.error(err);
-      alert(err.response?.data?.message || 'Could not update the supplier. Please check the backend server is running and try again.');
-    } finally {
-      setIsEditSupplierSubmitting(false);
     }
   };
 
@@ -1372,7 +1336,6 @@ function Hardware() {
       setHardwareList((prev) => prev.filter((hw) => hw._id !== hardwareId));
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || 'Could not delete the supplier. Please check the backend server is running and try again.');
     }
   };
 
@@ -1384,7 +1347,6 @@ function Hardware() {
       setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || 'Could not delete the payment. Please check the backend server is running and try again.');
     }
   };
 
@@ -1549,48 +1511,18 @@ function Hardware() {
 
           {hardwareList.map((hw) => (
             <div key={hw._id} className="ge-form hw-supplier-card">
-              {editingSupplierId === hw._id ? (
-                <form onSubmit={(e) => handleUpdateSupplier(e, hw._id)} className="hw-item-form">
-                  <div className="ge-form-row">
-                    <input
-                      type="text"
-                      placeholder="Supplier name"
-                      value={editSupplierForm.supplierName}
-                      onChange={(e) => setEditSupplierForm({ ...editSupplierForm, supplierName: e.target.value })}
-                      required
-                    />
-                    <input
-                      type="text"
-                      placeholder="Phone"
-                      value={editSupplierForm.phone}
-                      onChange={(e) => setEditSupplierForm({ ...editSupplierForm, phone: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="sa-panel-actions">
-                    <button type="submit" className="sa-save-btn" disabled={isEditSupplierSubmitting}>
-                      {isEditSupplierSubmitting ? 'Saving...' : 'Save Changes'}
-                    </button>
-                    <button type="button" className="sa-reject-btn" onClick={cancelEditSupplier}>
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <div className="ge-header">
-                  <div>
-                    <h4 className="hw-inline-heading">{hw.supplierName}</h4>
-                    <p className="hw-supplier-phone">{hw.phone}</p>
-                  </div>
-                  <div className="hw-supplier-actions">
-                    <button className="sa-manage-btn" onClick={() => openItemForm(hw)}>+ Add Item</button>
-                    <button className="sa-manage-btn" onClick={() => openOrderForm(hw)}>Place Order</button>
-                    <button className="sa-manage-btn" onClick={() => openPaymentForm(hw)}>+ Record Payment</button>
-                    <button className="sa-manage-btn" onClick={() => startEditSupplier(hw)}>Edit</button>
-                    <button className="hw-delete-btn" onClick={() => handleDeleteSupplier(hw._id)}>Delete</button>
-                  </div>
+              <div className="ge-header">
+                <div>
+                  <h4 className="hw-inline-heading">{hw.supplierName}</h4>
+                  <p className="hw-supplier-phone">{hw.phone}</p>
                 </div>
-              )}
+                <div className="hw-supplier-actions">
+                  <button className="sa-manage-btn" onClick={() => openItemForm(hw)}>+ Add Item</button>
+                  <button className="sa-manage-btn" onClick={() => openOrderForm(hw)}>Place Order</button>
+                  <button className="sa-manage-btn" onClick={() => openPaymentForm(hw)}>+ Record Payment</button>
+                  <button className="hw-delete-btn" onClick={() => handleDeleteSupplier(hw._id)}>Delete</button>
+                </div>
+              </div>
 
               {/* ADD NEW ITEM TO CATALOG */}
               {addingItemTo?._id === hw._id && (
@@ -2407,6 +2339,10 @@ function ProjectSummary() {
             <div className="sa-stat-card">
               <p>Other Payments</p>
               <h2>Rs. {result.summary.totalOtherPaid.toLocaleString()}</h2>
+            </div>
+            <div className="sa-stat-card sa-stat-total">
+              <p>Total Paid (All)</p>
+              <h2>Rs. {result.summary.totalPaidOverall.toLocaleString()}</h2>
             </div>
             <div className="sa-stat-card sa-stat-rejected">
               <p>Remaining (vs Estimate)</p>

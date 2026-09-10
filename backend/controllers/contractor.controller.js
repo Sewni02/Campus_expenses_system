@@ -14,11 +14,11 @@ const getContractors = async (req, res) => {
 
 const createContractor = async (req, res) => {
   try {
-    const { name, phone, registrationDate } = req.body;
+    const { name, phone, registrationDate, accountNumber, bankName, bankBranch } = req.body;
     if (!name || !phone) {
       return res.status(400).json({ message: 'name and phone are required' });
     }
-    const contractor = await Contractor.create({ name, phone, registrationDate });
+    const contractor = await Contractor.create({ name, phone, registrationDate, accountNumber, bankName, bankBranch });
     res.status(201).json({ message: 'Contractor added successfully', contractor });
   } catch (error) {
     console.error(error);
@@ -29,11 +29,11 @@ const createContractor = async (req, res) => {
 const updateContractor = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, phone, registrationDate } = req.body;
+    const { name, phone, registrationDate, accountNumber, bankName, bankBranch } = req.body;
 
     const contractor = await Contractor.findByIdAndUpdate(
       id,
-      { name, phone, registrationDate },
+      { name, phone, registrationDate, accountNumber, bankName, bankBranch },
       { new: true, runValidators: true }
     );
 
@@ -127,7 +127,7 @@ const deleteEstimationPlan = async (req, res) => {
 const addPayment = async (req, res) => {
   try {
     const { id } = req.params;
-    const { amount, date, reason, note, paymentType, planId, referenceNo } = req.body;
+    const { amount, date, reason, note, paymentType, planId, referenceNo, accountNumber, bankName, bankBranch } = req.body;
 
     if (!amount) {
       return res.status(400).json({ message: 'amount is required' });
@@ -161,6 +161,9 @@ const addPayment = async (req, res) => {
       slipUrl,
       billUrl,
       referenceNo,
+      accountNumber: accountNumber || contractor.accountNumber,
+      bankName: bankName || contractor.bankName,
+      bankBranch: bankBranch || contractor.bankBranch,
       planId: plan._id,
       projectName: plan.projectName,
     });

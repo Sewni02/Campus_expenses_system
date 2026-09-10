@@ -12,11 +12,11 @@ const getHardware = async (req, res) => {
 
 const createHardware = async (req, res) => {
   try {
-    const { supplierName, phone } = req.body;
+    const { supplierName, phone, accountNumber, bankName, bankBranch } = req.body;
     if (!supplierName || !phone) {
       return res.status(400).json({ message: 'supplierName and phone are required' });
     }
-    const hardware = await Hardware.create({ supplierName, phone });
+    const hardware = await Hardware.create({ supplierName, phone, accountNumber, bankName, bankBranch });
     res.status(201).json({ message: 'Hardware supplier added successfully', hardware });
   } catch (error) {
     console.error(error);
@@ -158,31 +158,32 @@ const placeOrder = async (req, res) => {
 const addPayment = async (req, res) => {
   try {
     const { id } = req.params;
-    const { projectName, amount, date, reason, referenceNo, note } = req.body;
+    const { projectName, amount, date, referenceNo, accountNumber, bankName, bankBranch, note } = req.body;
 
     if (!projectName || !amount) {
       return res.status(400).json({ message: 'projectName and amount are required' });
     }
-    if (!reason || !reason.trim()) {
-      return res.status(400).json({ message: 'reason is required' });
-    }
-
     const hardware = await Hardware.findById(id);
     if (!hardware) {
       return res.status(404).json({ message: 'Hardware supplier not found' });
     }
 
-    const billUrl = req.files?.bill?.[0]?.path;
+    const billFiles = req.files?.bills || req.files?.bill || [];
+    const bills = billFiles.map((file) => ({ url: file.path, name: file.originalname }));
+    const billUrl = bills[0]?.url;
     const slipUrl = req.files?.slip?.[0]?.path;
 
     hardware.payments.push({
       projectName,
       amount,
       date: date || Date.now(),
-      reason,
+      bills,
       billUrl,
       slipUrl,
       referenceNo,
+      accountNumber: accountNumber || hardware.accountNumber,
+      bankName: bankName || hardware.bankName,
+      bankBranch: bankBranch || hardware.bankBranch,
       note,
     });
     await hardware.save();
@@ -266,11 +267,11 @@ const getQuote = async (req, res) => {
 const updateHardware = async (req, res) => {
   try {
     const { id } = req.params;
-    const { supplierName, phone } = req.body;
+    const { supplierName, phone, accountNumber, bankName, bankBranch } = req.body;
 
     const hardware = await Hardware.findByIdAndUpdate(
       id,
-      { supplierName, phone },
+      { supplierName, phone, accountNumber, bankName, bankBranch },
       { new: true, runValidators: true }
     );
 
