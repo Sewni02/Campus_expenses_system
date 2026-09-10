@@ -11,6 +11,7 @@ const estimationPlanSchema = new mongoose.Schema({
 const paymentSchema = new mongoose.Schema({
   amount: { type: Number, required: true },
   date: { type: Date, default: Date.now },
+  reason: { type: String, required: true },
   note: { type: String },
   paymentType: {
     type: String,
@@ -20,7 +21,9 @@ const paymentSchema = new mongoose.Schema({
   billUrl: { type: String },
   slipUrl: { type: String },
   referenceNo: { type: String },
-  // Which estimation plan (and therefore which project) this payment is against
+  accountNumber: { type: String },
+  bankName: { type: String },
+  bankBranch: { type: String },
   planId: { type: mongoose.Schema.Types.ObjectId },
   projectName: { type: String },
 });
@@ -28,6 +31,9 @@ const paymentSchema = new mongoose.Schema({
 const contractorSchema = new mongoose.Schema({
   name: { type: String, required: true },
   phone: { type: String, required: true },
+  accountNumber: { type: String },
+  bankName: { type: String },
+  bankBranch: { type: String },
   registrationDate: { type: Date, default: Date.now },
   estimationPlans: [estimationPlanSchema],
   payments: [paymentSchema],

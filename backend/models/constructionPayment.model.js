@@ -4,9 +4,11 @@ const constructionPaymentSchema = new mongoose.Schema({
   title: { type: String, required: true },
   amount: { type: Number, required: true },
   paidTo: { type: String },
-  // So this "other" payment can be rolled up into a project's summary
-  // alongside contractor and hardware payments.
+  referenceNo: { type: String, required: true },
   projectName: { type: String, required: true },
+  accountNumber: { type: String },
+  bankName: { type: String },
+  bankBranch: { type: String },
   date: { type: Date, default: Date.now },
   billUrl: { type: String },
   description: { type: String },
