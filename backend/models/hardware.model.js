@@ -25,6 +25,7 @@ const paymentSchema = new mongoose.Schema({
   projectName: { type: String, required: true },
   amount: { type: Number, required: true },
   date: { type: Date, default: Date.now },
+  reason: { type: String, required: true },
   billUrl: { type: String },
   slipUrl: { type: String },
   referenceNo: { type: String },

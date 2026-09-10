@@ -158,10 +158,13 @@ const placeOrder = async (req, res) => {
 const addPayment = async (req, res) => {
   try {
     const { id } = req.params;
-    const { projectName, amount, date, referenceNo, note } = req.body;
+    const { projectName, amount, date, reason, referenceNo, note } = req.body;
 
     if (!projectName || !amount) {
       return res.status(400).json({ message: 'projectName and amount are required' });
+    }
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ message: 'reason is required' });
     }
 
     const hardware = await Hardware.findById(id);
@@ -176,6 +179,7 @@ const addPayment = async (req, res) => {
       projectName,
       amount,
       date: date || Date.now(),
+      reason,
       billUrl,
       slipUrl,
       referenceNo,

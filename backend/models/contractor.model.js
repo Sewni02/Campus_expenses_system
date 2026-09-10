@@ -11,6 +11,7 @@ const estimationPlanSchema = new mongoose.Schema({
 const paymentSchema = new mongoose.Schema({
   amount: { type: Number, required: true },
   date: { type: Date, default: Date.now },
+  reason: { type: String, required: true },
   note: { type: String },
   paymentType: {
     type: String,
@@ -20,7 +21,6 @@ const paymentSchema = new mongoose.Schema({
   billUrl: { type: String },
   slipUrl: { type: String },
   referenceNo: { type: String },
-  // Which estimation plan (and therefore which project) this payment is against
   planId: { type: mongoose.Schema.Types.ObjectId },
   projectName: { type: String },
 });
