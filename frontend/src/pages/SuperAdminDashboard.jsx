@@ -754,7 +754,7 @@ function ConstructionPayments() {
   const [payments, setPayments] = useState([]);
   const [projectNames, refetchProjectNames] = useProjectNames();
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ title: '', amount: '', paidTo: '', projectName: '', description: '', date: '' });
+  const [formData, setFormData] = useState({ title: '', amount: '', paidTo: '', reason: '', projectName: '', description: '', date: '' });
   const [bill, setBill] = useState(null);
 
   // Contractor payment recording - always linked to one of the contractor's estimation plans
@@ -766,6 +766,7 @@ function ConstructionPayments() {
   const [payAmount, setPayAmount] = useState('');
   const [payDate, setPayDate] = useState('');
   const [payReferenceNo, setPayReferenceNo] = useState('');
+  const [payReason, setPayReason] = useState('');
   const [payNote, setPayNote] = useState('');
   const [slipFile, setSlipFile] = useState(null);
   const [billFile, setBillFile] = useState(null);
@@ -801,6 +802,7 @@ function ConstructionPayments() {
       data.append('title', formData.title);
       data.append('amount', formData.amount);
       data.append('paidTo', formData.paidTo);
+      data.append('reason', formData.reason);
       data.append('projectName', formData.projectName);
       data.append('description', formData.description);
       if (formData.date) data.append('date', formData.date);
@@ -810,7 +812,7 @@ function ConstructionPayments() {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      setFormData({ title: '', amount: '', paidTo: '', projectName: '', description: '', date: '' });
+      setFormData({ title: '', amount: '', paidTo: '', reason: '', projectName: '', description: '', date: '' });
       setBill(null);
       setShowForm(false);
       fetchPayments();
@@ -838,6 +840,7 @@ function ConstructionPayments() {
     setPayAmount('');
     setPayDate('');
     setPayReferenceNo('');
+    setPayReason('');
     setPayNote('');
     setSlipFile(null);
     setBillFile(null);
@@ -854,6 +857,7 @@ function ConstructionPayments() {
       const data = new FormData();
       data.append('amount', payAmount);
       if (payDate) data.append('date', payDate);
+      data.append('reason', payReason);
       data.append('note', payNote);
       data.append('paymentType', paymentType);
       data.append('planId', planId);
@@ -926,6 +930,15 @@ function ConstructionPayments() {
             />
           </div>
           <div className="ge-form-row">
+            <input
+              type="text"
+              placeholder="Reason for payment"
+              value={formData.reason}
+              onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+              required
+            />
+          </div>
+          <div className="ge-form-row">
             <ProjectNameField
               value={formData.projectName}
               onChange={(val) => setFormData({ ...formData, projectName: val })}
@@ -964,6 +977,7 @@ function ConstructionPayments() {
           <tr>
             <th>Title</th>
             <th>Paid To</th>
+            <th>Reason</th>
             <th>Project</th>
             <th>Amount (Rs.)</th>
             <th>Date</th>
@@ -974,7 +988,7 @@ function ConstructionPayments() {
         <tbody>
           {payments.length === 0 ? (
             <tr>
-              <td colSpan="7" className="hw-empty-text">
+              <td colSpan="8" className="hw-empty-text">
                 No payments found
               </td>
             </tr>
@@ -985,6 +999,7 @@ function ConstructionPayments() {
               <tr key={p._id}>
                 <td>{p.title}</td>
                 <td>{p.paidTo || '-'}</td>
+                <td>{p.reason || '-'}</td>
                 <td>{p.projectName || '-'}</td>
                 <td>{p.amount.toLocaleString()}</td>
                 <td>{new Date(p.date).toLocaleDateString()}</td>
@@ -1072,6 +1087,16 @@ function ConstructionPayments() {
             />
           </div>
 
+          <div className="ge-form-row">
+            <input
+              type="text"
+              placeholder="Reason for payment"
+              value={payReason}
+              onChange={(e) => setPayReason(e.target.value)}
+              required
+            />
+          </div>
+
           <p className="sa-group-title plan-preview-title">Payment Method</p>
           <div className="ge-form-row">
             <label
@@ -1132,6 +1157,7 @@ function ConstructionPayments() {
             <th>Amount (Rs.)</th>
             <th>Date</th>
             <th>Reference No.</th>
+            <th>Reason</th>
             <th>Method</th>
             <th>Bill</th>
             <th>Slip</th>
@@ -1141,7 +1167,7 @@ function ConstructionPayments() {
         <tbody>
           {contractors.flatMap((c) => c.payments).length === 0 ? (
             <tr>
-              <td colSpan="9" className="hw-empty-text">
+              <td colSpan="10" className="hw-empty-text">
                 No contractor payments recorded
               </td>
             </tr>
@@ -1156,6 +1182,7 @@ function ConstructionPayments() {
                   <td>{p.amount.toLocaleString()}</td>
                   <td>{new Date(p.date).toLocaleDateString()}</td>
                   <td>{p.referenceNo || '-'}</td>
+                  <td>{p.reason || '-'}</td>
                   <td>{p.paymentType === 'bill_then_payment' ? 'Bill + Payment' : 'Direct Slip'}</td>
                   <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
                   <td>{p.slipUrl ? <a href={p.slipUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
@@ -1207,6 +1234,7 @@ function Hardware() {
     amount: '',
     date: '',
     referenceNo: '',
+    reason: '',
     note: '',
   });
   const [paymentBillFile, setPaymentBillFile] = useState(null);
@@ -1362,7 +1390,7 @@ function Hardware() {
 
   const openPaymentForm = (hardware) => {
     setRecordingPaymentFor(hardware);
-    setPaymentForm({ projectName: '', amount: '', date: '', referenceNo: '', note: '' });
+    setPaymentForm({ projectName: '', amount: '', date: '', referenceNo: '', reason: '', note: '' });
     setPaymentBillFile(null);
     setPaymentSlipFile(null);
   };
@@ -1379,6 +1407,7 @@ function Hardware() {
       data.append('amount', paymentForm.amount);
       if (paymentForm.date) data.append('date', paymentForm.date);
       data.append('referenceNo', paymentForm.referenceNo);
+      data.append('reason', paymentForm.reason);
       data.append('note', paymentForm.note);
       if (paymentBillFile) data.append('bill', paymentBillFile);
       if (paymentSlipFile) data.append('slip', paymentSlipFile);
@@ -1720,6 +1749,15 @@ function Hardware() {
                       onChange={(e) => setPaymentForm({ ...paymentForm, referenceNo: e.target.value })}
                     />
                   </div>
+                  <div className="ge-form-row">
+                    <input
+                      type="text"
+                      placeholder="Reason for payment"
+                      value={paymentForm.reason}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, reason: e.target.value })}
+                      required
+                    />
+                  </div>
                   <div className="ge-form-row upload-row">
                     <div className="upload-field">
                       <label className="upload-field-label">Bill from hardware</label>
@@ -1806,6 +1844,7 @@ function Hardware() {
                         <th>Amount (Rs.)</th>
                         <th>Date</th>
                         <th>Reference No.</th>
+                        <th>Reason</th>
                         <th>Bill</th>
                         <th>Slip</th>
                         <th></th>
@@ -1820,6 +1859,7 @@ function Hardware() {
                           <td>{p.amount.toLocaleString()}</td>
                           <td>{new Date(p.date).toLocaleDateString()}</td>
                           <td>{p.referenceNo || '-'}</td>
+                          <td>{p.reason || '-'}</td>
                           <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
                           <td>{p.slipUrl ? <a href={p.slipUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
                           <td>
@@ -2008,11 +2048,11 @@ function ProjectSummary() {
   const [planForm, setPlanForm] = useState({ contractorId: '', totalEstimate: '', note: '' });
   const [planFile, setPlanFile] = useState(null);
 
-  const [hwPayForm, setHwPayForm] = useState({ hardwareId: '', amount: '', date: '', referenceNo: '', note: '' });
+  const [hwPayForm, setHwPayForm] = useState({ hardwareId: '', amount: '', date: '', referenceNo: '', reason: '', note: '' });
   const [hwBillFile, setHwBillFile] = useState(null);
   const [hwSlipFile, setHwSlipFile] = useState(null);
 
-  const [otherForm, setOtherForm] = useState({ title: '', amount: '', paidTo: '', description: '', date: '' });
+  const [otherForm, setOtherForm] = useState({ title: '', amount: '', paidTo: '', reason: '', description: '', date: '' });
   const [otherBillFile, setOtherBillFile] = useState(null);
 
   const [isQuickSubmitting, setIsQuickSubmitting] = useState(false);
@@ -2052,10 +2092,10 @@ function ProjectSummary() {
     setQuickAction(null);
     setPlanForm({ contractorId: '', totalEstimate: '', note: '' });
     setPlanFile(null);
-    setHwPayForm({ hardwareId: '', amount: '', date: '', referenceNo: '', note: '' });
+    setHwPayForm({ hardwareId: '', amount: '', date: '', referenceNo: '', reason: '', note: '' });
     setHwBillFile(null);
     setHwSlipFile(null);
-    setOtherForm({ title: '', amount: '', paidTo: '', description: '', date: '' });
+    setOtherForm({ title: '', amount: '', paidTo: '', reason: '', description: '', date: '' });
     setOtherBillFile(null);
   };
 
@@ -2098,6 +2138,7 @@ function ProjectSummary() {
       data.append('amount', hwPayForm.amount);
       if (hwPayForm.date) data.append('date', hwPayForm.date);
       data.append('referenceNo', hwPayForm.referenceNo);
+      data.append('reason', hwPayForm.reason);
       data.append('note', hwPayForm.note);
       if (hwBillFile) data.append('bill', hwBillFile);
       if (hwSlipFile) data.append('slip', hwSlipFile);
@@ -2123,6 +2164,7 @@ function ProjectSummary() {
       data.append('title', otherForm.title);
       data.append('amount', otherForm.amount);
       data.append('paidTo', otherForm.paidTo);
+      data.append('reason', otherForm.reason);
       data.append('projectName', searchedFor);
       data.append('description', otherForm.description);
       if (otherForm.date) data.append('date', otherForm.date);
@@ -2261,6 +2303,15 @@ function ProjectSummary() {
               onChange={(e) => setHwPayForm({ ...hwPayForm, referenceNo: e.target.value })}
             />
           </div>
+          <div className="ge-form-row">
+            <input
+              type="text"
+              placeholder="Reason for payment"
+              value={hwPayForm.reason}
+              onChange={(e) => setHwPayForm({ ...hwPayForm, reason: e.target.value })}
+              required
+            />
+          </div>
           <div className="ge-form-row upload-row">
             <div className="upload-field">
               <label className="upload-field-label">Bill</label>
@@ -2312,6 +2363,15 @@ function ProjectSummary() {
               type="date"
               value={otherForm.date}
               onChange={(e) => setOtherForm({ ...otherForm, date: e.target.value })}
+            />
+          </div>
+          <div className="ge-form-row">
+            <input
+              type="text"
+              placeholder="Reason for payment"
+              value={otherForm.reason}
+              onChange={(e) => setOtherForm({ ...otherForm, reason: e.target.value })}
+              required
             />
           </div>
           <div className="ge-form-row">
@@ -2378,6 +2438,7 @@ function ProjectSummary() {
                           <th>Amount (Rs.)</th>
                           <th>Date</th>
                           <th>Reference No.</th>
+                          <th>Reason</th>
                           <th>Method</th>
                         </tr>
                       </thead>
@@ -2387,6 +2448,7 @@ function ProjectSummary() {
                             <td>{p.amount.toLocaleString()}</td>
                             <td>{new Date(p.date).toLocaleDateString()}</td>
                             <td>{p.referenceNo || '-'}</td>
+                            <td>{p.reason || '-'}</td>
                             <td>{p.paymentType === 'bill_then_payment' ? 'Bill + Payment' : 'Direct Slip'}</td>
                           </tr>
                         ))}
@@ -2419,6 +2481,7 @@ function ProjectSummary() {
                         <th>Amount (Rs.)</th>
                         <th>Date</th>
                         <th>Reference No.</th>
+                        <th>Reason</th>
                         <th>Bill</th>
                         <th>Slip</th>
                       </tr>
@@ -2429,6 +2492,7 @@ function ProjectSummary() {
                           <td>{p.amount.toLocaleString()}</td>
                           <td>{new Date(p.date).toLocaleDateString()}</td>
                           <td>{p.referenceNo || '-'}</td>
+                          <td>{p.reason || '-'}</td>
                           <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
                           <td>{p.slipUrl ? <a href={p.slipUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
                         </tr>
@@ -2448,6 +2512,7 @@ function ProjectSummary() {
                   <tr>
                     <th>Title</th>
                     <th>Paid To</th>
+                    <th>Reason</th>
                     <th>Amount (Rs.)</th>
                     <th>Date</th>
                     <th>Bill</th>
@@ -2458,6 +2523,7 @@ function ProjectSummary() {
                     <tr key={p._id}>
                       <td>{p.title}</td>
                       <td>{p.paidTo || '-'}</td>
+                      <td>{p.reason || '-'}</td>
                       <td>{p.amount.toLocaleString()}</td>
                       <td>{new Date(p.date).toLocaleDateString()}</td>
                       <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>

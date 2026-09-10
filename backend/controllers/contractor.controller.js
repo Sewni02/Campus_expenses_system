@@ -127,13 +127,16 @@ const deleteEstimationPlan = async (req, res) => {
 const addPayment = async (req, res) => {
   try {
     const { id } = req.params;
-    const { amount, date, note, paymentType, planId, referenceNo } = req.body;
+    const { amount, date, reason, note, paymentType, planId, referenceNo } = req.body;
 
     if (!amount) {
       return res.status(400).json({ message: 'amount is required' });
     }
     if (!planId) {
       return res.status(400).json({ message: 'planId is required - payments must be linked to an estimation plan' });
+    }
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ message: 'reason is required' });
     }
 
     const contractor = await Contractor.findById(id);
@@ -152,6 +155,7 @@ const addPayment = async (req, res) => {
     contractor.payments.push({
       amount,
       date: date || Date.now(),
+      reason,
       note,
       paymentType: paymentType || 'direct_slip',
       slipUrl,

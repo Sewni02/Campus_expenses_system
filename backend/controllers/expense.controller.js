@@ -14,16 +14,19 @@ const getExpenses = async (req, res) => {
 
 const createExpense = async (req, res) => {
   try {
-    const { title, amount, category, description, date } = req.body;
+    const { title, amount, category, reason, description, date } = req.body;
 
     if (!title || !amount || !category) {
       return res.status(400).json({ message: 'title, amount, and category are required' });
+    }
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ message: 'reason is required' });
     }
 
     const bankSlipUrl = req.file ? req.file.path : undefined;
 
     const expense = await Expense.create({
-      title, amount, category, description, date, bankSlipUrl,
+      title, amount, category, reason, description, date, bankSlipUrl,
     });
 
     res.status(201).json({ message: 'Expense added successfully', expense });
