@@ -26,7 +26,7 @@ router.delete('/:id/items/:itemId', deleteItem);
 router.post('/:id/order', placeOrder);
 router.post(
   '/:id/payments',
-  upload.fields([{ name: 'bill', maxCount: 1 }, { name: 'slip', maxCount: 1 }]),
+  upload.fields([{ name: 'bills', maxCount: 20 }, { name: 'bill', maxCount: 1 }, { name: 'slip', maxCount: 1 }]),
   addPayment
 );
 router.delete('/:id/payments/:paymentId', deletePayment);

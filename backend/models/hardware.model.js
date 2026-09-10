@@ -25,16 +25,23 @@ const paymentSchema = new mongoose.Schema({
   projectName: { type: String, required: true },
   amount: { type: Number, required: true },
   date: { type: Date, default: Date.now },
-  reason: { type: String, required: true },
+  referenceNo: { type: String },
+  bills: [{ url: String, name: String }],
+  // Kept for backward compatibility with old single-bill records.
   billUrl: { type: String },
   slipUrl: { type: String },
-  referenceNo: { type: String },
+  accountNumber: { type: String },
+  bankName: { type: String },
+  bankBranch: { type: String },
   note: { type: String },
 });
 
 const hardwareSchema = new mongoose.Schema({
   supplierName: { type: String, required: true },
   phone: { type: String, required: true },
+  accountNumber: { type: String },
+  bankName: { type: String },
+  bankBranch: { type: String },
   items: [itemSchema],
   orders: [orderSchema],
   payments: [paymentSchema],

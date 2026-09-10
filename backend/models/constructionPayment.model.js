@@ -4,7 +4,7 @@ const constructionPaymentSchema = new mongoose.Schema({
   title: { type: String, required: true },
   amount: { type: Number, required: true },
   paidTo: { type: String },
-  reason: { type: String, required: true },
+  referenceNo: { type: String, required: true },
   projectName: { type: String, required: true },
   date: { type: Date, default: Date.now },
   billUrl: { type: String },
