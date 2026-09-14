@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload');
+const { protect, requireApproved } = require('../middleware/auth.middleware');
 const {
   getHardware,
   createHardware,
@@ -14,6 +15,8 @@ const {
   deletePayment,
   getQuote,
 } = require('../controllers/hardware.controller');
+
+router.use(protect, requireApproved);
 
 router.get('/', getHardware);
 router.post('/', createHardware);

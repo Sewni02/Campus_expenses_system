@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload');
+const { protect, requireApproved } = require('../middleware/auth.middleware');
 const {
   getContractors,
   createContractor,
@@ -10,6 +11,8 @@ const {
   deleteEstimationPlan,
   addPayment,
 } = require('../controllers/contractor.controller');
+
+router.use(protect, requireApproved);
 
 router.get('/', getContractors);
 router.post('/', createContractor);
