@@ -7,6 +7,7 @@ import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import WaitingApproval from './pages/WaitingApproval';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   return (
@@ -15,11 +16,32 @@ function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/admin/users" element={<SuperAdminDashboard />} />
-        <Route path="/waiting-approval" element={<WaitingApproval />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password/:token" element={<ResetPassword />} />
+
+        {/* Anyone logged in and approved can see their dashboard */}
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Super admin only */}
+        <Route
+          path="/admin/users"
+          element={
+            <ProtectedRoute allowedRoles={['super_admin']}>
+              <SuperAdminDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Logged in but not yet approved lands here — no ProtectedRoute
+            wrapper needed since this page IS the "please wait" state. */}
+        <Route path="/waiting-approval" element={<WaitingApproval />} />
       </Routes>
     </BrowserRouter>
   );

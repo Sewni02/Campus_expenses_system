@@ -24,7 +24,7 @@ const signup = async (req, res) => {
       role: isSuperAdmin ? 'super_admin' : (role || 'employee'),
       department,
       status: isSuperAdmin ? 'approved' : 'pending',
-      accessLevel: isSuperAdmin ? 'full_access' : 'no_access',
+      permissions: isSuperAdmin ? ['*'] : [],
     });
 
     res.status(201).json({
@@ -74,7 +74,7 @@ const login = async (req, res) => {
         email: user.email,
         role: user.role,
         status: user.status,
-        accessLevel: user.accessLevel,
+        permissions: user.permissions,
       },
     });
   } catch (error) {
