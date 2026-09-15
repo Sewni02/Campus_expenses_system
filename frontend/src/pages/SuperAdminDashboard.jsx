@@ -99,7 +99,6 @@ function useProjectNames() {
   const refetch = async () => {
     try {
       const res = await axios.get(`${API_BASE_URL}/api/projects`);
-      const res = await axios.get('/api/projects');
       setProjectNames(res.data.projectNames || []);
     } catch (err) {
       console.error(err);
@@ -265,7 +264,6 @@ function UserManagement() {
   const fetchUsers = async () => {
     try {
       const res = await axios.get(`${API_BASE_URL}/api/admin/users`);
-      const res = await axios.get('/api/admin/users');
       setUsers(res.data);
     } catch (err) {
       console.error(err);
@@ -275,7 +273,6 @@ function UserManagement() {
   const fetchStats = async () => {
     try {
       const res = await axios.get(`${API_BASE_URL}/api/admin/stats`);
-      const res = await axios.get('/api/admin/stats');
       setStats(res.data);
     } catch (err) {
       console.error(err);
@@ -303,7 +300,6 @@ function UserManagement() {
     try {
       await axios.put(
         `${API_BASE_URL}/api/admin/users/${managingUser._id}/approve`,
-        `/api/admin/users/${managingUser._id}/approve`,
         { permissions: checkedPermissions }
       );
       closeManagePanel();
@@ -318,7 +314,6 @@ function UserManagement() {
     if (!managingUser) return;
     try {
       await axios.put(`${API_BASE_URL}/api/admin/users/${managingUser._id}/reject`);
-      await axios.put(`/api/admin/users/${managingUser._id}/reject`);
       closeManagePanel();
       fetchUsers();
       fetchStats();
@@ -499,8 +494,6 @@ function Contractors() {
       const url = searchTerm
         ? `${API_BASE_URL}/api/contractors?search=${encodeURIComponent(searchTerm)}`
         : `${API_BASE_URL}/api/contractors`;
-        ? `/api/contractors?search=${encodeURIComponent(searchTerm)}`
-        : '/api/contractors';
       const res = await axios.get(url);
       setContractors(res.data);
 
@@ -519,7 +512,6 @@ function Contractors() {
     setIsAddSubmitting(true);
     try {
       const res = await axios.post(`${API_BASE_URL}/api/contractors`, formData);
-      const res = await axios.post('/api/contractors', formData);
       setContractors((prev) => [res.data.contractor, ...prev]);
       setFormData({ name: '', phone: '', registrationDate: '', accountNumber: '', bankName: '', bankBranch: '' });
       setShowForm(false);
@@ -562,7 +554,6 @@ function Contractors() {
     setIsEditSubmitting(true);
     try {
       const res = await axios.put(`${API_BASE_URL}/api/contractors/${viewingContractor._id}`, editForm);
-      const res = await axios.put(`/api/contractors/${viewingContractor._id}`, editForm);
       const updated = res.data.contractor;
       setContractors((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
       setViewingContractor(updated);
@@ -578,7 +569,6 @@ function Contractors() {
     if (!window.confirm(`Delete ${viewingContractor.name}? This cannot be undone.`)) return;
     try {
       await axios.delete(`${API_BASE_URL}/api/contractors/${viewingContractor._id}`);
-      await axios.delete(`/api/contractors/${viewingContractor._id}`);
       setContractors((prev) => prev.filter((c) => c._id !== viewingContractor._id));
       closeProfile();
     } catch (err) {
@@ -600,7 +590,6 @@ function Contractors() {
 
       const res = await axios.post(
         `${API_BASE_URL}/api/contractors/${viewingContractor._id}/plans`,
-        `/api/contractors/${viewingContractor._id}/plans`,
         data,
       );
       const updated = res.data.contractor;
@@ -622,7 +611,6 @@ function Contractors() {
     try {
       const res = await axios.delete(
         `${API_BASE_URL}/api/contractors/${viewingContractor._id}/plans/${planId}`
-        `/api/contractors/${viewingContractor._id}/plans/${planId}`
       );
       const updated = res.data.contractor;
       setContractors((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
@@ -934,7 +922,6 @@ function ConstructionPayments() {
   const fetchPayments = async () => {
     try {
       const res = await axios.get(`${API_BASE_URL}/api/construction-payments`);
-      const res = await axios.get('/api/construction-payments');
       setPayments(res.data);
     } catch (err) {
       console.error(err);
@@ -944,7 +931,6 @@ function ConstructionPayments() {
   const fetchContractorsList = async () => {
     try {
       const res = await axios.get(`${API_BASE_URL}/api/contractors`);
-      const res = await axios.get('/api/contractors');
       setContractors(res.data);
     } catch (err) {
       console.error(err);
@@ -970,7 +956,6 @@ function ConstructionPayments() {
       if (bill) data.append('bill', bill);
 
       const res = await axios.post(`${API_BASE_URL}/api/construction-payments`, data, {
-      await axios.post('/api/construction-payments', data, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
@@ -990,7 +975,6 @@ function ConstructionPayments() {
     if (!window.confirm('Delete this payment? This cannot be undone.')) return;
     try {
       await axios.delete(`${API_BASE_URL}/api/construction-payments/${paymentId}`);
-      await axios.delete(`/api/construction-payments/${paymentId}`);
       setPayments((prev) => prev.filter((p) => p._id !== paymentId));
     } catch (err) {
       console.error(err);
@@ -1038,7 +1022,6 @@ function ConstructionPayments() {
 
       await axios.post(
         `${API_BASE_URL}/api/contractors/${contractorId}/payments`,
-        `/api/contractors/${contractorId}/payments`,
         data,
       );
 
@@ -1056,7 +1039,6 @@ function ConstructionPayments() {
     if (!window.confirm('Delete this payment? This cannot be undone.')) return;
     try {
       const res = await axios.delete(`${API_BASE_URL}/api/contractors/${contractorId}/payments/${paymentId}`);
-      const res = await axios.delete(`/api/contractors/${contractorId}/payments/${paymentId}`);
       const updated = res.data.contractor;
       setContractors((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
     } catch (err) {
@@ -1457,7 +1439,6 @@ function Hardware() {
   const fetchHardware = async () => {
     try {
       const res = await axios.get(`${API_BASE_URL}/api/hardware`);
-      const res = await axios.get('/api/hardware');
       setHardwareList(res.data);
     } catch (err) {
       console.error(err);
@@ -1470,7 +1451,6 @@ function Hardware() {
     setIsSubmitting(true);
     try {
       const res = await axios.post(`${API_BASE_URL}/api/hardware`, formData);
-      const res = await axios.post('/api/hardware', formData);
       setHardwareList((prev) => [...prev, res.data.hardware]);
       setFormData({ supplierName: '', phone: '', accountNumber: '', bankName: '', bankBranch: '' });
       setShowForm(false);
@@ -1492,7 +1472,6 @@ function Hardware() {
     setIsItemSubmitting(true);
     try {
       const res = await axios.post(`${API_BASE_URL}/api/hardware/${addingItemTo._id}/items`, itemForm);
-      const res = await axios.post(`/api/hardware/${addingItemTo._id}/items`, itemForm);
       const updatedHardware = res.data.hardware;
       setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
       setAddingItemTo(null);
@@ -1522,7 +1501,6 @@ function Hardware() {
     try {
       const res = await axios.put(
         `${API_BASE_URL}/api/hardware/${editingItem.hwId}/items/${editingItem.itemId}`,
-        `/api/hardware/${editingItem.hwId}/items/${editingItem.itemId}`,
         {
           name: editingItem.name,
           unitPrice: editingItem.unitPrice,
@@ -1543,7 +1521,6 @@ function Hardware() {
     if (!window.confirm('Delete this item? This cannot be undone.')) return;
     try {
       const res = await axios.delete(`${API_BASE_URL}/api/hardware/${hardwareId}/items/${itemId}`);
-      const res = await axios.delete(`/api/hardware/${hardwareId}/items/${itemId}`);
       const updatedHardware = res.data.hardware;
       setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
     } catch (err) {
@@ -1568,7 +1545,6 @@ function Hardware() {
     setIsEditSupplierSubmitting(true);
     try {
       const res = await axios.put(`${API_BASE_URL}/api/hardware/${hardwareId}`, editSupplierForm);
-      const res = await axios.put(`/api/hardware/${hardwareId}`, editSupplierForm);
       const updatedHardware = res.data.hardware;
       setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
       cancelEditSupplier();
@@ -1584,7 +1560,6 @@ function Hardware() {
     if (!window.confirm('Delete this hardware supplier? This cannot be undone.')) return;
     try {
       await axios.delete(`${API_BASE_URL}/api/hardware/${hardwareId}`);
-      await axios.delete(`/api/hardware/${hardwareId}`);
       setHardwareList((prev) => prev.filter((hw) => hw._id !== hardwareId));
     } catch (err) {
       console.error(err);
@@ -1596,7 +1571,6 @@ function Hardware() {
     if (!window.confirm('Delete this payment? This cannot be undone.')) return;
     try {
       const res = await axios.delete(`${API_BASE_URL}/api/hardware/${hardwareId}/payments/${paymentId}`);
-      const res = await axios.delete(`/api/hardware/${hardwareId}/payments/${paymentId}`);
       const updatedHardware = res.data.hardware;
       setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
     } catch (err) {
@@ -1641,7 +1615,6 @@ function Hardware() {
 
       const res = await axios.post(
         `${API_BASE_URL}/api/hardware/${recordingPaymentFor._id}/payments`,
-        `/api/hardware/${recordingPaymentFor._id}/payments`,
         data
       );
       const updatedHardware = res.data.hardware;
@@ -1706,7 +1679,6 @@ function Hardware() {
     setIsOrderSubmitting(true);
     try {
       const res = await axios.post(`${API_BASE_URL}/api/hardware/${hardware._id}/order`, { items });
-      const res = await axios.post(`/api/hardware/${hardware._id}/order`, { items });
       const updatedHardware = res.data.hardware;
       setLastOrderTotal(res.data.order.total);
       setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
@@ -2197,7 +2169,6 @@ function HardwarePriceFinder() {
     setIsSubmitting(true);
     try {
       const res = await axios.post(`${API_BASE_URL}/api/hardware/quote`, { items: validRows });
-      const res = await axios.post('/api/hardware/quote', { items: validRows });
       setQuoteResult(res.data);
     } catch (err) {
       console.error(err);
@@ -2337,8 +2308,6 @@ function ProjectSummary() {
   useEffect(() => {
     axios.get(`${API_BASE_URL}/api/contractors`).then((res) => setAllContractors(res.data)).catch(console.error);
     axios.get(`${API_BASE_URL}/api/hardware`).then((res) => setAllHardware(res.data)).catch(console.error);
-    axios.get('/api/contractors').then((res) => setAllContractors(res.data)).catch(console.error);
-    axios.get('/api/hardware').then((res) => setAllHardware(res.data)).catch(console.error);
   }, []);
 
   const runSearch = async (trimmed) => {
@@ -2348,7 +2317,6 @@ function ProjectSummary() {
     try {
       const res = await axios.get(
         `${API_BASE_URL}/api/projects/${encodeURIComponent(trimmed)}/summary`
-        `/api/projects/${encodeURIComponent(trimmed)}/summary`
       );
       setResult(res.data);
       setSearchedFor(trimmed);
@@ -2397,7 +2365,6 @@ function ProjectSummary() {
       if (planFile) data.append('plan', planFile);
       await axios.post(
         `${API_BASE_URL}/api/contractors/${planForm.contractorId}/plans`,
-        `/api/contractors/${planForm.contractorId}/plans`,
         data,
         { headers: { 'Content-Type': 'multipart/form-data' } }
       );
@@ -2435,7 +2402,6 @@ function ProjectSummary() {
       if (hwSlipFile) data.append('slip', hwSlipFile);
       await axios.post(
         `${API_BASE_URL}/api/hardware/${hwPayForm.hardwareId}/payments`,
-        `/api/hardware/${hwPayForm.hardwareId}/payments`,
         data
       );
       await afterQuickAdd();
@@ -2462,7 +2428,6 @@ function ProjectSummary() {
       if (otherForm.date) data.append('date', otherForm.date);
       if (otherBillFile) data.append('bill', otherBillFile);
       await axios.post(`${API_BASE_URL}/api/construction-payments`, data, {
-      await axios.post('/api/construction-payments', data, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       await afterQuickAdd();
