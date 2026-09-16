@@ -122,18 +122,28 @@ const deleteEstimationPlan = async (req, res) => {
   }
 };
 
-// A payment is always recorded against one of the contractor's estimation
-// plans, so we can tell which project it belongs to and roll it up later.
-const addPayment = async (req, res) => {
+// Generates a short, human-readable invoice number, e.g. INV-482913-57
+const generateInvoiceNo = () => {
+  const timePart = Date.now().toString().slice(-6);
+  const randPart = Math.floor(100 + Math.random() * 900);
+  return `INV-${timePart}-${randPart}`;
+};
+
+// STEP 1 of the invoice flow: raise an invoice against one of the
+// contractor's estimation plans. This is created with status 'pending' and
+// only carries invoice-side details (amount, reason, the bill file received
+// from the contractor). No payment/bank info exists yet - that only gets
+// attached once finance actually pays it (see payInvoice below).
+const createInvoice = async (req, res) => {
   try {
     const { id } = req.params;
-    const { amount, date, reason, note, paymentType, planId, referenceNo, accountNumber, bankName, bankBranch } = req.body;
+    const { amount, date, reason, note, planId } = req.body;
 
     if (!amount) {
       return res.status(400).json({ message: 'amount is required' });
     }
     if (!planId) {
-      return res.status(400).json({ message: 'planId is required - payments must be linked to an estimation plan' });
+      return res.status(400).json({ message: 'planId is required - invoices must be linked to an estimation plan' });
     }
     if (!reason || !reason.trim()) {
       return res.status(400).json({ message: 'reason is required' });
@@ -149,27 +159,144 @@ const addPayment = async (req, res) => {
       return res.status(404).json({ message: 'Estimation plan not found for this contractor' });
     }
 
-    const slipUrl = req.files?.slip?.[0]?.path;
     const billUrl = req.files?.bill?.[0]?.path;
 
     contractor.payments.push({
+      invoiceNo: generateInvoiceNo(),
       amount,
-      date: date || Date.now(),
+      invoiceDate: date || Date.now(),
       reason,
       note,
-      paymentType: paymentType || 'direct_slip',
-      slipUrl,
       billUrl,
-      referenceNo,
-      accountNumber: accountNumber || contractor.accountNumber,
-      bankName: bankName || contractor.bankName,
-      bankBranch: bankBranch || contractor.bankBranch,
+      status: 'pending',
       planId: plan._id,
       projectName: plan.projectName,
     });
     await contractor.save();
 
-    res.json({ message: 'Payment added successfully', contractor });
+    res.status(201).json({ message: 'Invoice created successfully. Send it to finance to record the payment once it is settled.', contractor });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// STEP 2 of the invoice flow: record the actual bank payment made against a
+// pending invoice. This attaches the payment/bank details to the SAME
+// invoice record and flips its status to 'paid'.
+const payInvoice = async (req, res) => {
+  try {
+    const { id, paymentId } = req.params;
+    const { date, referenceNo, accountNumber, bankName, bankBranch, note } = req.body;
+
+    const contractor = await Contractor.findById(id);
+    if (!contractor) {
+      return res.status(404).json({ message: 'Contractor not found' });
+    }
+
+    const invoice = contractor.payments.id(paymentId);
+    if (!invoice) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+
+    if (invoice.status === 'paid') {
+      return res.status(400).json({ message: 'This invoice has already been paid' });
+    }
+
+    if (!referenceNo || !referenceNo.trim()) {
+      return res.status(400).json({ message: 'referenceNo is required to record the payment' });
+    }
+
+    const slipUrl = req.files?.slip?.[0]?.path;
+
+    invoice.status = 'paid';
+    invoice.paymentDate = date || Date.now();
+    invoice.referenceNo = referenceNo;
+    invoice.accountNumber = accountNumber || contractor.accountNumber;
+    invoice.bankName = bankName || contractor.bankName;
+    invoice.bankBranch = bankBranch || contractor.bankBranch;
+    if (slipUrl) invoice.slipUrl = slipUrl;
+    invoice.paymentNote = note;
+
+    await contractor.save();
+
+    res.json({ message: 'Payment recorded - invoice marked as paid', contractor });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+
+// EDIT an existing invoice — works for both pending and paid invoices.
+// Lets you correct invoice-side details (amount, reason, invoice date,
+// note) and, if the invoice has already been paid, also correct the
+// payment-side details (reference no, bank info, payment date, note).
+const updateInvoice = async (req, res) => {
+  try {
+    const { id, paymentId } = req.params;
+    const {
+      amount, reason, date, note,
+      referenceNo, accountNumber, bankName, bankBranch, paymentDate, paymentNote,
+    } = req.body;
+
+    const contractor = await Contractor.findById(id);
+    if (!contractor) {
+      return res.status(404).json({ message: 'Contractor not found' });
+    }
+
+    const invoice = contractor.payments.id(paymentId);
+    if (!invoice) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+
+    if (amount !== undefined && amount !== '') invoice.amount = amount;
+    if (reason !== undefined) invoice.reason = reason;
+    if (date) invoice.invoiceDate = date;
+    if (note !== undefined) invoice.note = note;
+
+    if (invoice.status === 'paid') {
+      if (referenceNo !== undefined) invoice.referenceNo = referenceNo;
+      if (accountNumber !== undefined) invoice.accountNumber = accountNumber;
+      if (bankName !== undefined) invoice.bankName = bankName;
+      if (bankBranch !== undefined) invoice.bankBranch = bankBranch;
+      if (paymentDate) invoice.paymentDate = paymentDate;
+      if (paymentNote !== undefined) invoice.paymentNote = paymentNote;
+    }
+
+    // backfill invoiceNo if this is still a legacy record missing it
+    if (!invoice.invoiceNo) {
+      invoice.invoiceNo = generateInvoiceNo();
+    }
+
+    await contractor.save({ validateModifiedOnly: true });
+
+    res.json({ message: 'Invoice updated successfully', contractor });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+
+const deletePayment = async (req, res) => {
+  try {
+    const { id, paymentId } = req.params;
+
+    const contractor = await Contractor.findById(id);
+    if (!contractor) {
+      return res.status(404).json({ message: 'Contractor not found' });
+    }
+
+    const invoice = contractor.payments.id(paymentId);
+    if (!invoice) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+
+    invoice.deleteOne();
+    await contractor.save();
+
+    res.json({ message: 'Invoice deleted successfully', contractor });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -183,5 +310,8 @@ module.exports = {
   deleteContractor,
   addEstimationPlan,
   deleteEstimationPlan,
-  addPayment,
+  createInvoice,
+  updateInvoice, 
+  payInvoice,
+  deletePayment,
 };

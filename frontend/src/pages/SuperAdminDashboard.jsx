@@ -895,24 +895,41 @@ function ConstructionPayments() {
   const [formData, setFormData] = useState({ title: '', amount: '', paidTo: '', referenceNo: '', projectName: '', description: '', date: '', accountNumber: '', bankName: '', bankBranch: '' });
   const [bill, setBill] = useState(null);
 
-  // Contractor payment recording - always linked to one of the contractor's estimation plans
+  // Contractor invoices - every contractor payment now starts as an invoice
+  // (raised against one of the contractor's estimation plans, status
+  // 'pending') and is only marked 'paid' once finance actually settles it.
   const [contractors, setContractors] = useState([]);
-  const [showContractorPayForm, setShowContractorPayForm] = useState(false);
+  const [invoiceTab, setInvoiceTab] = useState('pending'); // 'pending' | 'paid'
+
+  // Step 1: raise a new invoice - invoice-side details only, no bank info yet
+  const [showInvoiceForm, setShowInvoiceForm] = useState(false);
   const [contractorId, setContractorId] = useState('');
   const [planId, setPlanId] = useState('');
-  const [paymentType, setPaymentType] = useState('direct_slip'); // 'direct_slip' | 'bill_then_payment'
-  const [payAmount, setPayAmount] = useState('');
+  const [invoiceAmount, setInvoiceAmount] = useState('');
+  const [invoiceDate, setInvoiceDate] = useState('');
+  const [invoiceReason, setInvoiceReason] = useState('');
+  const [invoiceNote, setInvoiceNote] = useState('');
+  const [invoiceBillFile, setInvoiceBillFile] = useState(null);
+  const [isInvoiceSubmitting, setIsInvoiceSubmitting] = useState(false);
+
+  // Step 2: record the actual bank payment against a pending invoice
+  const [payingInvoice, setPayingInvoice] = useState(null); // { contractorId, paymentId, contractorName }
   const [payDate, setPayDate] = useState('');
   const [payReferenceNo, setPayReferenceNo] = useState('');
   const [payAccountNumber, setPayAccountNumber] = useState('');
   const [payBankName, setPayBankName] = useState('');
   const [payBankBranch, setPayBankBranch] = useState('');
-  const [payReason, setPayReason] = useState('');
   const [payNote, setPayNote] = useState('');
-  const [slipFile, setSlipFile] = useState(null);
-  const [billFile, setBillFile] = useState(null);
+  const [paySlipFile, setPaySlipFile] = useState(null);
   const [isPaySubmitting, setIsPaySubmitting] = useState(false);
+
   const [isOtherPaySubmitting, setIsOtherPaySubmitting] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState(null); // { contractorId, paymentId, status, contractorName }
+const [editInvoiceForm, setEditInvoiceForm] = useState({
+  amount: '', reason: '', date: '', note: '',
+  referenceNo: '', accountNumber: '', bankName: '', bankBranch: '', paymentDate: '', paymentNote: '',
+});
+const [isEditInvoiceSubmitting, setIsEditInvoiceSubmitting] = useState(false);
 
   useEffect(() => {
     fetchPayments();
@@ -982,70 +999,183 @@ function ConstructionPayments() {
     }
   };
 
-  const resetContractorPayForm = () => {
+  const resetInvoiceForm = () => {
     setContractorId('');
     setPlanId('');
-    setPaymentType('direct_slip');
-    setPayAmount('');
+    setInvoiceAmount('');
+    setInvoiceDate('');
+    setInvoiceReason('');
+    setInvoiceNote('');
+    setInvoiceBillFile(null);
+  };
+
+  const resetPayForm = () => {
+    setPayingInvoice(null);
     setPayDate('');
     setPayReferenceNo('');
     setPayAccountNumber('');
     setPayBankName('');
     setPayBankBranch('');
-    setPayReason('');
     setPayNote('');
-    setSlipFile(null);
-    setBillFile(null);
+    setPaySlipFile(null);
   };
 
   const selectedContractor = contractors.find((c) => c._id === contractorId);
   const selectedPlan = selectedContractor?.estimationPlans.find((p) => p._id === planId);
 
-  const handleRecordContractorPayment = async (e) => {
+  // STEP 1: raise an invoice against a contractor's estimation plan.
+  // No payment/bank details are collected here - the invoice is created as
+  // 'pending' and only gets paid details once it's actually settled.
+  const handleCreateInvoice = async (e) => {
     e.preventDefault();
-    if (!contractorId || !planId || isPaySubmitting) return;
-    setIsPaySubmitting(true);
+    if (!contractorId || !planId || isInvoiceSubmitting) return;
+    setIsInvoiceSubmitting(true);
     try {
       const data = new FormData();
-      data.append('amount', payAmount);
-      if (payDate) data.append('date', payDate);
-      data.append('reason', payReason);
-      data.append('note', payNote);
-      data.append('paymentType', paymentType);
+      data.append('amount', invoiceAmount);
+      if (invoiceDate) data.append('date', invoiceDate);
+      data.append('reason', invoiceReason);
+      data.append('note', invoiceNote);
       data.append('planId', planId);
-      data.append('referenceNo', payReferenceNo);
-      data.append('accountNumber', payAccountNumber);
-      data.append('bankName', payBankName);
-      data.append('bankBranch', payBankBranch);
-      if (slipFile) data.append('slip', slipFile);
-      if (paymentType === 'bill_then_payment' && billFile) data.append('bill', billFile);
+      if (invoiceBillFile) data.append('bill', invoiceBillFile);
 
       await axios.post(
         `${API_BASE_URL}/api/contractors/${contractorId}/payments`,
         data,
       );
 
-      resetContractorPayForm();
-      setShowContractorPayForm(false);
+      resetInvoiceForm();
+      setShowInvoiceForm(false);
+      setInvoiceTab('pending');
       fetchContractorsList();
     } catch (err) {
       console.error(err);
+      alert(err.response?.data?.message || 'Could not create the invoice. Please try again.');
+    } finally {
+      setIsInvoiceSubmitting(false);
+    }
+  };
+
+  // Open the "record payment" form for a specific pending invoice, prefilling
+  // the contractor's own bank details as a starting point.
+  const startPayingInvoice = (contractor, invoice) => {
+    resetPayForm();
+    setPayingInvoice({ contractorId: contractor._id, paymentId: invoice._id, contractorName: contractor.name });
+    setPayAccountNumber(contractor.accountNumber || '');
+    setPayBankName(contractor.bankName || '');
+    setPayBankBranch(contractor.bankBranch || '');
+  };
+
+  // STEP 2: record the actual bank payment made against a pending invoice.
+  // This attaches the payment/bank details to that invoice and marks it paid.
+  const handlePayInvoice = async (e) => {
+    e.preventDefault();
+    if (!payingInvoice || isPaySubmitting) return;
+    setIsPaySubmitting(true);
+    try {
+      const data = new FormData();
+      if (payDate) data.append('date', payDate);
+      data.append('referenceNo', payReferenceNo);
+      data.append('accountNumber', payAccountNumber);
+      data.append('bankName', payBankName);
+      data.append('bankBranch', payBankBranch);
+      data.append('note', payNote);
+      if (paySlipFile) data.append('slip', paySlipFile);
+
+      await axios.put(
+        `${API_BASE_URL}/api/contractors/${payingInvoice.contractorId}/payments/${payingInvoice.paymentId}/pay`,
+        data,
+      );
+
+      resetPayForm();
+      setInvoiceTab('paid');
+      fetchContractorsList();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not record the payment. Please try again.');
     } finally {
       setIsPaySubmitting(false);
     }
   };
 
   const handleDeleteContractorPayment = async (contractorId, paymentId) => {
-    if (!window.confirm('Delete this payment? This cannot be undone.')) return;
+    if (!window.confirm('Delete this invoice? This cannot be undone.')) return;
     try {
       const res = await axios.delete(`${API_BASE_URL}/api/contractors/${contractorId}/payments/${paymentId}`);
       const updated = res.data.contractor;
       setContractors((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || 'Could not delete the payment. Please check the backend server is running and try again.');
+      alert(err.response?.data?.message || 'Could not delete the invoice. Please check the backend server is running and try again.');
     }
   };
+
+  const startEditInvoice = (contractor, invoice) => {
+  setEditingInvoice({
+    contractorId: contractor._id,
+    paymentId: invoice._id,
+    status: invoice.status,
+    contractorName: contractor.name,
+  });
+  setEditInvoiceForm({
+    amount: invoice.amount ?? '',
+    reason: invoice.reason || '',
+    date: invoice.invoiceDate ? new Date(invoice.invoiceDate).toISOString().slice(0, 10) : '',
+    note: invoice.note || '',
+    referenceNo: invoice.referenceNo || '',
+    accountNumber: invoice.accountNumber || '',
+    bankName: invoice.bankName || '',
+    bankBranch: invoice.bankBranch || '',
+    paymentDate: invoice.paymentDate ? new Date(invoice.paymentDate).toISOString().slice(0, 10) : '',
+    paymentNote: invoice.paymentNote || '',
+  });
+};
+
+const closeEditInvoice = () => {
+  setEditingInvoice(null);
+  setEditInvoiceForm({
+    amount: '', reason: '', date: '', note: '',
+    referenceNo: '', accountNumber: '', bankName: '', bankBranch: '', paymentDate: '', paymentNote: '',
+  });
+};
+
+const handleUpdateInvoice = async (e) => {
+  e.preventDefault();
+  if (!editingInvoice || isEditInvoiceSubmitting) return;
+  setIsEditInvoiceSubmitting(true);
+  try {
+    const payload = {
+      amount: editInvoiceForm.amount,
+      reason: editInvoiceForm.reason,
+      date: editInvoiceForm.date,
+      note: editInvoiceForm.note,
+    };
+    if (editingInvoice.status === 'paid') {
+      payload.referenceNo = editInvoiceForm.referenceNo;
+      payload.accountNumber = editInvoiceForm.accountNumber;
+      payload.bankName = editInvoiceForm.bankName;
+      payload.bankBranch = editInvoiceForm.bankBranch;
+      payload.paymentDate = editInvoiceForm.paymentDate;
+      payload.paymentNote = editInvoiceForm.paymentNote;
+    }
+    await axios.put(
+      `${API_BASE_URL}/api/contractors/${editingInvoice.contractorId}/payments/${editingInvoice.paymentId}`,
+      payload
+    );
+    closeEditInvoice();
+    fetchContractorsList();
+  } catch (err) {
+    console.error(err);
+    alert(err.response?.data?.message || 'Could not update the invoice. Please try again.');
+  } finally {
+    setIsEditInvoiceSubmitting(false);
+  }
+};
+
+  // A record is "paid" once it has been explicitly settled. Invoices created
+  // before this status field existed have no status at all but already carry
+  // full payment details, so treat those as paid too.
+  const isInvoicePaid = (invoice) => invoice.status !== 'pending';
 
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
 
@@ -1192,27 +1322,24 @@ function ConstructionPayments() {
         </tbody>
       </table>
 
-      {/* CONTRACTOR PAYMENTS - always linked to one of the contractor's estimation plans */}
+      {/* CONTRACTOR INVOICES - every payment now goes through raise-invoice ->
+          send to finance -> mark paid. Pending vs paid invoices are shown as
+          two separate views since a pending invoice has no payment details yet. */}
       <div className="ge-header contractor-payments-header">
-        <h3 className="hw-inline-heading">Contractor Payments</h3>
-        <button className="ge-add-btn" onClick={() => setShowContractorPayForm(!showContractorPayForm)}>
-          {showContractorPayForm ? 'Cancel' : '+ Record Contractor Payment'}
+        <h3 className="hw-inline-heading">Contractor Invoices</h3>
+        <button className="ge-add-btn" onClick={() => setShowInvoiceForm(!showInvoiceForm)}>
+          {showInvoiceForm ? 'Cancel' : '+ Raise Invoice'}
         </button>
       </div>
 
-      {showContractorPayForm && (
-        <form className="ge-form" onSubmit={handleRecordContractorPayment}>
+      {showInvoiceForm && (
+        <form className="ge-form" onSubmit={handleCreateInvoice}>
           <div className="ge-form-row">
             <select
               value={contractorId}
               onChange={(e) => {
-                const nextId = e.target.value;
-                const nextContractor = contractors.find((c) => c._id === nextId);
-                setContractorId(nextId);
+                setContractorId(e.target.value);
                 setPlanId('');
-                setPayAccountNumber(nextContractor?.accountNumber || '');
-                setPayBankName(nextContractor?.bankName || '');
-                setPayBankBranch(nextContractor?.bankBranch || '');
               }}
               required
             >
@@ -1249,11 +1376,139 @@ function ConstructionPayments() {
           <div className="ge-form-row">
             <input
               type="number"
-              placeholder="Amount (LKR)"
-              value={payAmount}
-              onChange={(e) => setPayAmount(sanitizeAmountInput(e.target.value))}
+              placeholder="Invoice amount (LKR)"
+              value={invoiceAmount}
+              onChange={(e) => setInvoiceAmount(sanitizeAmountInput(e.target.value))}
               required
             />
+            <input
+              type="date"
+              value={invoiceDate}
+              onChange={(e) => setInvoiceDate(e.target.value)}
+            />
+          </div>
+
+          <div className="ge-form-row">
+            <input
+              type="text"
+              placeholder="Reason for this invoice"
+              value={invoiceReason}
+              onChange={(e) => setInvoiceReason(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="ge-form-row upload-row">
+            <div className="upload-field">
+              <label className="upload-field-label">Bill / invoice from contractor</label>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf"
+                onChange={(e) => setInvoiceBillFile(e.target.files[0])}
+              />
+            </div>
+          </div>
+
+          <textarea
+            placeholder="Note (optional)"
+            value={invoiceNote}
+            onChange={(e) => setInvoiceNote(e.target.value)}
+            rows={2}
+            className="payment-note-textarea"
+          />
+          <button type="submit" className="ge-save-btn" disabled={isInvoiceSubmitting}>
+            {isInvoiceSubmitting ? 'Saving...' : 'Raise Invoice'}
+          </button>
+        </form>
+      )}
+
+      {editingInvoice && (
+  <form className="ge-form pay-invoice-form" onSubmit={handleUpdateInvoice}>
+    <p className="sa-group-title plan-preview-title">
+      Edit Invoice - {editingInvoice.contractorName}
+    </p>
+    <div className="ge-form-row">
+      <input
+        type="number"
+        placeholder="Invoice amount (LKR)"
+        value={editInvoiceForm.amount}
+        onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, amount: sanitizeAmountInput(e.target.value) })}
+        required
+      />
+      <input
+        type="date"
+        value={editInvoiceForm.date}
+        onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, date: e.target.value })}
+      />
+    </div>
+    <div className="ge-form-row">
+      <input
+        type="text"
+        placeholder="Reason for this invoice"
+        value={editInvoiceForm.reason}
+        onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, reason: e.target.value })}
+        required
+      />
+    </div>
+    <textarea
+      placeholder="Note (optional)"
+      value={editInvoiceForm.note}
+      onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, note: e.target.value })}
+      rows={2}
+      className="payment-note-textarea"
+    />
+
+    {editingInvoice.status === 'paid' && (
+      <>
+        <p className="sa-group-title plan-preview-title">Payment details</p>
+        <div className="ge-form-row">
+          <input
+            type="date"
+            value={editInvoiceForm.paymentDate}
+            onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, paymentDate: e.target.value })}
+          />
+          <input
+            type="text"
+            placeholder="Cheque / Reference No."
+            value={editInvoiceForm.referenceNo}
+            onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, referenceNo: e.target.value })}
+            required
+          />
+        </div>
+        <div className="ge-form-row">
+          <input type="text" placeholder="Payee account number" value={editInvoiceForm.accountNumber} onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, accountNumber: e.target.value })} />
+          <BankNameField value={editInvoiceForm.bankName} onChange={(val) => setEditInvoiceForm({ ...editInvoiceForm, bankName: val })} />
+          <input type="text" placeholder="Payee branch" value={editInvoiceForm.bankBranch} onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, bankBranch: e.target.value })} />
+        </div>
+        <textarea
+          placeholder="Payment note (optional)"
+          value={editInvoiceForm.paymentNote}
+          onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, paymentNote: e.target.value })}
+          rows={2}
+          className="payment-note-textarea"
+        />
+      </>
+    )}
+
+    <div className="sa-panel-actions">
+      <button type="submit" className="ge-save-btn" disabled={isEditInvoiceSubmitting}>
+        {isEditInvoiceSubmitting ? 'Saving...' : 'Save Changes'}
+      </button>
+      <button type="button" className="sa-reject-btn" onClick={closeEditInvoice}>
+        Cancel
+      </button>
+    </div>
+  </form>
+)}
+
+      {/* Step 2 form - only shown while recording the payment for one specific
+          pending invoice (opened via "Mark as Paid" in the table below) */}
+      {payingInvoice && (
+        <form className="ge-form pay-invoice-form" onSubmit={handlePayInvoice}>
+          <p className="sa-group-title plan-preview-title">
+            Record Payment for Invoice - {payingInvoice.contractorName}
+          </p>
+          <div className="ge-form-row">
             <input
               type="date"
               value={payDate}
@@ -1264,6 +1519,7 @@ function ConstructionPayments() {
               placeholder="Cheque / Reference No."
               value={payReferenceNo}
               onChange={(e) => setPayReferenceNo(e.target.value)}
+              required
             />
           </div>
           <div className="ge-form-row">
@@ -1272,51 +1528,13 @@ function ConstructionPayments() {
             <input type="text" placeholder="Payee branch" value={payBankBranch} onChange={(e) => setPayBankBranch(e.target.value)} />
           </div>
 
-          <div className="ge-form-row">
-            <input
-              type="text"
-              placeholder="Reason for payment"
-              value={payReason}
-              onChange={(e) => setPayReason(e.target.value)}
-              required
-            />
-          </div>
-
-          <p className="sa-group-title plan-preview-title">Payment Method</p>
-          <div className="ge-form-row">
-            <label
-              className={`sa-checkbox-row payment-method-option ${paymentType === 'direct_slip' ? 'checked' : ''}`}
-              onClick={() => setPaymentType('direct_slip')}
-            >
-              <span className="sa-checkbox-custom">{paymentType === 'direct_slip' && '✓'}</span>
-              Direct Bank Slip
-            </label>
-            <label
-              className={`sa-checkbox-row payment-method-option ${paymentType === 'bill_then_payment' ? 'checked' : ''}`}
-              onClick={() => setPaymentType('bill_then_payment')}
-            >
-              <span className="sa-checkbox-custom">{paymentType === 'bill_then_payment' && '✓'}</span>
-              Get Bill, then Bank Payment
-            </label>
-          </div>
-
           <div className="ge-form-row upload-row">
-            {paymentType === 'bill_then_payment' && (
-              <div className="upload-field">
-                <label className="upload-field-label">Bill from contractor</label>
-                <input
-                  type="file"
-                  accept=".jpg,.jpeg,.png,.pdf"
-                  onChange={(e) => setBillFile(e.target.files[0])}
-                />
-              </div>
-            )}
             <div className="upload-field">
               <label className="upload-field-label">Bank payment slip</label>
               <input
                 type="file"
                 accept=".jpg,.jpeg,.png,.pdf"
-                onChange={(e) => setSlipFile(e.target.files[0])}
+                onChange={(e) => setPaySlipFile(e.target.files[0])}
               />
             </div>
           </div>
@@ -1328,63 +1546,162 @@ function ConstructionPayments() {
             rows={2}
             className="payment-note-textarea"
           />
-          <button type="submit" className="ge-save-btn" disabled={isPaySubmitting}>
-            {isPaySubmitting ? 'Saving...' : 'Save Payment'}
-          </button>
+          <div className="sa-panel-actions">
+            <button type="submit" className="ge-save-btn" disabled={isPaySubmitting}>
+              {isPaySubmitting ? 'Saving...' : 'Mark as Paid'}
+            </button>
+            <button type="button" className="sa-reject-btn" onClick={resetPayForm}>
+              Cancel
+            </button>
+          </div>
         </form>
       )}
 
-      <table className="sa-table hw-items-table">
-        <thead>
-          <tr>
-            <th>Contractor</th>
-            <th>Project</th>
-            <th>Amount (LKR)</th>
-            <th>Date</th>
-            <th>Reference No.</th>
-            <th>Account No.</th>
-            <th>Bank / Branch</th>
-            <th>Reason</th>
-            <th>Method</th>
-            <th>Bill</th>
-            <th>Slip</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {contractors.flatMap((c) => c.payments).length === 0 ? (
-            <tr>
-              <td colSpan="12" className="hw-empty-text">
-                No contractor payments recorded
-              </td>
-            </tr>
-          ) : (
-            contractors
-              .flatMap((c) => c.payments.map((p) => ({ ...p, contractorName: c.name, contractorId: c._id })))
-              .sort((a, b) => (a.projectName || '').localeCompare(b.projectName || '', undefined, { sensitivity: 'base' }))
-              .map((p, i) => (
-                <tr key={`${p.contractorId}-${i}`}>
-                  <td>{p.contractorName}</td>
-                  <td>{p.projectName || '-'}</td>
-                  <td>{formatLKR(p.amount)}</td>
-                  <td>{new Date(p.date).toLocaleDateString()}</td>
-                  <td>{p.referenceNo || '-'}</td>
-                  <td>{p.accountNumber || '-'}</td>
-                  <td>{[p.bankName, p.bankBranch].filter(Boolean).join(' / ') || '-'}</td>
-                  <td>{p.reason || '-'}</td>
-                  <td>{p.paymentType === 'bill_then_payment' ? 'Bill + Payment' : 'Direct Slip'}</td>
-                  <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
-                  <td>{p.slipUrl ? <a href={p.slipUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
-                  <td>
-                    <button className="hw-delete-btn" onClick={() => handleDeleteContractorPayment(p.contractorId, p._id)}>
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))
-          )}
-        </tbody>
-      </table>
+      {(() => {
+        const allInvoices = contractors.flatMap((c) =>
+          c.payments.map((p) => ({ ...p, contractorName: c.name, contractorId: c._id, contractorObj: c }))
+        );
+        const sortByProject = (a, b) =>
+          (a.projectName || '').localeCompare(b.projectName || '', undefined, { sensitivity: 'base' });
+        const pendingInvoices = allInvoices.filter((p) => !isInvoicePaid(p)).sort(sortByProject);
+        const paidInvoices = allInvoices.filter((p) => isInvoicePaid(p)).sort(sortByProject);
+
+        return (
+          <>
+            <div className="hw-subtabs">
+              <button
+                type="button"
+                className={`hw-subtab-btn ${invoiceTab === 'pending' ? 'active' : ''}`}
+                onClick={() => setInvoiceTab('pending')}
+              >
+                Pending Invoices ({pendingInvoices.length})
+              </button>
+              <button
+                type="button"
+                className={`hw-subtab-btn ${invoiceTab === 'paid' ? 'active' : ''}`}
+                onClick={() => setInvoiceTab('paid')}
+              >
+                Paid Invoices ({paidInvoices.length})
+              </button>
+            </div>
+
+            {invoiceTab === 'pending' ? (
+              // Pending invoices only carry invoice-side details - there is no
+              // payment/bank info yet, so those columns don't apply here.
+              <table className="sa-table hw-items-table">
+                <thead>
+                  <tr>
+                    <th>Invoice No.</th>
+                    <th>Contractor</th>
+                    <th>Project</th>
+                    <th>Amount (LKR)</th>
+                    <th>Reason</th>
+                    <th>Invoice Date</th>
+                    <th>Bill</th>
+                    <th>Status</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingInvoices.length === 0 ? (
+                    <tr>
+                      <td colSpan="9" className="hw-empty-text">
+                        No pending invoices
+                      </td>
+                    </tr>
+                  ) : (
+                    pendingInvoices.map((p) => (
+                      <tr key={`${p.contractorId}-${p._id}`}>
+                        <td>{p.invoiceNo || '-'}</td>
+                        <td>{p.contractorName}</td>
+                        <td>{p.projectName || '-'}</td>
+                        <td>{formatLKR(p.amount)}</td>
+                        <td>{p.reason || '-'}</td>
+                        <td>{p.invoiceDate ? new Date(p.invoiceDate).toLocaleDateString() : '-'}</td>
+                        <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
+                        <td><span className="sa-badge sa-badge-pending">Pending</span></td>
+                        <td>
+                          <div className="hw-supplier-actions">
+                                  <button className="sa-manage-btn" onClick={() => startPayingInvoice(p.contractorObj, p)}>
+                                     Mark as Paid
+                                  </button>
+                                  <button className="hw-edit-btn" onClick={() => startEditInvoice(p.contractorObj, p)}>
+                                     Edit
+                                  </button>
+                                 <button className="hw-delete-btn" onClick={() => handleDeleteContractorPayment(p.contractorId, p._id)}>
+                                   Delete
+                                 </button>
+                               </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            ) : (
+              // Paid invoices show everything together - the original invoice
+              // details plus the bank/payment details recorded once it was settled.
+              <table className="sa-table hw-items-table">
+                <thead>
+                  <tr>
+                    <th>Invoice No.</th>
+                    <th>Contractor</th>
+                    <th>Project</th>
+                    <th>Amount (LKR)</th>
+                    <th>Reason</th>
+                    <th>Invoice Date</th>
+                    <th>Payment Date</th>
+                    <th>Reference No.</th>
+                    <th>Account No.</th>
+                    <th>Bank / Branch</th>
+                    <th>Bill</th>
+                    <th>Slip</th>
+                    <th>Status</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paidInvoices.length === 0 ? (
+                    <tr>
+                      <td colSpan="14" className="hw-empty-text">
+                        No paid invoices yet
+                      </td>
+                    </tr>
+                  ) : (
+                    paidInvoices.map((p) => (
+                      <tr key={`${p.contractorId}-${p._id}`}>
+                        <td>{p.invoiceNo || '-'}</td>
+                        <td>{p.contractorName}</td>
+                        <td>{p.projectName || '-'}</td>
+                        <td>{formatLKR(p.amount)}</td>
+                        <td>{p.reason || '-'}</td>
+                        <td>{p.invoiceDate ? new Date(p.invoiceDate).toLocaleDateString() : '-'}</td>
+                        <td>{p.paymentDate ? new Date(p.paymentDate).toLocaleDateString() : '-'}</td>
+                        <td>{p.referenceNo || '-'}</td>
+                        <td>{p.accountNumber || '-'}</td>
+                        <td>{[p.bankName, p.bankBranch].filter(Boolean).join(' / ') || '-'}</td>
+                        <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
+                        <td>{p.slipUrl ? <a href={p.slipUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
+                        <td><span className="sa-badge sa-badge-approved">Paid</span></td>
+                        <td>
+  <div className="hw-supplier-actions">
+    <button className="hw-edit-btn" onClick={() => startEditInvoice(p.contractorObj, p)}>
+      Edit
+    </button>
+    <button className="hw-delete-btn" onClick={() => handleDeleteContractorPayment(p.contractorId, p._id)}>
+      Delete
+    </button>
+  </div>
+</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }
@@ -2732,23 +3049,34 @@ function ProjectSummary() {
                     <table className="sa-table hw-items-table">
                       <thead>
                         <tr>
+                          <th>Invoice No.</th>
                           <th>Amount (LKR)</th>
-                          <th>Date</th>
-                          <th>Reference No.</th>
+                          <th>Invoice Date</th>
                           <th>Reason</th>
-                          <th>Method</th>
+                          <th>Payment Date</th>
+                          <th>Reference No.</th>
+                          <th>Status</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {c.payments.map((p, i) => (
-                          <tr key={i}>
-                            <td>{formatLKR(p.amount)}</td>
-                            <td>{new Date(p.date).toLocaleDateString()}</td>
-                            <td>{p.referenceNo || '-'}</td>
-                            <td>{p.reason || '-'}</td>
-                            <td>{p.paymentType === 'bill_then_payment' ? 'Bill + Payment' : 'Direct Slip'}</td>
-                          </tr>
-                        ))}
+                        {c.payments.map((p, i) => {
+                          const paid = p.status !== 'pending';
+                          return (
+                            <tr key={i}>
+                              <td>{p.invoiceNo || '-'}</td>
+                              <td>{formatLKR(p.amount)}</td>
+                              <td>{p.invoiceDate ? new Date(p.invoiceDate).toLocaleDateString() : '-'}</td>
+                              <td>{p.reason || '-'}</td>
+                              <td>{paid && p.paymentDate ? new Date(p.paymentDate).toLocaleDateString() : '-'}</td>
+                              <td>{paid ? (p.referenceNo || '-') : '-'}</td>
+                              <td>
+                                <span className={`sa-badge ${paid ? 'sa-badge-approved' : 'sa-badge-pending'}`}>
+                                  {paid ? 'Paid' : 'Pending'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   )}
