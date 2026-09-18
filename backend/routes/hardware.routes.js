@@ -12,6 +12,7 @@ const {
   deleteItem,
   placeOrder,
   addPayment,
+  updatePayment,
   deletePayment,
   confirmPayment,
   getQuote,
@@ -37,6 +38,12 @@ router.post(
   upload.fields([{ name: 'bills', maxCount: 20 }, { name: 'bill', maxCount: 1 }, { name: 'slip', maxCount: 1 }]),
   addPayment
 );
+// Edit an existing direct bill+payment record — text fields, optional re-upload
+router.put(
+  '/:id/payments/:paymentId',
+  upload.fields([{ name: 'bills', maxCount: 20 }, { name: 'bill', maxCount: 1 }, { name: 'slip', maxCount: 1 }]),
+  updatePayment
+);
 router.delete('/:id/payments/:paymentId', deletePayment);
 router.put('/:id/payments/:paymentId/confirm', confirmPayment);
 
@@ -46,10 +53,14 @@ router.put('/:id/payments/:paymentId/confirm', confirmPayment);
 // routes above, which are the supplier's own direct bill+payment log.
 router.post(
   '/:id/invoices',
-  upload.fields([{ name: 'bill', maxCount: 1 }]),
+  upload.fields([{ name: 'bills', maxCount: 20 }, { name: 'bill', maxCount: 1 }]),
   createInvoice
 );
-router.put('/:id/invoices/:invoiceId', updateInvoice);
+router.put(
+  '/:id/invoices/:invoiceId',
+  upload.fields([{ name: 'bills', maxCount: 20 }, { name: 'bill', maxCount: 1 }]),
+  updateInvoice
+);
 router.put(
   '/:id/invoices/:invoiceId/pay',
   upload.fields([{ name: 'slip', maxCount: 1 }]),

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import useTabState from '../hooks/useTabState';
 import axios from 'axios';
 import { API_BASE_URL } from '../config/api';
 import './SuperAdminDashboard.css';
@@ -199,7 +200,7 @@ const PERMISSION_GROUPS = [
 ];
 
 function SuperAdminDashboard() {
-  const [activeTab, setActiveTab] = useState('A');
+  const [activeTab, setActiveTab] = useTabState('tab', 'A');
 
   const sidebarItems = [
     { key: 'A', label: 'User Management' },
@@ -424,7 +425,7 @@ function UserManagement() {
 
 // ---------- Section B: Constructions ----------
 function Constructions() {
-  const [subTab, setSubTab] = useState('contractors');
+  const [subTab, setSubTab] = useTabState('sub', 'contractors');
 
   const subTabs = [
     { key: 'contractors', label: 'Contractors' },
@@ -484,6 +485,11 @@ function Contractors() {
   const [planForm, setPlanForm] = useState({ projectName: '', totalEstimate: '', note: '' });
   const [planFile, setPlanFile] = useState(null);
   const [isPlanSubmitting, setIsPlanSubmitting] = useState(false);
+
+  const [editingPlan, setEditingPlan] = useState(null); // the plan object being edited
+  const [editPlanForm, setEditPlanForm] = useState({ projectName: '', totalEstimate: '', note: '' });
+  const [editPlanFile, setEditPlanFile] = useState(null);
+  const [isEditPlanSubmitting, setIsEditPlanSubmitting] = useState(false);
 
   useEffect(() => {
     fetchContractors();
@@ -603,6 +609,49 @@ function Contractors() {
       console.error(err);
     } finally {
       setIsPlanSubmitting(false);
+    }
+  };
+
+  const startEditPlan = (plan) => {
+    setEditingPlan(plan);
+    setEditPlanForm({
+      projectName: plan.projectName || '',
+      totalEstimate: plan.totalEstimate || '',
+      note: plan.note || '',
+    });
+    setEditPlanFile(null);
+  };
+
+  const cancelEditPlan = () => {
+    setEditingPlan(null);
+    setEditPlanFile(null);
+  };
+
+  const handleUpdatePlan = async (e) => {
+    e.preventDefault();
+    if (!editingPlan || isEditPlanSubmitting) return;
+    setIsEditPlanSubmitting(true);
+    try {
+      const data = new FormData();
+      data.append('projectName', editPlanForm.projectName);
+      data.append('totalEstimate', editPlanForm.totalEstimate);
+      data.append('note', editPlanForm.note);
+      if (editPlanFile) data.append('plan', editPlanFile);
+
+      const res = await axios.put(
+        `${API_BASE_URL}/api/contractors/${viewingContractor._id}/plans/${editingPlan._id}`,
+        data,
+      );
+      const updated = res.data.contractor;
+      setContractors((prev) => prev.map((c) => (c._id === updated._id ? updated : c)));
+      setViewingContractor(updated);
+      setEditingPlan(null);
+      setEditPlanFile(null);
+      refetchProjectNames();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsEditPlanSubmitting(false);
     }
   };
 
@@ -807,21 +856,63 @@ function Contractors() {
                         .sort((a, b) => a.projectName.localeCompare(b.projectName, undefined, { sensitivity: 'base' }))
                         .map((plan) => (
                         <div key={plan._id} className="plan-card">
-                          <div className="plan-card-top">
-                            <span className="plan-card-project">{plan.projectName}</span>
-                            <span className="plan-card-amount">{formatLKR(plan.totalEstimate)}</span>
-                          </div>
-                          <div className="plan-card-bottom">
-                            <span>{new Date(plan.uploadedDate).toLocaleDateString()}</span>
-                            {plan.planFileUrl && (
-                              <a href={plan.planFileUrl} target="_blank" rel="noreferrer" className="ge-slip-link">
-                                View Plan
-                              </a>
-                            )}
-                            <button className="hw-delete-btn" onClick={() => handleDeletePlan(plan._id)}>
-                              Delete
-                            </button>
-                          </div>
+                          {editingPlan?._id === plan._id ? (
+                            <form onSubmit={handleUpdatePlan} className="hw-item-form">
+                              <div className="ge-form-row">
+                                <ProjectNameField
+                                  value={editPlanForm.projectName}
+                                  onChange={(val) => setEditPlanForm({ ...editPlanForm, projectName: val })}
+                                  projectNames={projectNames}
+                                />
+                                <input
+                                  type="number"
+                                  placeholder="Total estimate (LKR)"
+                                  value={editPlanForm.totalEstimate}
+                                  onChange={(e) => setEditPlanForm({ ...editPlanForm, totalEstimate: e.target.value })}
+                                  required
+                                />
+                              </div>
+                              <input
+                                type="text"
+                                placeholder="Note (optional)"
+                                value={editPlanForm.note}
+                                onChange={(e) => setEditPlanForm({ ...editPlanForm, note: e.target.value })}
+                              />
+                              <input
+                                type="file"
+                                onChange={(e) => setEditPlanFile(e.target.files[0])}
+                              />
+                              <div className="sa-panel-actions">
+                                <button type="submit" className="sa-save-btn" disabled={isEditPlanSubmitting}>
+                                  {isEditPlanSubmitting ? 'Saving...' : 'Save Changes'}
+                                </button>
+                                <button type="button" className="sa-reject-btn" onClick={cancelEditPlan}>
+                                  Cancel
+                                </button>
+                              </div>
+                            </form>
+                          ) : (
+                            <>
+                              <div className="plan-card-top">
+                                <span className="plan-card-project">{plan.projectName}</span>
+                                <span className="plan-card-amount">{formatLKR(plan.totalEstimate)}</span>
+                              </div>
+                              <div className="plan-card-bottom">
+                                <span>{new Date(plan.uploadedDate).toLocaleDateString()}</span>
+                                {plan.planFileUrl && (
+                                  <a href={plan.planFileUrl} target="_blank" rel="noreferrer" className="ge-slip-link">
+                                    View Plan
+                                  </a>
+                                )}
+                                <button className="hw-edit-btn" onClick={() => startEditPlan(plan)}>
+                                  Edit
+                                </button>
+                                <button className="hw-delete-btn" onClick={() => handleDeletePlan(plan._id)}>
+                                  Delete
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -896,7 +987,7 @@ function ConstructionPayments() {
   // 'pending') and only gets its bank/payment details once finance
   // actually settles it (status flips to 'paid').
   const [payments, setPayments] = useState([]);
-  const [invoiceTab, setInvoiceTab] = useState('pending'); // 'pending' | 'paid'
+  const [invoiceTab, setInvoiceTab] = useTabState('inv', 'pending'); // 'pending' | 'paid'
 
   // Step 1: raise a new invoice - invoice-side details only, no bank info yet
   const [showInvoiceForm, setShowInvoiceForm] = useState(false);
@@ -1475,7 +1566,7 @@ function ConstructionPayments() {
 
 // ---------- Sub-section: Hardware ----------
 function Hardware() {
-  const [hwTab, setHwTab] = useState('suppliers'); // 'suppliers' | 'finder'
+  const [hwTab, setHwTab] = useTabState('hw', 'suppliers'); // 'suppliers' | 'finder'
   const [projectNames, refetchProjectNames] = useProjectNames();
 
   const [hardwareList, setHardwareList] = useState([]);
@@ -1500,26 +1591,10 @@ function Hardware() {
   const [lastOrderTotal, setLastOrderTotal] = useState(null);
   const [isOrderSubmitting, setIsOrderSubmitting] = useState(false);
 
-  // Bill + bank payment recording, tagged with a project name
-  const [recordingPaymentFor, setRecordingPaymentFor] = useState(null);
-  const [paymentForm, setPaymentForm] = useState({
-    projectName: '',
-    amount: '',
-    date: '',
-    referenceNo: '',
-    accountNumber: '',
-    bankName: '',
-    bankBranch: '',
-    note: '',
-  });
-  const [paymentBillFiles, setPaymentBillFiles] = useState([]);
-  const [paymentSlipFile, setPaymentSlipFile] = useState(null);
-  const [isPaymentSubmitting, setIsPaymentSubmitting] = useState(false);
-
   // Hardware invoices - same invoice-first flow as Contractor Invoices
   // (Payments tab): raise an invoice against a supplier for a project,
   // send it to finance, then mark it paid once settled.
-  const [hwInvoiceTab, setHwInvoiceTab] = useState('pending'); // 'pending' | 'paid'
+  const [hwInvoiceTab, setHwInvoiceTab] = useTabState('hwinv', 'pending'); // 'pending' | 'paid'
 
   const [showHwInvoiceForm, setShowHwInvoiceForm] = useState(false);
   const [hardwareId, setHardwareId] = useState('');
@@ -1528,8 +1603,15 @@ function Hardware() {
   const [hwInvoiceDate, setHwInvoiceDate] = useState('');
   const [hwInvoiceReason, setHwInvoiceReason] = useState('');
   const [hwInvoiceNote, setHwInvoiceNote] = useState('');
-  const [hwInvoiceBillFile, setHwInvoiceBillFile] = useState(null);
+  const [hwInvoiceBillFiles, setHwInvoiceBillFiles] = useState([]);
   const [isHwInvoiceSubmitting, setIsHwInvoiceSubmitting] = useState(false);
+
+  // Optional: build the invoice amount from the supplier's own item
+  // catalog instead of typing it manually - pick items + quantities and
+  // the total is calculated for you.
+  const [showHwInvoiceItemPicker, setShowHwInvoiceItemPicker] = useState(false);
+  const [hwInvoiceItemPicks, setHwInvoiceItemPicks] = useState({}); // itemId -> quantity
+
 
   const [payingHwInvoice, setPayingHwInvoice] = useState(null); // { hardwareId, invoiceId, supplierName }
   const [hwPayDate, setHwPayDate] = useState('');
@@ -1569,7 +1651,9 @@ function Hardware() {
     setHwInvoiceDate('');
     setHwInvoiceReason('');
     setHwInvoiceNote('');
-    setHwInvoiceBillFile(null);
+    setHwInvoiceBillFiles([]);
+    setShowHwInvoiceItemPicker(false);
+    setHwInvoiceItemPicks({});
   };
 
   const resetHwPayForm = () => {
@@ -1585,6 +1669,34 @@ function Hardware() {
 
   const selectedHardware = hardwareList.find((h) => h._id === hardwareId);
 
+  // ---- Build the invoice amount from the supplier's item catalog ----
+  const toggleHwInvoiceItem = (itemId) => {
+    setHwInvoiceItemPicks((prev) => {
+      if (prev[itemId] !== undefined) {
+        const { [itemId]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [itemId]: 1 };
+    });
+  };
+
+  const updateHwInvoiceItemQty = (itemId, quantity) => {
+    setHwInvoiceItemPicks((prev) => ({ ...prev, [itemId]: Number(quantity) || 0 }));
+  };
+
+  const calcHwInvoiceItemsTotal = () => {
+    if (!selectedHardware) return 0;
+    return Object.entries(hwInvoiceItemPicks).reduce((sum, [itemId, qty]) => {
+      const item = selectedHardware.items.find((i) => i._id === itemId);
+      if (!item) return sum;
+      return sum + item.unitPrice * (qty || 0);
+    }, 0);
+  };
+
+  const applyHwInvoiceItemsTotal = () => {
+    setHwInvoiceAmount(String(calcHwInvoiceItemsTotal()));
+  };
+
   // STEP 1: raise an invoice against a hardware supplier for a project.
   // No payment/bank details are collected here - the invoice is created as
   // 'pending' and only gets paid details once it's actually settled.
@@ -1599,7 +1711,7 @@ function Hardware() {
       data.append('reason', hwInvoiceReason);
       data.append('note', hwInvoiceNote);
       data.append('projectName', hwInvoiceProjectName);
-      if (hwInvoiceBillFile) data.append('bill', hwInvoiceBillFile);
+      hwInvoiceBillFiles.forEach((file) => data.append('bills', file));
 
       await axios.post(
         `${API_BASE_URL}/api/hardware/${hardwareId}/invoices`,
@@ -1887,59 +1999,24 @@ function Hardware() {
     }
   };
 
-  const openPaymentForm = (hardware) => {
-    setRecordingPaymentFor(hardware);
-    setPaymentForm({ projectName: '', amount: '', date: '', referenceNo: '', accountNumber: hardware.accountNumber || '', bankName: hardware.bankName || '', bankBranch: hardware.bankBranch || '', note: '' });
-    setPaymentBillFiles([]);
-    setPaymentSlipFile(null);
-  };
-
-  const closePaymentForm = () => setRecordingPaymentFor(null);
-
-  const handleRecordPayment = async (e) => {
-    e.preventDefault();
-    if (!recordingPaymentFor || isPaymentSubmitting) return;
-    if (paymentBillFiles.length === 0) {
-      alert('Please select at least one hardware bill.');
-      return;
-    }
-    if (!paymentSlipFile) {
-      alert('Please select the bank payment slip.');
-      return;
-    }
-    setIsPaymentSubmitting(true);
-    try {
-      const data = new FormData();
-      data.append('projectName', paymentForm.projectName);
-      data.append('amount', paymentForm.amount);
-      if (paymentForm.date) data.append('date', paymentForm.date);
-      data.append('referenceNo', paymentForm.referenceNo);
-      data.append('accountNumber', paymentForm.accountNumber);
-      data.append('bankName', paymentForm.bankName);
-      data.append('bankBranch', paymentForm.bankBranch);
-      data.append('note', paymentForm.note);
-      paymentBillFiles.forEach((file) => data.append('bills', file));
-      if (paymentSlipFile) data.append('slip', paymentSlipFile);
-
-      const res = await axios.post(
-        `${API_BASE_URL}/api/hardware/${recordingPaymentFor._id}/payments`,
-        data
-      );
-      const updatedHardware = res.data.hardware;
-      setHardwareList((prev) => prev.map((hw) => (hw._id === updatedHardware._id ? updatedHardware : hw)));
-      closePaymentForm();
-      refetchProjectNames();
-    } catch (err) {
-      console.error(err);
-      alert(err.response?.data?.message || 'Payment upload failed. Please check the backend server and try again.');
-    } finally {
-      setIsPaymentSubmitting(false);
-    }
-  };
-
   const itemTotal = (item) => item.unitPrice * item.quantity;
   const hardwareTotal = (hw) => hw.items.reduce((sum, i) => sum + itemTotal(i), 0);
-  const paymentsTotal = (hw) => hw.payments.reduce((sum, p) => sum + p.amount, 0);
+  // Everything actually paid to this supplier: legacy bill/slip records that
+  // were already settled (a missing status = pre-existing, already settled -
+  // see the paymentSchema note in the model), plus every invoice raised via
+  // "+ Raise Invoice" that has since been marked paid.
+  const paymentsTotal = (hw) => {
+    const legacyPaid = hw.payments
+      .filter((p) => p.status !== 'pending')
+      .reduce((sum, p) => sum + p.amount, 0);
+    const invoicesPaid = (hw.invoices || [])
+      .filter((inv) => inv.status === 'paid')
+      .reduce((sum, inv) => sum + inv.amount, 0);
+    return legacyPaid + invoicesPaid;
+  };
+  const paidCount = (hw) =>
+    hw.payments.filter((p) => p.status !== 'pending').length +
+    (hw.invoices || []).filter((inv) => inv.status === 'paid').length;
 
   // ---------- Order form logic ----------
   const openOrderForm = (hardware) => {
@@ -2000,449 +2077,20 @@ function Hardware() {
 
   return (
     <div>
-      {/* HARDWARE INVOICES - same raise-invoice -> send to finance -> mark
-          paid flow as Contractor Invoices above, but against a hardware
-          supplier for a project instead of an estimation plan. */}
-      <div className="ge-header contractor-payments-header">
-        <h3 className="hw-inline-heading">Hardware Invoices</h3>
-        <button className="ge-add-btn" onClick={() => setShowHwInvoiceForm(!showHwInvoiceForm)}>
-          {showHwInvoiceForm ? 'Cancel' : '+ Raise Invoice'}
-        </button>
-      </div>
-
-      {showHwInvoiceForm && (
-        <form className="ge-form" onSubmit={handleCreateHwInvoice}>
-          <div className="ge-form-row">
-            <select
-              value={hardwareId}
-              onChange={(e) => setHardwareId(e.target.value)}
-              required
-            >
-              <option value="">Select hardware supplier...</option>
-              {hardwareList.map((h) => (
-                <option key={h._id} value={h._id}>{h.supplierName}</option>
-              ))}
-            </select>
-
-            <ProjectNameField
-              value={hwInvoiceProjectName}
-              onChange={setHwInvoiceProjectName}
-              projectNames={projectNames}
-            />
-          </div>
-
-          {selectedHardware && (
-            <div className="ge-summary plan-preview-summary">
-              <span>Supplier: {selectedHardware.supplierName}</span>
-              <span>Phone: {selectedHardware.phone}</span>
-            </div>
-          )}
-
-          <div className="ge-form-row">
-            <input
-              type="number"
-              placeholder="Invoice amount (LKR)"
-              value={hwInvoiceAmount}
-              onChange={(e) => setHwInvoiceAmount(sanitizeAmountInput(e.target.value))}
-              required
-            />
-            <input
-              type="date"
-              value={hwInvoiceDate}
-              onChange={(e) => setHwInvoiceDate(e.target.value)}
-            />
-          </div>
-
-          <div className="ge-form-row">
-            <input
-              type="text"
-              placeholder="Reason for this invoice"
-              value={hwInvoiceReason}
-              onChange={(e) => setHwInvoiceReason(e.target.value)}
-              required
-            />
-          </div>
-
-          <div className="ge-form-row upload-row">
-            <div className="upload-field">
-              <label className="upload-field-label">Bill / invoice from supplier</label>
-              <input
-                type="file"
-                accept=".jpg,.jpeg,.png,.pdf"
-                onChange={(e) => setHwInvoiceBillFile(e.target.files[0])}
-              />
-            </div>
-          </div>
-
-          <textarea
-            placeholder="Note (optional)"
-            value={hwInvoiceNote}
-            onChange={(e) => setHwInvoiceNote(e.target.value)}
-            rows={2}
-            className="payment-note-textarea"
-          />
-          <button type="submit" className="ge-save-btn" disabled={isHwInvoiceSubmitting}>
-            {isHwInvoiceSubmitting ? 'Saving...' : 'Raise Invoice'}
-          </button>
-        </form>
-      )}
-
-      {editingHwInvoice && (
-        <form className="ge-form pay-invoice-form" onSubmit={handleUpdateHwInvoice}>
-          <p className="sa-group-title plan-preview-title">
-            Edit Invoice - {editingHwInvoice.supplierName}
-          </p>
-          <div className="ge-form-row">
-            <input
-              type="number"
-              placeholder="Invoice amount (LKR)"
-              value={editHwInvoiceForm.amount}
-              onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, amount: sanitizeAmountInput(e.target.value) })}
-              required
-            />
-            <input
-              type="date"
-              value={editHwInvoiceForm.date}
-              onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, date: e.target.value })}
-            />
-          </div>
-          <div className="ge-form-row">
-            <input
-              type="text"
-              placeholder="Reason for this invoice"
-              value={editHwInvoiceForm.reason}
-              onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, reason: e.target.value })}
-              required
-            />
-            <ProjectNameField
-              value={editHwInvoiceForm.projectName}
-              onChange={(val) => setEditHwInvoiceForm({ ...editHwInvoiceForm, projectName: val })}
-              projectNames={projectNames}
-            />
-          </div>
-          <textarea
-            placeholder="Note (optional)"
-            value={editHwInvoiceForm.note}
-            onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, note: e.target.value })}
-            rows={2}
-            className="payment-note-textarea"
-          />
-
-          {editingHwInvoice.status === 'paid' && (
-            <>
-              <p className="sa-group-title plan-preview-title">Payment details</p>
-              <div className="ge-form-row">
-                <input
-                  type="date"
-                  value={editHwInvoiceForm.paymentDate}
-                  onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, paymentDate: e.target.value })}
-                />
-                <input
-                  type="text"
-                  placeholder="Cheque / Reference No."
-                  value={editHwInvoiceForm.referenceNo}
-                  onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, referenceNo: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="ge-form-row">
-                <input type="text" placeholder="Payee account number" value={editHwInvoiceForm.accountNumber} onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, accountNumber: e.target.value })} />
-                <BankNameField value={editHwInvoiceForm.bankName} onChange={(val) => setEditHwInvoiceForm({ ...editHwInvoiceForm, bankName: val })} />
-                <input type="text" placeholder="Payee branch" value={editHwInvoiceForm.bankBranch} onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, bankBranch: e.target.value })} />
-              </div>
-              <textarea
-                placeholder="Payment note (optional)"
-                value={editHwInvoiceForm.paymentNote}
-                onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, paymentNote: e.target.value })}
-                rows={2}
-                className="payment-note-textarea"
-              />
-            </>
-          )}
-
-          <div className="sa-panel-actions">
-            <button type="submit" className="ge-save-btn" disabled={isEditHwInvoiceSubmitting}>
-              {isEditHwInvoiceSubmitting ? 'Saving...' : 'Save Changes'}
-            </button>
-            <button type="button" className="sa-reject-btn" onClick={closeEditHwInvoice}>
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* Step 2 form - only shown while recording the payment for one specific
-          pending hardware invoice (opened via "Mark as Paid" in the table below) */}
-      {payingHwInvoice && (
-        <form className="ge-form pay-invoice-form" onSubmit={handlePayHwInvoice}>
-          <p className="sa-group-title plan-preview-title">
-            Record Payment for Invoice - {payingHwInvoice.supplierName}
-          </p>
-          <div className="ge-form-row">
-            <input
-              type="date"
-              value={hwPayDate}
-              onChange={(e) => setHwPayDate(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="Cheque / Reference No."
-              value={hwPayReferenceNo}
-              onChange={(e) => setHwPayReferenceNo(e.target.value)}
-              required
-            />
-          </div>
-          <div className="ge-form-row">
-            <input type="text" placeholder="Payee account number" value={hwPayAccountNumber} onChange={(e) => setHwPayAccountNumber(e.target.value)} />
-            <BankNameField value={hwPayBankName} onChange={setHwPayBankName} />
-            <input type="text" placeholder="Payee branch" value={hwPayBankBranch} onChange={(e) => setHwPayBankBranch(e.target.value)} />
-          </div>
-
-          <div className="ge-form-row upload-row">
-            <div className="upload-field">
-              <label className="upload-field-label">Bank payment slip</label>
-              <input
-                type="file"
-                accept=".jpg,.jpeg,.png,.pdf"
-                onChange={(e) => setHwPaySlipFile(e.target.files[0])}
-              />
-            </div>
-          </div>
-
-          <textarea
-            placeholder="Note (optional)"
-            value={hwPayNote}
-            onChange={(e) => setHwPayNote(e.target.value)}
-            rows={2}
-            className="payment-note-textarea"
-          />
-          <div className="sa-panel-actions">
-            <button type="submit" className="ge-save-btn" disabled={isHwPaySubmitting}>
-              {isHwPaySubmitting ? 'Saving...' : 'Mark as Paid'}
-            </button>
-            <button type="button" className="sa-reject-btn" onClick={resetHwPayForm}>
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
-
-      {(() => {
-        // Merge the two sources of hardware payments into one unified list:
-        // - true invoices (raised via "+ Raise Invoice" above, in `invoices`)
-        // - direct bill+payment records (via "+ Record Payment" on a
-        //   supplier card below, in `payments`) - these already carry full
-        //   bill/slip/bank details, so they only ever need a "Confirm" step,
-        //   never the separate "Mark as Paid" form.
-        // Every paid record from either source shows up under Paid
-        // Invoices, and every unconfirmed one under Pending Invoices.
-        const invoiceEntries = hardwareList.flatMap((h) =>
-          (h.invoices || []).map((inv) => ({
-            ...inv,
-            supplierName: h.supplierName,
-            hardwareId: h._id,
-            hardwareObj: h,
-            _source: 'invoice',
-            _isPaid: inv.status === 'paid',
-          }))
-        );
-        const paymentEntries = hardwareList.flatMap((h) =>
-          (h.payments || []).map((p) => ({
-            ...p,
-            supplierName: h.supplierName,
-            hardwareId: h._id,
-            hardwareObj: h,
-            _source: 'payment',
-            _isPaid: p.status !== 'pending', // missing status = pre-existing, already settled
-            invoiceDate: p.date,
-            paymentDate: p.date,
-          }))
-        );
-        const allHwEntries = [...invoiceEntries, ...paymentEntries];
-
-        const sortByProject = (a, b) =>
-          (a.projectName || '').localeCompare(b.projectName || '', undefined, { sensitivity: 'base' });
-        const pendingHwInvoices = allHwEntries.filter((e) => !e._isPaid).sort(sortByProject);
-        const paidHwInvoices = allHwEntries.filter((e) => e._isPaid).sort(sortByProject);
-
-        // A payment-sourced record can carry several bills (`bills[]`) or
-        // just the old single `billUrl`; an invoice-sourced record only
-        // ever has one `billUrl`.
-        const renderBills = (e) => {
-          if (e.bills?.length > 0) {
-            return (
-              <span>{e.bills.length} bill(s) — {e.bills.map((b, i) => (
-                <span key={b.url || i}>{i > 0 ? ', ' : ''}<a href={b.url} target="_blank" rel="noreferrer" className="ge-slip-link">View {i + 1}</a></span>
-              ))}</span>
-            );
-          }
-          return e.billUrl ? <a href={e.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-';
-        };
-
-        return (
-          <>
-            <div className="hw-subtabs">
-              <button
-                type="button"
-                className={`hw-subtab-btn ${hwInvoiceTab === 'pending' ? 'active' : ''}`}
-                onClick={() => setHwInvoiceTab('pending')}
-              >
-                Pending Invoices ({pendingHwInvoices.length})
-              </button>
-              <button
-                type="button"
-                className={`hw-subtab-btn ${hwInvoiceTab === 'paid' ? 'active' : ''}`}
-                onClick={() => setHwInvoiceTab('paid')}
-              >
-                Paid Invoices ({paidHwInvoices.length})
-              </button>
-            </div>
-
-            {hwInvoiceTab === 'pending' ? (
-              <div className="hw-table-scroll">
-              <table className="sa-table hw-items-table">
-                <thead>
-                  <tr>
-                    <th>Invoice No.</th>
-                    <th>Supplier</th>
-                    <th>Project</th>
-                    <th>Amount (LKR)</th>
-                    <th>Reason</th>
-                    <th>Invoice Date</th>
-                    <th>Bill</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pendingHwInvoices.length === 0 ? (
-                    <tr>
-                      <td colSpan="9" className="hw-empty-text">
-                        No pending invoices
-                      </td>
-                    </tr>
-                  ) : (
-                    pendingHwInvoices.map((inv) => (
-                      <tr key={`${inv._source}-${inv.hardwareId}-${inv._id}`}>
-                        <td>{inv.invoiceNo || '-'}</td>
-                        <td>{inv.supplierName}</td>
-                        <td>{inv.projectName || '-'}</td>
-                        <td>{formatLKR(inv.amount)}</td>
-                        <td>{inv.reason || inv.note || '-'}</td>
-                        <td>{inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString() : '-'}</td>
-                        <td>{renderBills(inv)}</td>
-                        <td><span className="sa-badge sa-badge-pending">Pending</span></td>
-                        <td>
-                          <div className="hw-supplier-actions">
-                            {inv._source === 'invoice' ? (
-                              <button className="sa-manage-btn" onClick={() => startPayingHwInvoice(inv.hardwareObj, inv)}>
-                                Mark Paid
-                              </button>
-                            ) : (
-                              <button className="sa-manage-btn" onClick={() => handleConfirmHardwarePayment(inv.hardwareId, inv._id)}>
-                                Confirm
-                              </button>
-                            )}
-                            {inv._source === 'invoice' && (
-                              <button className="hw-edit-btn" onClick={() => startEditHwInvoice(inv.hardwareObj, inv)}>
-                                Edit
-                              </button>
-                            )}
-                            <button
-                              className="hw-delete-btn"
-                              onClick={() => (inv._source === 'invoice'
-                                ? handleDeleteHwInvoice(inv.hardwareId, inv._id)
-                                : handleDeleteHardwarePayment(inv.hardwareId, inv._id))}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-              </div>
-            ) : (
-              <div className="hw-table-scroll">
-              <table className="sa-table hw-items-table">
-                <thead>
-                  <tr>
-                    <th>Invoice No.</th>
-                    <th>Supplier</th>
-                    <th>Project</th>
-                    <th>Amount (LKR)</th>
-                    <th>Reason</th>
-                    <th>Invoice Date</th>
-                    <th>Payment Date</th>
-                    <th>Reference No.</th>
-                    <th>Account No.</th>
-                    <th>Bank / Branch</th>
-                    <th>Bill</th>
-                    <th>Slip</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paidHwInvoices.length === 0 ? (
-                    <tr>
-                      <td colSpan="14" className="hw-empty-text">
-                        No paid invoices yet
-                      </td>
-                    </tr>
-                  ) : (
-                    paidHwInvoices.map((inv) => (
-                      <tr key={`${inv._source}-${inv.hardwareId}-${inv._id}`}>
-                        <td>{inv.invoiceNo || '-'}</td>
-                        <td>{inv.supplierName}</td>
-                        <td>{inv.projectName || '-'}</td>
-                        <td>{formatLKR(inv.amount)}</td>
-                        <td>{inv.reason || inv.note || '-'}</td>
-                        <td>{inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString() : '-'}</td>
-                        <td>{inv.paymentDate ? new Date(inv.paymentDate).toLocaleDateString() : '-'}</td>
-                        <td>{inv.referenceNo || '-'}</td>
-                        <td>{inv.accountNumber || '-'}</td>
-                        <td>{[inv.bankName, inv.bankBranch].filter(Boolean).join(' / ') || '-'}</td>
-                        <td>{renderBills(inv)}</td>
-                        <td>{inv.slipUrl ? <a href={inv.slipUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
-                        <td><span className="sa-badge sa-badge-approved">Paid</span></td>
-                        <td>
-                          <div className="hw-supplier-actions">
-                            {inv._source === 'invoice' && (
-                              <button className="hw-edit-btn" onClick={() => startEditHwInvoice(inv.hardwareObj, inv)}>
-                                Edit
-                              </button>
-                            )}
-                            <button
-                              className="hw-delete-btn"
-                              onClick={() => (inv._source === 'invoice'
-                                ? handleDeleteHwInvoice(inv.hardwareId, inv._id)
-                                : handleDeleteHardwarePayment(inv.hardwareId, inv._id))}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-              </div>
-            )}
-          </>
-        );
-      })()}
-
       <div className="hw-subtabs">
         <button
           type="button"
           className={`hw-subtab-btn ${hwTab === 'suppliers' ? 'active' : ''}`}
           onClick={() => setHwTab('suppliers')}
         >
-          Suppliers
+          Hardware Suppliers
+        </button>
+        <button
+          type="button"
+          className={`hw-subtab-btn ${hwTab === 'invoices' ? 'active' : ''}`}
+          onClick={() => setHwTab('invoices')}
+        >
+          Hardware Invoices
         </button>
         <button
           type="button"
@@ -2453,9 +2101,551 @@ function Hardware() {
         </button>
       </div>
 
+      {hwTab === 'invoices' && (
+        <>
+        {/* HARDWARE INVOICES - same raise-invoice -> send to finance -> mark
+            paid flow as Contractor Invoices above, but against a hardware
+            supplier for a project instead of an estimation plan. */}
+        <div className="ge-header contractor-payments-header">
+          <h3 className="hw-inline-heading">Hardware Invoices</h3>
+          <button className="ge-add-btn" onClick={() => setShowHwInvoiceForm(!showHwInvoiceForm)}>
+            {showHwInvoiceForm ? 'Cancel' : '+ Raise Invoice'}
+          </button>
+        </div>
+
+        {showHwInvoiceForm && (
+          <form className="ge-form" onSubmit={handleCreateHwInvoice}>
+            <div className="ge-form-row">
+              <select
+                value={hardwareId}
+                onChange={(e) => {
+                  setHardwareId(e.target.value);
+                  setShowHwInvoiceItemPicker(false);
+                  setHwInvoiceItemPicks({});
+                }}
+                required
+              >
+                <option value="">Select hardware supplier...</option>
+                {hardwareList.map((h) => (
+                  <option key={h._id} value={h._id}>{h.supplierName}</option>
+                ))}
+              </select>
+
+              <ProjectNameField
+                value={hwInvoiceProjectName}
+                onChange={setHwInvoiceProjectName}
+                projectNames={projectNames}
+              />
+            </div>
+
+            {selectedHardware && (
+              <div className="ge-summary plan-preview-summary">
+                <span>Supplier: {selectedHardware.supplierName}</span>
+                <span>Phone: {selectedHardware.phone}</span>
+              </div>
+            )}
+
+            {selectedHardware && selectedHardware.items.length > 0 && (
+              <div className="hw-item-form">
+                <div className="ge-header">
+                  <p className="sa-group-title">Add items from {selectedHardware.supplierName}'s store</p>
+                  <button
+                    type="button"
+                    className="hw-finder-add-btn"
+                    onClick={() => setShowHwInvoiceItemPicker((prev) => !prev)}
+                  >
+                    {showHwInvoiceItemPicker ? 'Hide' : '+ Pick Items'}
+                  </button>
+                </div>
+
+                {showHwInvoiceItemPicker && (
+                  <>
+                    <table className="sa-table hw-items-table">
+                      <thead>
+                        <tr>
+                          <th></th>
+                          <th>Item</th>
+                          <th>Unit Price (LKR)</th>
+                          <th>Quantity</th>
+                          <th>Line Total (LKR)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedHardware.items.map((item) => {
+                          const picked = hwInvoiceItemPicks[item._id];
+                          return (
+                            <tr key={item._id}>
+                              <td>
+                                <input
+                                  type="checkbox"
+                                  checked={picked !== undefined}
+                                  onChange={() => toggleHwInvoiceItem(item._id)}
+                                />
+                              </td>
+                              <td>{item.name}</td>
+                              <td>{formatLKR(item.unitPrice)}</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={picked !== undefined ? picked : ''}
+                                  disabled={picked === undefined}
+                                  onChange={(e) => updateHwInvoiceItemQty(item._id, e.target.value)}
+                                  style={{ width: '80px' }}
+                                />
+                              </td>
+                              <td>{formatLKR(item.unitPrice * (picked || 0))}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+
+                    <div className="ge-summary hw-total-summary">
+                      <span>Calculated Total: {formatLKR(calcHwInvoiceItemsTotal())}</span>
+                      <button type="button" className="sa-manage-btn" onClick={applyHwInvoiceItemsTotal}>
+                        Use This as Invoice Amount
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            <div className="ge-form-row">
+              <input
+                type="number"
+                placeholder="Invoice amount (LKR)"
+                value={hwInvoiceAmount}
+                onChange={(e) => setHwInvoiceAmount(sanitizeAmountInput(e.target.value))}
+                required
+              />
+              <input
+                type="date"
+                value={hwInvoiceDate}
+                onChange={(e) => setHwInvoiceDate(e.target.value)}
+              />
+            </div>
+
+            <div className="ge-form-row">
+              <input
+                type="text"
+                placeholder="Reason for this invoice"
+                value={hwInvoiceReason}
+                onChange={(e) => setHwInvoiceReason(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="ge-form-row upload-row">
+              <div className="upload-field">
+                <label className="upload-field-label">Bill(s) / invoice from supplier (select one or more)</label>
+                <input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.pdf"
+                  multiple
+                  onChange={(e) => {
+                    const selected = Array.from(e.target.files || []);
+                    if (selected.length) {
+                      setHwInvoiceBillFiles((prev) => {
+                        const merged = [...prev, ...selected];
+                        const seen = new Set();
+                        return merged.filter((file) => {
+                          const key = `${file.name}-${file.size}-${file.lastModified}`;
+                          if (seen.has(key)) return false;
+                          seen.add(key);
+                          return true;
+                        });
+                      });
+                    }
+                    e.target.value = '';
+                  }}
+                />
+                {hwInvoiceBillFiles.length > 0 && (
+                  <div className="selected-file-list">
+                    <small>{hwInvoiceBillFiles.length} bill(s) selected</small>
+                    {hwInvoiceBillFiles.map((file, index) => (
+                      <div key={`${file.name}-${file.size}-${file.lastModified}`} className="selected-file-row">
+                        <span>{index + 1}. {file.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => setHwInvoiceBillFiles((prev) => prev.filter((_, i) => i !== index))}
+                          aria-label={`Remove ${file.name}`}
+                        >Remove</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <textarea
+              placeholder="Note (optional)"
+              value={hwInvoiceNote}
+              onChange={(e) => setHwInvoiceNote(e.target.value)}
+              rows={2}
+              className="payment-note-textarea"
+            />
+            <button type="submit" className="ge-save-btn" disabled={isHwInvoiceSubmitting}>
+              {isHwInvoiceSubmitting ? 'Saving...' : 'Raise Invoice'}
+            </button>
+          </form>
+        )}
+
+        {editingHwInvoice && (
+          <form className="ge-form pay-invoice-form" onSubmit={handleUpdateHwInvoice}>
+            <p className="sa-group-title plan-preview-title">
+              Edit Invoice - {editingHwInvoice.supplierName}
+            </p>
+            <div className="ge-form-row">
+              <input
+                type="number"
+                placeholder="Invoice amount (LKR)"
+                value={editHwInvoiceForm.amount}
+                onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, amount: sanitizeAmountInput(e.target.value) })}
+                required
+              />
+              <input
+                type="date"
+                value={editHwInvoiceForm.date}
+                onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, date: e.target.value })}
+              />
+            </div>
+            <div className="ge-form-row">
+              <input
+                type="text"
+                placeholder="Reason for this invoice"
+                value={editHwInvoiceForm.reason}
+                onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, reason: e.target.value })}
+                required
+              />
+              <ProjectNameField
+                value={editHwInvoiceForm.projectName}
+                onChange={(val) => setEditHwInvoiceForm({ ...editHwInvoiceForm, projectName: val })}
+                projectNames={projectNames}
+              />
+            </div>
+            <textarea
+              placeholder="Note (optional)"
+              value={editHwInvoiceForm.note}
+              onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, note: e.target.value })}
+              rows={2}
+              className="payment-note-textarea"
+            />
+
+            {editingHwInvoice.status === 'paid' && (
+              <>
+                <p className="sa-group-title plan-preview-title">Payment details</p>
+                <div className="ge-form-row">
+                  <input
+                    type="date"
+                    value={editHwInvoiceForm.paymentDate}
+                    onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, paymentDate: e.target.value })}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Cheque / Reference No."
+                    value={editHwInvoiceForm.referenceNo}
+                    onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, referenceNo: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="ge-form-row">
+                  <input type="text" placeholder="Payee account number" value={editHwInvoiceForm.accountNumber} onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, accountNumber: e.target.value })} />
+                  <BankNameField value={editHwInvoiceForm.bankName} onChange={(val) => setEditHwInvoiceForm({ ...editHwInvoiceForm, bankName: val })} />
+                  <input type="text" placeholder="Payee branch" value={editHwInvoiceForm.bankBranch} onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, bankBranch: e.target.value })} />
+                </div>
+                <textarea
+                  placeholder="Payment note (optional)"
+                  value={editHwInvoiceForm.paymentNote}
+                  onChange={(e) => setEditHwInvoiceForm({ ...editHwInvoiceForm, paymentNote: e.target.value })}
+                  rows={2}
+                  className="payment-note-textarea"
+                />
+              </>
+            )}
+
+            <div className="sa-panel-actions">
+              <button type="submit" className="ge-save-btn" disabled={isEditHwInvoiceSubmitting}>
+                {isEditHwInvoiceSubmitting ? 'Saving...' : 'Save Changes'}
+              </button>
+              <button type="button" className="sa-reject-btn" onClick={closeEditHwInvoice}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Step 2 form - only shown while recording the payment for one specific
+            pending hardware invoice (opened via "Mark as Paid" in the table below) */}
+        {payingHwInvoice && (
+          <form className="ge-form pay-invoice-form" onSubmit={handlePayHwInvoice}>
+            <p className="sa-group-title plan-preview-title">
+              Record Payment for Invoice - {payingHwInvoice.supplierName}
+            </p>
+            <div className="ge-form-row">
+              <input
+                type="date"
+                value={hwPayDate}
+                onChange={(e) => setHwPayDate(e.target.value)}
+              />
+              <input
+                type="text"
+                placeholder="Cheque / Reference No."
+                value={hwPayReferenceNo}
+                onChange={(e) => setHwPayReferenceNo(e.target.value)}
+                required
+              />
+            </div>
+            <div className="ge-form-row">
+              <input type="text" placeholder="Payee account number" value={hwPayAccountNumber} onChange={(e) => setHwPayAccountNumber(e.target.value)} />
+              <BankNameField value={hwPayBankName} onChange={setHwPayBankName} />
+              <input type="text" placeholder="Payee branch" value={hwPayBankBranch} onChange={(e) => setHwPayBankBranch(e.target.value)} />
+            </div>
+
+            <div className="ge-form-row upload-row">
+              <div className="upload-field">
+                <label className="upload-field-label">Bank payment slip</label>
+                <input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.pdf"
+                  onChange={(e) => setHwPaySlipFile(e.target.files[0])}
+                />
+              </div>
+            </div>
+
+            <textarea
+              placeholder="Note (optional)"
+              value={hwPayNote}
+              onChange={(e) => setHwPayNote(e.target.value)}
+              rows={2}
+              className="payment-note-textarea"
+            />
+            <div className="sa-panel-actions">
+              <button type="submit" className="ge-save-btn" disabled={isHwPaySubmitting}>
+                {isHwPaySubmitting ? 'Saving...' : 'Mark as Paid'}
+              </button>
+              <button type="button" className="sa-reject-btn" onClick={resetHwPayForm}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+
+        {(() => {
+          // Merge the two sources of hardware payments into one unified list:
+          // - true invoices (raised via "+ Raise Invoice" above, in `invoices`)
+          // - direct bill+payment records (via "+ Record Payment" on a
+          //   supplier card below, in `payments`) - these already carry full
+          //   bill/slip/bank details, so they only ever need a "Confirm" step,
+          //   never the separate "Mark as Paid" form.
+          // Every paid record from either source shows up under Paid
+          // Invoices, and every unconfirmed one under Pending Invoices.
+          const invoiceEntries = hardwareList.flatMap((h) =>
+            (h.invoices || []).map((inv) => ({
+              ...inv,
+              supplierName: h.supplierName,
+              hardwareId: h._id,
+              hardwareObj: h,
+              _source: 'invoice',
+              _isPaid: inv.status === 'paid',
+            }))
+          );
+          const paymentEntries = hardwareList.flatMap((h) =>
+            (h.payments || []).map((p) => ({
+              ...p,
+              supplierName: h.supplierName,
+              hardwareId: h._id,
+              hardwareObj: h,
+              _source: 'payment',
+              _isPaid: p.status !== 'pending', // missing status = pre-existing, already settled
+              invoiceDate: p.date,
+              paymentDate: p.date,
+            }))
+          );
+          const allHwEntries = [...invoiceEntries, ...paymentEntries];
+
+          const sortByProject = (a, b) =>
+            (a.projectName || '').localeCompare(b.projectName || '', undefined, { sensitivity: 'base' });
+          const pendingHwInvoices = allHwEntries.filter((e) => !e._isPaid).sort(sortByProject);
+          const paidHwInvoices = allHwEntries.filter((e) => e._isPaid).sort(sortByProject);
+
+          // A payment-sourced record can carry several bills (`bills[]`) or
+          // just the old single `billUrl`; an invoice-sourced record only
+          // ever has one `billUrl`.
+          const renderBills = (e) => {
+            if (e.bills?.length > 0) {
+              return (
+                <span>{e.bills.length} bill(s) — {e.bills.map((b, i) => (
+                  <span key={b.url || i}>{i > 0 ? ', ' : ''}<a href={b.url} target="_blank" rel="noreferrer" className="ge-slip-link">View {i + 1}</a></span>
+                ))}</span>
+              );
+            }
+            return e.billUrl ? <a href={e.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-';
+          };
+
+          return (
+            <>
+              <div className="hw-subtabs">
+                <button
+                  type="button"
+                  className={`hw-subtab-btn ${hwInvoiceTab === 'pending' ? 'active' : ''}`}
+                  onClick={() => setHwInvoiceTab('pending')}
+                >
+                  Pending Invoices ({pendingHwInvoices.length})
+                </button>
+                <button
+                  type="button"
+                  className={`hw-subtab-btn ${hwInvoiceTab === 'paid' ? 'active' : ''}`}
+                  onClick={() => setHwInvoiceTab('paid')}
+                >
+                  Paid Invoices ({paidHwInvoices.length})
+                </button>
+              </div>
+
+              {hwInvoiceTab === 'pending' ? (
+                <div className="hw-table-scroll">
+                <table className="sa-table hw-items-table">
+                  <thead>
+                    <tr>
+                      <th>Invoice No.</th>
+                      <th>Supplier</th>
+                      <th>Project</th>
+                      <th>Amount (LKR)</th>
+                      <th>Reason</th>
+                      <th>Invoice Date</th>
+                      <th>Bill</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingHwInvoices.length === 0 ? (
+                      <tr>
+                        <td colSpan="9" className="hw-empty-text">
+                          No pending invoices
+                        </td>
+                      </tr>
+                    ) : (
+                      pendingHwInvoices.map((inv) => (
+                        <tr key={`${inv._source}-${inv.hardwareId}-${inv._id}`}>
+                          <td>{inv.invoiceNo || '-'}</td>
+                          <td>{inv.supplierName}</td>
+                          <td>{inv.projectName || '-'}</td>
+                          <td>{formatLKR(inv.amount)}</td>
+                          <td>{inv.reason || inv.note || '-'}</td>
+                          <td>{inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString() : '-'}</td>
+                          <td>{renderBills(inv)}</td>
+                          <td><span className="sa-badge sa-badge-pending">Pending</span></td>
+                          <td>
+                            <div className="hw-supplier-actions">
+                              {inv._source === 'invoice' ? (
+                                <button className="sa-manage-btn" onClick={() => startPayingHwInvoice(inv.hardwareObj, inv)}>
+                                  Mark Paid
+                                </button>
+                              ) : (
+                                <button className="sa-manage-btn" onClick={() => handleConfirmHardwarePayment(inv.hardwareId, inv._id)}>
+                                  Confirm
+                                </button>
+                              )}
+                              {inv._source === 'invoice' && (
+                                <button className="hw-edit-btn" onClick={() => startEditHwInvoice(inv.hardwareObj, inv)}>
+                                  Edit
+                                </button>
+                              )}
+                              <button
+                                className="hw-delete-btn"
+                                onClick={() => (inv._source === 'invoice'
+                                  ? handleDeleteHwInvoice(inv.hardwareId, inv._id)
+                                  : handleDeleteHardwarePayment(inv.hardwareId, inv._id))}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+                </div>
+              ) : (
+                <div className="hw-table-scroll">
+                <table className="sa-table hw-items-table">
+                  <thead>
+                    <tr>
+                      <th>Invoice No.</th>
+                      <th>Supplier</th>
+                      <th>Project</th>
+                      <th>Amount (LKR)</th>
+                      <th>Reason</th>
+                      <th>Invoice Date</th>
+                      <th>Payment Date</th>
+                      <th>Reference No.</th>
+                      <th>Account No.</th>
+                      <th>Bank / Branch</th>
+                      <th>Bill</th>
+                      <th>Slip</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paidHwInvoices.length === 0 ? (
+                      <tr>
+                        <td colSpan="14" className="hw-empty-text">
+                          No paid invoices yet
+                        </td>
+                      </tr>
+                    ) : (
+                      paidHwInvoices.map((inv) => (
+                        <tr key={`${inv._source}-${inv.hardwareId}-${inv._id}`}>
+                          <td>{inv.invoiceNo || '-'}</td>
+                          <td>{inv.supplierName}</td>
+                          <td>{inv.projectName || '-'}</td>
+                          <td>{formatLKR(inv.amount)}</td>
+                          <td>{inv.reason || inv.note || '-'}</td>
+                          <td>{inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString() : '-'}</td>
+                          <td>{inv.paymentDate ? new Date(inv.paymentDate).toLocaleDateString() : '-'}</td>
+                          <td>{inv.referenceNo || '-'}</td>
+                          <td>{inv.accountNumber || '-'}</td>
+                          <td>{[inv.bankName, inv.bankBranch].filter(Boolean).join(' / ') || '-'}</td>
+                          <td>{renderBills(inv)}</td>
+                          <td>{inv.slipUrl ? <a href={inv.slipUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
+                          <td><span className="sa-badge sa-badge-approved">Paid</span></td>
+                          <td>
+                            <div className="hw-supplier-actions">
+                              {inv._source === 'invoice' && (
+                                <button className="hw-edit-btn" onClick={() => startEditHwInvoice(inv.hardwareObj, inv)}>
+                                  Edit
+                                </button>
+                              )}
+                              <button
+                                className="hw-delete-btn"
+                                onClick={() => (inv._source === 'invoice'
+                                  ? handleDeleteHwInvoice(inv.hardwareId, inv._id)
+                                  : handleDeleteHardwarePayment(inv.hardwareId, inv._id))}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+                </div>
+              )}
+            </>
+          );
+        })()}
+        </>
+      )}
+
       {hwTab === 'finder' ? (
         <HardwarePriceFinder />
-      ) : (
+      ) : hwTab === 'invoices' ? null : (
         <>
           <div className="ge-header">
             <h3 className="hw-inline-heading">Hardware Suppliers</h3>
@@ -2543,7 +2733,6 @@ function Hardware() {
                   <div className="hw-supplier-actions">
                     <button className="sa-manage-btn" onClick={() => openItemForm(hw)}>+ Add Item</button>
                     <button className="sa-manage-btn" onClick={() => openOrderForm(hw)}>Place Order</button>
-                    <button className="sa-manage-btn" onClick={() => openPaymentForm(hw)}>+ Record Payment</button>
                     <button className="sa-manage-btn" onClick={() => startEditSupplier(hw)}>Edit</button>
                     <button className="hw-delete-btn" onClick={() => handleDeleteSupplier(hw._id)}>Delete</button>
                   </div>
@@ -2676,110 +2865,6 @@ function Hardware() {
                 </form>
               )}
 
-              {/* RECORD PAYMENT - bill received from supplier + the bank payment made, tagged to a project */}
-              {recordingPaymentFor?._id === hw._id && (
-                <form onSubmit={handleRecordPayment} className="hw-item-form">
-                  <p className="sa-group-title">Record bill &amp; payment</p>
-                  <div className="ge-form-row">
-                    <ProjectNameField
-                      value={paymentForm.projectName}
-                      onChange={(val) => setPaymentForm({ ...paymentForm, projectName: val })}
-                      projectNames={projectNames}
-                    />
-                    <input
-                      type="number"
-                      placeholder="Amount (LKR)"
-                      value={paymentForm.amount}
-                      onChange={(e) => setPaymentForm({ ...paymentForm, amount: sanitizeAmountInput(e.target.value) })}
-                      required
-                    />
-                  </div>
-                  <div className="ge-form-row">
-                    <input
-                      type="date"
-                      value={paymentForm.date}
-                      onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
-                    />
-                    <input
-                      type="text"
-                      placeholder="Cheque / Reference No."
-                      value={paymentForm.referenceNo}
-                      onChange={(e) => setPaymentForm({ ...paymentForm, referenceNo: e.target.value })}
-                    />
-                  </div>
-                  <div className="ge-form-row">
-                    <input type="text" placeholder="Payee account number" value={paymentForm.accountNumber} onChange={(e) => setPaymentForm({ ...paymentForm, accountNumber: e.target.value })} />
-                    <BankNameField value={paymentForm.bankName} onChange={(val) => setPaymentForm({ ...paymentForm, bankName: val })} />
-                    <input type="text" placeholder="Payee branch" value={paymentForm.bankBranch} onChange={(e) => setPaymentForm({ ...paymentForm, bankBranch: e.target.value })} />
-                  </div>
-                  <div className="ge-form-row upload-row">
-                    <div className="upload-field">
-                      <label className="upload-field-label">Hardware bills (select one or more)</label>
-                      <input
-                        type="file"
-                        accept=".jpg,.jpeg,.png,.pdf"
-                        multiple
-                        onChange={(e) => {
-                          const selected = Array.from(e.target.files || []);
-                          if (selected.length) {
-                            setPaymentBillFiles((prev) => {
-                              const merged = [...prev, ...selected];
-                              const seen = new Set();
-                              return merged.filter((file) => {
-                                const key = `${file.name}-${file.size}-${file.lastModified}`;
-                                if (seen.has(key)) return false;
-                                seen.add(key);
-                                return true;
-                              });
-                            });
-                          }
-                          e.target.value = '';
-                        }}
-                      />
-                      {paymentBillFiles.length > 0 && (
-                        <div className="selected-file-list">
-                          <small>{paymentBillFiles.length} bill(s) selected</small>
-                          {paymentBillFiles.map((file, index) => (
-                            <div key={`${file.name}-${file.size}-${file.lastModified}`} className="selected-file-row">
-                              <span>{index + 1}. {file.name}</span>
-                              <button
-                                type="button"
-                                onClick={() => setPaymentBillFiles((prev) => prev.filter((_, i) => i !== index))}
-                                aria-label={`Remove ${file.name}`}
-                              >Remove</button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="upload-field">
-                      <label className="upload-field-label">Bank payment slip</label>
-                      <input
-                        type="file"
-                        accept=".jpg,.jpeg,.png,.pdf"
-                        required
-                        onChange={(e) => setPaymentSlipFile(e.target.files[0])}
-                      />
-                    </div>
-                  </div>
-                  <textarea
-                    placeholder="Note (optional)"
-                    value={paymentForm.note}
-                    onChange={(e) => setPaymentForm({ ...paymentForm, note: e.target.value })}
-                    rows={2}
-                    className="payment-note-textarea"
-                  />
-                  <div className="hw-edit-actions">
-                    <button type="submit" className="ge-save-btn" disabled={isPaymentSubmitting}>
-                      {isPaymentSubmitting ? 'Saving...' : 'Save Payment'}
-                    </button>
-                    <button type="button" className="sa-reject-btn" onClick={closePaymentForm}>
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              )}
-
               {hw.items.length > 0 && (
                 <table className="sa-table hw-items-table">
                   <thead>
@@ -2892,72 +2977,15 @@ function Hardware() {
                 </>
               )}
 
-              {/* BILLS & PAYMENTS made to this supplier - shown grouped under its name */}
-              {hw.payments.length > 0 && (
-                <>
-                  <p className="sa-group-title hw-payments-title">Bills &amp; Payments</p>
-                  <div className="hw-table-scroll">
-                  <table className="sa-table hw-items-table">
-                    <thead>
-                      <tr>
-                        <th>Project</th>
-                        <th>Amount (LKR)</th>
-                        <th>Date</th>
-                        <th>Reference No.</th>
-                        <th>Account No.</th>
-                        <th>Bank / Branch</th>
-                        <th>Bills</th>
-                        <th>Slip</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[...hw.payments]
-                        .sort((a, b) => a.projectName.localeCompare(b.projectName, undefined, { sensitivity: 'base' }))
-                        .map((p) => (
-                        <tr key={p._id}>
-                          <td>{p.projectName}</td>
-                          <td>{formatLKR(p.amount)}</td>
-                          <td>{new Date(p.date).toLocaleDateString()}</td>
-                          <td>{p.referenceNo || '-'}</td>
-                          <td>{p.accountNumber || hw.accountNumber || '-'}</td>
-                          <td>{[p.bankName || hw.bankName, p.bankBranch || hw.bankBranch].filter(Boolean).join(' / ') || '-'}</td>
-                          <td>{p.bills?.length > 0 ? (
-                            <span>{p.bills.length} bill(s) — {p.bills.map((b, i) => (
-                              <span key={b.url || i}>{i > 0 ? ', ' : ''}<a href={b.url} target="_blank" rel="noreferrer" className="ge-slip-link">View {i + 1}</a></span>
-                            ))}</span>
-                          ) : p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
-                          <td>{p.slipUrl ? <a href={p.slipUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
-                          <td>
-                            {isPaymentConfirmed(p) ? (
-                              <span className="sa-badge sa-badge-approved">Paid</span>
-                            ) : (
-                              <span className="sa-badge sa-badge-pending">Pending</span>
-                            )}
-                          </td>
-                          <td>
-                            <div className="hw-supplier-actions">
-                              {!isPaymentConfirmed(p) && (
-                                <button className="sa-manage-btn" onClick={() => handleConfirmHardwarePayment(hw._id, p._id)}>
-                                  Confirm
-                                </button>
-                              )}
-                              <button className="hw-delete-btn" onClick={() => handleDeleteHardwarePayment(hw._id, p._id)}>
-                                Delete
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  </div>
-                  <div className="ge-summary hw-total-summary">
-                    <span>{hw.payments.length} payment(s)</span>
-                    <span>Total Paid: {formatLKR(paymentsTotal(hw))}</span>
-                  </div>
-                </>
+              {/* Everything actually paid to this supplier - both from legacy
+                  bill/slip records and from invoices raised via "+ Raise
+                  Invoice" that have since been marked paid. Manage/edit the
+                  underlying records from the Hardware Invoices sub-tab. */}
+              {(hw.payments.length > 0 || (hw.invoices || []).length > 0) && (
+                <div className="ge-summary hw-total-summary">
+                  <span>{paidCount(hw)} payment(s)</span>
+                  <span>Total Paid: {formatLKR(paymentsTotal(hw))}</span>
+                </div>
               )}
             </div>
           ))}
@@ -3130,9 +3158,8 @@ function ProjectSummary() {
   const [planForm, setPlanForm] = useState({ contractorId: '', totalEstimate: '', note: '' });
   const [planFile, setPlanFile] = useState(null);
 
-  const [hwPayForm, setHwPayForm] = useState({ hardwareId: '', amount: '', date: '', referenceNo: '', accountNumber: '', bankName: '', bankBranch: '', note: '' });
+  const [hwPayForm, setHwPayForm] = useState({ hardwareId: '', amount: '', date: '', reason: '', note: '' });
   const [hwBillFiles, setHwBillFiles] = useState([]);
-  const [hwSlipFile, setHwSlipFile] = useState(null);
 
   const [otherForm, setOtherForm] = useState({ title: '', amount: '', paidTo: '', description: '', date: '' });
   const [otherBillFile, setOtherBillFile] = useState(null);
@@ -3174,9 +3201,8 @@ function ProjectSummary() {
     setQuickAction(null);
     setPlanForm({ contractorId: '', totalEstimate: '', note: '' });
     setPlanFile(null);
-    setHwPayForm({ hardwareId: '', amount: '', date: '', referenceNo: '', accountNumber: '', bankName: '', bankBranch: '', reason: '', note: '' });
-    setHwBillFile(null);
-    setHwSlipFile(null);
+    setHwPayForm({ hardwareId: '', amount: '', date: '', reason: '', note: '' });
+    setHwBillFiles([]);
     setOtherForm({ title: '', amount: '', paidTo: '', description: '', date: '' });
     setOtherBillFile(null);
   };
@@ -3210,38 +3236,26 @@ function ProjectSummary() {
     }
   };
 
-  const handleQuickAddHardwarePayment = async (e) => {
+  const handleQuickAddHardwareInvoice = async (e) => {
     e.preventDefault();
     if (!hwPayForm.hardwareId || isQuickSubmitting) return;
-    if (hwBillFiles.length === 0) {
-      alert('Please select at least one hardware bill.');
-      return;
-    }
-    if (!hwSlipFile) {
-      alert('Please select the bank payment slip.');
-      return;
-    }
     setIsQuickSubmitting(true);
     try {
       const data = new FormData();
       data.append('projectName', searchedFor);
       data.append('amount', hwPayForm.amount);
       if (hwPayForm.date) data.append('date', hwPayForm.date);
-      data.append('referenceNo', hwPayForm.referenceNo);
-      data.append('accountNumber', hwPayForm.accountNumber);
-      data.append('bankName', hwPayForm.bankName);
-      data.append('bankBranch', hwPayForm.bankBranch);
+      data.append('reason', hwPayForm.reason);
       data.append('note', hwPayForm.note);
       hwBillFiles.forEach((file) => data.append('bills', file));
-      if (hwSlipFile) data.append('slip', hwSlipFile);
       await axios.post(
-        `${API_BASE_URL}/api/hardware/${hwPayForm.hardwareId}/payments`,
+        `${API_BASE_URL}/api/hardware/${hwPayForm.hardwareId}/invoices`,
         data
       );
       await afterQuickAdd();
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || 'Payment upload failed. Please check the backend server and try again.');
+      alert(err.response?.data?.message || 'Could not raise the invoice. Please check the backend server and try again.');
     } finally {
       setIsQuickSubmitting(false);
     }
@@ -3315,7 +3329,7 @@ function ProjectSummary() {
               {quickAction === 'plan' ? 'Cancel' : '+ Upload Estimation Plan'}
             </button>
             <button type="button" className="hw-finder-add-btn" onClick={() => setQuickAction(quickAction === 'hardware' ? null : 'hardware')}>
-              {quickAction === 'hardware' ? 'Cancel' : '+ Hardware Payment'}
+              {quickAction === 'hardware' ? 'Cancel' : '+ Raise Hardware Invoice'}
             </button>
             <button type="button" className="hw-finder-add-btn" onClick={() => setQuickAction(quickAction === 'other' ? null : 'other')}>
               {quickAction === 'other' ? 'Cancel' : '+ Other Payment'}
@@ -3361,15 +3375,11 @@ function ProjectSummary() {
       )}
 
       {quickAction === 'hardware' && (
-        <form onSubmit={handleQuickAddHardwarePayment} className="hw-item-form">
+        <form onSubmit={handleQuickAddHardwareInvoice} className="hw-item-form">
           <div className="ge-form-row">
             <select
               value={hwPayForm.hardwareId}
-              onChange={(e) => {
-                const nextId = e.target.value;
-                const nextHardware = allHardware.find((hw) => hw._id === nextId);
-                setHwPayForm({ ...hwPayForm, hardwareId: nextId, accountNumber: nextHardware?.accountNumber || '', bankName: nextHardware?.bankName || '', bankBranch: nextHardware?.bankBranch || '' });
-              }}
+              onChange={(e) => setHwPayForm({ ...hwPayForm, hardwareId: e.target.value })}
               required
             >
               <option value="">Select hardware supplier...</option>
@@ -3393,15 +3403,11 @@ function ProjectSummary() {
             />
             <input
               type="text"
-              placeholder="Reference No."
-              value={hwPayForm.referenceNo}
-              onChange={(e) => setHwPayForm({ ...hwPayForm, referenceNo: e.target.value })}
+              placeholder="Reason for this invoice"
+              value={hwPayForm.reason}
+              onChange={(e) => setHwPayForm({ ...hwPayForm, reason: e.target.value })}
+              required
             />
-          </div>
-          <div className="ge-form-row">
-            <input type="text" placeholder="Payee account number" value={hwPayForm.accountNumber} onChange={(e) => setHwPayForm({ ...hwPayForm, accountNumber: e.target.value })} />
-            <BankNameField value={hwPayForm.bankName} onChange={(val) => setHwPayForm({ ...hwPayForm, bankName: val })} />
-            <input type="text" placeholder="Payee branch" value={hwPayForm.bankBranch} onChange={(e) => setHwPayForm({ ...hwPayForm, bankBranch: e.target.value })} />
           </div>
           <div className="ge-form-row upload-row">
             <div className="upload-field">
@@ -3443,10 +3449,6 @@ function ProjectSummary() {
                 </div>
               )}
             </div>
-            <div className="upload-field">
-              <label className="upload-field-label">Bank slip</label>
-              <input type="file" accept=".jpg,.jpeg,.png,.pdf" required onChange={(e) => setHwSlipFile(e.target.files[0])} />
-            </div>
           </div>
           <textarea
             placeholder="Note (optional)"
@@ -3455,7 +3457,7 @@ function ProjectSummary() {
             rows={2}
           />
           <button type="submit" className="ge-save-btn" disabled={isQuickSubmitting}>
-            {isQuickSubmitting ? 'Saving...' : 'Save Payment'}
+            {isQuickSubmitting ? 'Saving...' : 'Raise Invoice'}
           </button>
         </form>
       )}

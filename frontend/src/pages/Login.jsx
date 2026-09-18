@@ -1,13 +1,18 @@
 import { useState } from 'react';
 import axios from 'axios';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import './Login.css';
 
 function Login() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
+
+  // Set by ProtectedRoute / the 401 interceptor: the exact page + tab the
+  // user was on before being bounced to login.
+  const next = searchParams.get('next');
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -22,12 +27,14 @@ function Login() {
 
       const { role, status } = res.data.user;
 
-      if (role === 'super_admin') {
-        navigate('/admin/users');
-      } else if (status !== 'approved') {
-        navigate('/waiting-approval');
+      if (role !== 'super_admin' && status !== 'approved') {
+        navigate('/waiting-approval', { replace: true });
+      } else if (next) {
+        navigate(next, { replace: true });
+      } else if (role === 'super_admin') {
+        navigate('/admin/users', { replace: true });
       } else {
-        navigate('/dashboard');
+        navigate('/dashboard', { replace: true });
       }
     } catch (err) {
       setMessage(err.response?.data?.message || 'Login failed');

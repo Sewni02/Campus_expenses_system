@@ -98,6 +98,37 @@ const addEstimationPlan = async (req, res) => {
   }
 };
 
+const updateEstimationPlan = async (req, res) => {
+  try {
+    const { id, planId } = req.params;
+    const { projectName, totalEstimate, note } = req.body;
+
+    const contractor = await Contractor.findById(id);
+    if (!contractor) {
+      return res.status(404).json({ message: 'Contractor not found' });
+    }
+
+    const plan = contractor.estimationPlans.id(planId);
+    if (!plan) {
+      return res.status(404).json({ message: 'Estimation plan not found' });
+    }
+
+    if (projectName !== undefined) plan.projectName = projectName;
+    if (totalEstimate !== undefined && totalEstimate !== '') plan.totalEstimate = totalEstimate;
+    if (note !== undefined) plan.note = note;
+
+    const planFileUrl = req.files?.plan?.[0]?.path;
+    if (planFileUrl) plan.planFileUrl = planFileUrl;
+
+    await contractor.save({ validateModifiedOnly: true });
+
+    res.json({ message: 'Estimation plan updated successfully', contractor });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 const deleteEstimationPlan = async (req, res) => {
   try {
     const { id, planId } = req.params;
@@ -309,6 +340,7 @@ module.exports = {
   updateContractor,
   deleteContractor,
   addEstimationPlan,
+  updateEstimationPlan,
   deleteEstimationPlan,
   createInvoice,
   updateInvoice, 
