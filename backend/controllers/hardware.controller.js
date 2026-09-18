@@ -303,6 +303,50 @@ const deleteHardware = async (req, res) => {
   }
 };
 
+// Edit an existing direct bill+payment record (the "+ Record Payment" flow).
+// Works whether it's still pending or already confirmed as paid.
+const updatePayment = async (req, res) => {
+  try {
+    const { id, paymentId } = req.params;
+    const { projectName, amount, date, referenceNo, accountNumber, bankName, bankBranch, note } = req.body;
+
+    const hardware = await Hardware.findById(id);
+    if (!hardware) {
+      return res.status(404).json({ message: 'Hardware supplier not found' });
+    }
+
+    const payment = hardware.payments.id(paymentId);
+    if (!payment) {
+      return res.status(404).json({ message: 'Payment not found' });
+    }
+
+    if (projectName !== undefined) payment.projectName = projectName;
+    if (amount !== undefined && amount !== '') payment.amount = amount;
+    if (date) payment.date = date;
+    if (referenceNo !== undefined) payment.referenceNo = referenceNo;
+    if (accountNumber !== undefined) payment.accountNumber = accountNumber;
+    if (bankName !== undefined) payment.bankName = bankName;
+    if (bankBranch !== undefined) payment.bankBranch = bankBranch;
+    if (note !== undefined) payment.note = note;
+
+    const billFiles = req.files?.bills || req.files?.bill || [];
+    if (billFiles.length > 0) {
+      const bills = billFiles.map((file) => ({ url: file.path, name: file.originalname }));
+      payment.bills = bills;
+      payment.billUrl = bills[0]?.url;
+    }
+    const slipUrl = req.files?.slip?.[0]?.path;
+    if (slipUrl) payment.slipUrl = slipUrl;
+
+    await hardware.save({ validateModifiedOnly: true });
+
+    res.json({ message: 'Payment updated successfully', hardware });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 const deletePayment = async (req, res) => {
   try {
     const { id, paymentId } = req.params;
@@ -387,7 +431,9 @@ const createInvoice = async (req, res) => {
       return res.status(404).json({ message: 'Hardware supplier not found' });
     }
 
-    const billUrl = req.files?.bill?.[0]?.path;
+    const billFiles = req.files?.bills || req.files?.bill || [];
+    const bills = billFiles.map((file) => ({ url: file.path, name: file.originalname }));
+    const billUrl = bills[0]?.url;
 
     hardware.invoices.push({
       invoiceNo: generateInvoiceNo(),
@@ -395,6 +441,7 @@ const createInvoice = async (req, res) => {
       invoiceDate: date || Date.now(),
       reason,
       note,
+      bills,
       billUrl,
       status: 'pending',
       projectName,
@@ -482,6 +529,13 @@ const updateInvoice = async (req, res) => {
     if (note !== undefined) invoice.note = note;
     if (projectName !== undefined && projectName !== '') invoice.projectName = projectName;
 
+    const billFiles = req.files?.bills || req.files?.bill || [];
+    if (billFiles.length > 0) {
+      const bills = billFiles.map((file) => ({ url: file.path, name: file.originalname }));
+      invoice.bills = bills;
+      invoice.billUrl = bills[0]?.url;
+    }
+
     if (invoice.status === 'paid') {
       if (referenceNo !== undefined) invoice.referenceNo = referenceNo;
       if (accountNumber !== undefined) invoice.accountNumber = accountNumber;
@@ -538,6 +592,7 @@ module.exports = {
   deleteItem,
   placeOrder,
   addPayment,
+  updatePayment,
   deletePayment,
   confirmPayment,
   getQuote,

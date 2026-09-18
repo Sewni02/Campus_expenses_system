@@ -66,6 +66,8 @@ const invoiceSchema = new mongoose.Schema({
   amount: { type: Number, required: true },
   reason: { type: String, required: true },
   note: { type: String },
+  bills: [{ url: String, name: String }],
+  // Kept for backward compatibility with old single-bill records.
   billUrl: { type: String }, // the invoice/bill received from the supplier
   projectName: { type: String, required: true },
 

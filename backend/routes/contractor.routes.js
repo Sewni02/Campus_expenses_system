@@ -8,6 +8,7 @@ const {
   updateContractor,
   deleteContractor,
   addEstimationPlan,
+  updateEstimationPlan,
   deleteEstimationPlan,
   createInvoice,
   updateInvoice,
@@ -26,6 +27,12 @@ router.post(
   '/:id/plans',
   upload.fields([{ name: 'plan', maxCount: 1 }]),
   addEstimationPlan
+);
+// Edit an existing estimation plan — text fields only, optional re-upload
+router.put(
+  '/:id/plans/:planId',
+  upload.fields([{ name: 'plan', maxCount: 1 }]),
+  updateEstimationPlan
 );
 router.delete('/:id/plans/:planId', deleteEstimationPlan);
 
