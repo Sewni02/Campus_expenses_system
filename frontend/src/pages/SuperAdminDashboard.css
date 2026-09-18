@@ -4,7 +4,8 @@
 
 .sa-container {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   font-family: var(--font-main);
   background: var(--white);
   color: var(--slate-900);
@@ -13,6 +14,11 @@
 /* ---------- Sidebar ---------- */
 .sa-sidebar {
   width: 220px;
+  flex-shrink: 0;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  overflow-y: auto;
   background: linear-gradient(180deg, var(--slate-900), var(--slate-800));
   color: var(--white);
   padding: 24px 0;
@@ -65,6 +71,8 @@
 /* ---------- Content ---------- */
 .sa-content {
   flex: 1;
+  height: 100vh;
+  overflow-y: auto;
   background: var(--slate-50);
 }
 
@@ -212,20 +220,23 @@
 }
 
 .sa-manage-btn {
-  padding: 6px 16px;
+  padding: 6px 14px;
   border-radius: 6px;
   border: 1px solid var(--primary-600);
   background: var(--white);
   color: var(--primary-600);
   cursor: pointer;
-  font-weight: 500;
-  font-size: 13px;
-  transition: background 0.15s ease, color 0.15s ease;
+  font-weight: 600;
+  font-size: 12.5px;
+  white-space: nowrap;
+  line-height: 1.2;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .sa-manage-btn:hover {
   background: var(--primary-600);
   color: var(--white);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
 
 /* ---------- Permission side panel ---------- */
@@ -576,7 +587,23 @@
 
 .hw-supplier-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+/* Horizontally-scrolling wrapper for wide tables (many columns + action
+   buttons), so the buttons never get squeezed into multi-line text - the
+   table scrolls instead of the columns shrinking. */
+.hw-table-scroll {
+  overflow-x: auto;
+  margin-top: 12px;
+  border-radius: 8px;
+}
+
+.hw-table-scroll .hw-items-table {
+  margin-top: 0;
+  min-width: max-content;
 }
 
 .hw-supplier-card {
@@ -621,12 +648,14 @@
 
 .hw-edit-btn,
 .hw-delete-btn {
-  padding: 5px 12px;
+  padding: 6px 12px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+  line-height: 1.2;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .hw-edit-btn {
@@ -638,6 +667,7 @@
 .hw-edit-btn:hover {
   background: var(--primary-600);
   color: var(--white);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
 
 .hw-delete-btn {
@@ -650,6 +680,7 @@
   background: var(--danger);
   color: var(--white);
   border-color: var(--danger);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
 
 /* ---------- Hardware: order form ---------- */

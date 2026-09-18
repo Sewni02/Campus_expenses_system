@@ -185,6 +185,7 @@ const addPayment = async (req, res) => {
       bankName: bankName || hardware.bankName,
       bankBranch: bankBranch || hardware.bankBranch,
       note,
+      status: 'pending',
     });
     await hardware.save();
 
@@ -326,6 +327,207 @@ const deletePayment = async (req, res) => {
   }
 };
 
+// Confirm a recorded bill+payment (flip it from 'pending' to 'paid'). This is
+// separate from the invoice flow above - it's for the direct "Record
+// Payment" form, which already collects the bill and bank slip up front, so
+// confirming just means finance has checked and signed off on it.
+const confirmPayment = async (req, res) => {
+  try {
+    const { id, paymentId } = req.params;
+
+    const hardware = await Hardware.findById(id);
+    if (!hardware) {
+      return res.status(404).json({ message: 'Hardware supplier not found' });
+    }
+
+    const payment = hardware.payments.id(paymentId);
+    if (!payment) {
+      return res.status(404).json({ message: 'Payment not found' });
+    }
+
+    payment.status = 'paid';
+    await hardware.save();
+
+    res.json({ message: 'Payment confirmed as paid', hardware });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Generates a short, human-readable invoice number, e.g. HINV-482913-57
+const generateInvoiceNo = () => {
+  const timePart = Date.now().toString().slice(-6);
+  const randPart = Math.floor(100 + Math.random() * 900);
+  return `HINV-${timePart}-${randPart}`;
+};
+
+// STEP 1 of the invoice flow: raise an invoice against a hardware supplier
+// for a project. Created with status 'pending' and only carries
+// invoice-side details (amount, reason, the bill file received from the
+// supplier). No payment/bank info exists yet - that only gets attached
+// once finance actually pays it (see payInvoice below).
+const createInvoice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, date, reason, note, projectName } = req.body;
+
+    if (!amount) {
+      return res.status(400).json({ message: 'amount is required' });
+    }
+    if (!projectName || !projectName.trim()) {
+      return res.status(400).json({ message: 'projectName is required' });
+    }
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ message: 'reason is required' });
+    }
+
+    const hardware = await Hardware.findById(id);
+    if (!hardware) {
+      return res.status(404).json({ message: 'Hardware supplier not found' });
+    }
+
+    const billUrl = req.files?.bill?.[0]?.path;
+
+    hardware.invoices.push({
+      invoiceNo: generateInvoiceNo(),
+      amount,
+      invoiceDate: date || Date.now(),
+      reason,
+      note,
+      billUrl,
+      status: 'pending',
+      projectName,
+    });
+    await hardware.save();
+
+    res.status(201).json({ message: 'Invoice created successfully. Send it to finance to record the payment once it is settled.', hardware });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// STEP 2 of the invoice flow: record the actual bank payment made against a
+// pending invoice. This attaches the payment/bank details to the SAME
+// invoice record and flips its status to 'paid'.
+const payInvoice = async (req, res) => {
+  try {
+    const { id, invoiceId } = req.params;
+    const { date, referenceNo, accountNumber, bankName, bankBranch, note } = req.body;
+
+    const hardware = await Hardware.findById(id);
+    if (!hardware) {
+      return res.status(404).json({ message: 'Hardware supplier not found' });
+    }
+
+    const invoice = hardware.invoices.id(invoiceId);
+    if (!invoice) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+
+    if (invoice.status === 'paid') {
+      return res.status(400).json({ message: 'This invoice has already been paid' });
+    }
+
+    if (!referenceNo || !referenceNo.trim()) {
+      return res.status(400).json({ message: 'referenceNo is required to record the payment' });
+    }
+
+    const slipUrl = req.files?.slip?.[0]?.path;
+
+    invoice.status = 'paid';
+    invoice.paymentDate = date || Date.now();
+    invoice.referenceNo = referenceNo;
+    invoice.accountNumber = accountNumber || hardware.accountNumber;
+    invoice.bankName = bankName || hardware.bankName;
+    invoice.bankBranch = bankBranch || hardware.bankBranch;
+    if (slipUrl) invoice.slipUrl = slipUrl;
+    invoice.paymentNote = note;
+
+    await hardware.save();
+
+    res.json({ message: 'Payment recorded - invoice marked as paid', hardware });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// EDIT an existing invoice — works for both pending and paid invoices.
+// Lets you correct invoice-side details (amount, reason, invoice date,
+// note) and, if the invoice has already been paid, also correct the
+// payment-side details (reference no, bank info, payment date, note).
+const updateInvoice = async (req, res) => {
+  try {
+    const { id, invoiceId } = req.params;
+    const {
+      amount, reason, date, note, projectName,
+      referenceNo, accountNumber, bankName, bankBranch, paymentDate, paymentNote,
+    } = req.body;
+
+    const hardware = await Hardware.findById(id);
+    if (!hardware) {
+      return res.status(404).json({ message: 'Hardware supplier not found' });
+    }
+
+    const invoice = hardware.invoices.id(invoiceId);
+    if (!invoice) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+
+    if (amount !== undefined && amount !== '') invoice.amount = amount;
+    if (reason !== undefined) invoice.reason = reason;
+    if (date) invoice.invoiceDate = date;
+    if (note !== undefined) invoice.note = note;
+    if (projectName !== undefined && projectName !== '') invoice.projectName = projectName;
+
+    if (invoice.status === 'paid') {
+      if (referenceNo !== undefined) invoice.referenceNo = referenceNo;
+      if (accountNumber !== undefined) invoice.accountNumber = accountNumber;
+      if (bankName !== undefined) invoice.bankName = bankName;
+      if (bankBranch !== undefined) invoice.bankBranch = bankBranch;
+      if (paymentDate) invoice.paymentDate = paymentDate;
+      if (paymentNote !== undefined) invoice.paymentNote = paymentNote;
+    }
+
+    if (!invoice.invoiceNo) {
+      invoice.invoiceNo = generateInvoiceNo();
+    }
+
+    await hardware.save({ validateModifiedOnly: true });
+
+    res.json({ message: 'Invoice updated successfully', hardware });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+const deleteInvoice = async (req, res) => {
+  try {
+    const { id, invoiceId } = req.params;
+
+    const hardware = await Hardware.findById(id);
+    if (!hardware) {
+      return res.status(404).json({ message: 'Hardware supplier not found' });
+    }
+
+    const invoice = hardware.invoices.id(invoiceId);
+    if (!invoice) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+
+    invoice.deleteOne();
+    await hardware.save();
+
+    res.json({ message: 'Invoice deleted successfully', hardware });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 module.exports = {
   getHardware,
   createHardware,
@@ -337,5 +539,10 @@ module.exports = {
   placeOrder,
   addPayment,
   deletePayment,
+  confirmPayment,
   getQuote,
+  createInvoice,
+  updateInvoice,
+  payInvoice,
+  deleteInvoice,
 };

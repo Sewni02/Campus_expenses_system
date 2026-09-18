@@ -3,14 +3,14 @@ const Hardware = require('../models/hardware.model');
 const ConstructionPayment = require('../models/constructionPayment.model');
 
 // Every project name that exists anywhere in the system (an estimation
-// plan, a contractor payment, a hardware payment, or a general/other
+// plan, a contractor payment, a hardware payment/invoice, or a general/other
 // payment), deduplicated case-insensitively and sorted A-Z. Used to power
 // the project dropdowns everywhere a payment or plan is recorded.
 const listProjectNames = async (req, res) => {
   try {
     const [contractors, hardwareList, otherPayments] = await Promise.all([
       Contractor.find({}, 'estimationPlans.projectName payments.projectName'),
-      Hardware.find({}, 'payments.projectName'),
+      Hardware.find({}, 'payments.projectName invoices.projectName'),
       ConstructionPayment.find({}, 'projectName'),
     ]);
 
@@ -28,7 +28,10 @@ const listProjectNames = async (req, res) => {
       c.estimationPlans.forEach((p) => addName(p.projectName));
       c.payments.forEach((p) => addName(p.projectName));
     });
-    hardwareList.forEach((hw) => hw.payments.forEach((p) => addName(p.projectName)));
+    hardwareList.forEach((hw) => {
+      hw.payments.forEach((p) => addName(p.projectName));
+      (hw.invoices || []).forEach((inv) => addName(inv.projectName));
+    });
     otherPayments.forEach((p) => addName(p.projectName));
 
     const projectNames = Array.from(namesByLowerCase.values()).sort((a, b) =>
@@ -43,8 +46,12 @@ const listProjectNames = async (req, res) => {
 };
 
 // Given a project name, pull together:
-// - every contractor's estimation plan(s) for that project + what's been paid against each
-// - every hardware supplier's bill/payments recorded for that project
+// - every contractor's estimation plan(s) for that project + what's actually
+//   been PAID against each (pending invoices are shown but never counted
+//   toward the paid total)
+// - every hardware supplier's bill/payments AND raised invoices recorded for
+//   that project, so a hardware invoice that has been marked "paid" shows up
+//   here too, not just entries from the old bill/slip log
 // so the admin can see full estimated cost vs amount actually paid, in one place.
 const getProjectSummary = async (req, res) => {
   try {
@@ -67,12 +74,17 @@ const getProjectSummary = async (req, res) => {
         const plans = c.estimationPlans.filter(
           (p) => p.projectName.trim().toLowerCase() === search
         );
+        // Keep pending AND paid invoices here so the summary table can still
+        // show a "Pending" badge for unpaid ones - only the total below is
+        // restricted to what has actually been paid.
         const payments = c.payments.filter(
           (p) => p.projectName && p.projectName.trim().toLowerCase() === search
         );
 
         const totalEstimate = plans.reduce((sum, p) => sum + p.totalEstimate, 0);
-        const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+        const totalPaid = payments
+          .filter((p) => p.status === 'paid')
+          .reduce((sum, p) => sum + p.amount, 0);
 
         return {
           contractorId: c._id,
@@ -88,7 +100,10 @@ const getProjectSummary = async (req, res) => {
       .filter((c) => c.plans.length > 0 || c.payments.length > 0);
 
     const hardwareList = await Hardware.find({
-      'payments.projectName': new RegExp(search, 'i'),
+      $or: [
+        { 'payments.projectName': new RegExp(search, 'i') },
+        { 'invoices.projectName': new RegExp(search, 'i') },
+      ],
     });
 
     const otherPaymentsList = await ConstructionPayment.find({
@@ -99,9 +114,34 @@ const getProjectSummary = async (req, res) => {
 
     const hardwareBreakdown = hardwareList
       .map((hw) => {
-        const payments = hw.payments.filter(
-          (p) => p.projectName.trim().toLowerCase() === search
+        // The supplier's own bill/slip log. A missing status means it's an
+        // old record from before invoices existed and counts as already
+        // paid (same rule the Hardware tab uses); an explicit 'pending'
+        // status means it hasn't actually been paid yet, so it's excluded.
+        const logPayments = hw.payments.filter(
+          (p) =>
+            p.projectName.trim().toLowerCase() === search &&
+            p.status !== 'pending'
         );
+
+        // Invoices raised via "+ Raise Invoice" only count once they've
+        // actually been marked paid.
+        const invoicePayments = (hw.invoices || [])
+          .filter(
+            (inv) =>
+              inv.projectName &&
+              inv.projectName.trim().toLowerCase() === search &&
+              inv.status === 'paid'
+          )
+          .map((inv) => ({
+            amount: inv.amount,
+            date: inv.paymentDate || inv.invoiceDate,
+            referenceNo: inv.referenceNo,
+            billUrl: inv.billUrl,
+            slipUrl: inv.slipUrl,
+          }));
+
+        const payments = [...logPayments, ...invoicePayments];
         const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
 
         return {
@@ -118,7 +158,11 @@ const getProjectSummary = async (req, res) => {
     const totalEstimate = contractorBreakdown.reduce((sum, c) => sum + c.totalEstimate, 0);
     const totalContractorPaid = contractorBreakdown.reduce((sum, c) => sum + c.totalPaid, 0);
     const totalHardwarePaid = hardwareBreakdown.reduce((sum, h) => sum + h.totalPaid, 0);
-    const totalOtherPaid = otherPaymentsList.reduce((sum, p) => sum + p.amount, 0);
+    // A missing status is legacy data from before the invoice flow existed
+    // and is treated as already paid, same rule used everywhere else.
+    const totalOtherPaid = otherPaymentsList
+      .filter((p) => p.status !== 'pending')
+      .reduce((sum, p) => sum + p.amount, 0);
 
     res.json({
       projectName: name,
