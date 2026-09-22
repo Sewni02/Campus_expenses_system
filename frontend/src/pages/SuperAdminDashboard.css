@@ -1,0 +1,1353 @@
+* {
+  box-sizing: border-box;
+}
+
+.sa-container {
+  --lp-grad: linear-gradient(135deg, #6366f1, #ec4899);
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  font-family: var(--font-main);
+  background: #0a0e1a;
+  color: rgba(255,255,255,0.92);
+}
+
+/* Catch-all for every plain <input>/<select>/<textarea> in the dashboard
+   (search boxes, form fields) - most of them have no className of their
+   own, so without this they fall back to the browser's white default. */
+.sa-container input,
+.sa-container select,
+.sa-container textarea {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.sa-container input::placeholder,
+.sa-container textarea::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.sa-container input:focus,
+.sa-container select:focus,
+.sa-container textarea:focus {
+  outline: none;
+  border-color: #a5b4fc;
+}
+
+/* The dropdown list a <select> opens is drawn by the browser, not by
+   our CSS - background/color on the closed box (above) don't reach it.
+   Chrome and Firefox both let <option> take its own background/color,
+   which is what actually fixes the dropdown list's white rows. The
+   row the mouse is over still uses the OS's own highlight color -
+   that one part browsers don't allow overriding. */
+.sa-container select option {
+  background: #0d1220;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* Dark scrollbars everywhere in the dashboard (main content, sidebar,
+   horizontally-scrolling tables, side panels) instead of the browser's
+   light default track/thumb showing up as a stray white bar. */
+.sa-content,
+.sa-sidebar,
+.hw-table-scroll,
+.sa-permission-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(165, 180, 252, 0.4) transparent;
+}
+
+.sa-content::-webkit-scrollbar,
+.sa-sidebar::-webkit-scrollbar,
+.hw-table-scroll::-webkit-scrollbar,
+.sa-permission-list::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.sa-content::-webkit-scrollbar-track,
+.sa-sidebar::-webkit-scrollbar-track,
+.hw-table-scroll::-webkit-scrollbar-track,
+.sa-permission-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sa-content::-webkit-scrollbar-thumb,
+.sa-sidebar::-webkit-scrollbar-thumb,
+.hw-table-scroll::-webkit-scrollbar-thumb,
+.sa-permission-list::-webkit-scrollbar-thumb {
+  background: rgba(165, 180, 252, 0.4);
+  border-radius: 100px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.sa-content::-webkit-scrollbar-thumb:hover,
+.sa-sidebar::-webkit-scrollbar-thumb:hover,
+.hw-table-scroll::-webkit-scrollbar-thumb:hover,
+.sa-permission-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(165, 180, 252, 0.7);
+  background-clip: padding-box;
+}
+
+/* ---------- Sidebar ---------- */
+.sa-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  overflow-y: auto;
+  background: linear-gradient(180deg, #0a0e1a, #0d1220);
+  color: var(--white);
+  padding: 24px 0;
+}
+
+.sa-sidebar-header {
+  text-align: center;
+  margin-bottom: 32px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sa-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--lp-grad);
+  margin: 0 auto 12px;
+  border: 2px solid #a5b4fc;
+}
+
+.sa-sidebar-header p {
+  font-size: 13px;
+  color: rgba(255,255,255,0.45);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.sa-sidebar-item {
+  padding: 14px 24px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background 0.15s ease;
+  font-size: 14px;
+  color: rgba(255,255,255,0.4);
+}
+
+.sa-sidebar-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--white);
+}
+
+.sa-sidebar-item.active {
+  background: rgba(99, 102, 241, 0.18);
+  border-left: 3px solid #a5b4fc;
+  font-weight: 600;
+  color: var(--white);
+}
+
+/* ---------- Content ---------- */
+.sa-content {
+  flex: 1;
+  height: 100vh;
+  overflow-y: auto;
+  background: rgba(255,255,255,0.04);
+}
+
+.sa-coming-soon {
+  padding: 40px;
+}
+
+.sa-coming-soon p {
+  color: rgba(255,255,255,0.5);
+}
+
+.sa-page {
+  padding: 32px 40px;
+}
+
+.sa-page-title {
+  margin-bottom: 28px;
+  font-size: 24px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.92);
+  letter-spacing: -0.3px;
+}
+
+/* ---------- Stat cards ---------- */
+.sa-stats-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.sa-stat-card {
+  flex: 1;
+  border-radius: 8px;
+  padding: 20px 24px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+
+.sa-stat-card p {
+  margin: 0;
+  color: rgba(255,255,255,0.5);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.sa-stat-card h2 {
+  margin: 10px 0 0;
+  font-size: 26px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.92);
+}
+
+.sa-stat-total { border-left: 3px solid #6366f1; }
+.sa-stat-approved { border-left: 3px solid #4ade80; }
+.sa-stat-approved h2 { color: #4ade80; }
+.sa-stat-rejected { border-left: 3px solid #f87171; }
+.sa-stat-rejected h2 { color: #f87171; }
+
+/* ---------- Table + Panel layout ---------- */
+.sa-table-panel-row {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.sa-table {
+  flex: 1 1 100%;
+  border-collapse: collapse;
+  background: rgba(255,255,255,0.06);
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.1);
+  transition: flex 0.25s ease;
+  width: 100%;
+}
+
+.sa-table.shrink {
+  flex: 1 1 55%;
+}
+
+.sa-table thead tr {
+  background: rgba(255,255,255,0.08);
+  text-align: left;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.sa-table th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: rgba(255,255,255,0.5);
+  font-weight: 600;
+}
+
+.sa-table th,
+.sa-table td {
+  padding: 12px 14px;
+}
+
+.sa-table td {
+  font-size: 14px;
+  color: rgba(255,255,255,0.85);
+}
+
+.sa-table tbody tr {
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.sa-table tbody tr:hover {
+  background: rgba(255,255,255,0.04);
+}
+
+.sa-table tbody tr.selected-row {
+  background: rgba(99,102,241,0.14);
+}
+
+.sa-badge {
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border: 1px solid transparent;
+}
+
+.sa-badge-approved {
+  background: rgba(74,222,128,0.14);
+  color: #4ade80;
+  border-color: rgba(74,222,128,0.3);
+}
+
+.sa-badge-rejected {
+  background: rgba(248,113,113,0.14);
+  color: #f87171;
+  border-color: rgba(248,113,113,0.3);
+}
+
+.sa-badge-pending {
+  background: rgba(251,191,36,0.14);
+  color: #fbbf24;
+  border-color: rgba(251,191,36,0.4);
+}
+
+.sa-manage-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid #6366f1;
+  background: rgba(255,255,255,0.06);
+  color: #a5b4fc;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12.5px;
+  white-space: nowrap;
+  line-height: 1.2;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sa-manage-btn:hover {
+  background: var(--lp-grad);
+  color: var(--white);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+/* ---------- Permission side panel ---------- */
+.sa-permission-panel {
+  flex: 0 0 40%;
+  background: rgba(255,255,255,0.06);
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  max-height: 75vh;
+  animation: slideIn 0.2s ease;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.sa-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.sa-panel-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.92);
+}
+
+.sa-close-btn {
+  cursor: pointer;
+  color: rgba(255,255,255,0.45);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.sa-close-btn:hover {
+  color: rgba(255,255,255,0.92);
+}
+
+.sa-panel-email {
+  color: rgba(255,255,255,0.5);
+  font-size: 13px;
+  margin-top: 2px;
+  margin-bottom: 0;
+}
+
+.sa-permission-list {
+  overflow-y: auto;
+  flex: 1;
+  margin-top: 14px;
+}
+
+.sa-permission-group {
+  margin-bottom: 18px;
+}
+
+.sa-group-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: rgba(255,255,255,0.92);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  padding-bottom: 6px;
+}
+
+.sa-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  color: rgba(255,255,255,0.7);
+  border: 1px solid transparent;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.sa-checkbox-row:hover {
+  background: rgba(255,255,255,0.08);
+}
+
+.sa-checkbox-row.checked {
+  background: rgba(99,102,241,0.14);
+  border: 1px solid #6366f1;
+  font-weight: 600;
+  color: #a5b4fc;
+}
+
+.sa-checkbox-row input[type='checkbox'] {
+  display: none;
+}
+
+.sa-checkbox-custom {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 2px solid rgba(255,255,255,0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--white);
+  flex-shrink: 0;
+}
+
+.sa-checkbox-row.checked .sa-checkbox-custom {
+  background: var(--lp-grad);
+  border-color: #6366f1;
+}
+
+/* ---------- Panel actions ---------- */
+.sa-panel-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  padding-top: 16px;
+}
+
+.sa-save-btn,
+.sa-reject-btn {
+  flex: 1;
+  padding: 10px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sa-save-btn {
+  border: 1px solid #6366f1;
+  background: var(--lp-grad);
+  color: var(--white);
+}
+
+.sa-save-btn:hover {
+  background: #4f46e5;
+}
+
+.sa-reject-btn {
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.7);
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+.sa-reject-btn:hover {
+  background: rgba(255,255,255,0.08);
+}
+
+/* ---------- General Expenses ---------- */
+.ge-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.ge-add-btn {
+  padding: 8px 18px;
+  border-radius: 6px;
+  border: 1px solid #6366f1;
+  background: var(--lp-grad);
+  color: var(--white);
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.ge-add-btn:hover {
+  background: #4f46e5;
+}
+
+.ge-form {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.ge-form-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.ge-form-row input,
+.ge-form-row select {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.ge-form-row input[type='file'] {
+  padding: 6px;
+  background: rgba(255,255,255,0.06);
+  font-size: 13px;
+}
+
+.ge-form-row input[type='date'] {
+  font-size: 14px;
+}
+
+.ge-form textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  font-size: 14px;
+  margin-bottom: 10px;
+  font-family: inherit;
+}
+
+/* Safety net: a text/number input placed directly in .ge-form (not
+   inside a .ge-form-row) still gets the same full-width, professional
+   look as everything else, instead of falling back to the tiny
+   unstyled browser default. */
+.ge-form > input[type='text'],
+.ge-form > input[type='number'] {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  margin-bottom: 10px;
+}
+
+.ge-form > input[type='text']:focus,
+.ge-form > input[type='number']:focus,
+.ge-form-row input:focus,
+.ge-form-row select:focus,
+.ge-form textarea:focus {
+  outline: none;
+  border-color: var(--primary-600, #92400e);
+  box-shadow: 0 0 0 2px rgba(146, 64, 14, 0.12);
+}
+
+.ge-save-btn {
+  padding: 8px 18px;
+  border-radius: 6px;
+  border: 1px solid #6366f1;
+  background: rgba(255,255,255,0.06);
+  color: #a5b4fc;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ge-save-btn:hover {
+  background: var(--lp-grad);
+  color: var(--white);
+}
+
+.ge-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.ge-tab {
+  padding: 10px 18px;
+  cursor: pointer;
+  font-size: 14px;
+  color: rgba(255,255,255,0.5);
+  border-bottom: 2px solid transparent;
+}
+
+.ge-tab:hover {
+  color: rgba(255,255,255,0.92);
+}
+
+.ge-tab.active {
+  color: #a5b4fc;
+  font-weight: 600;
+  border-bottom: 2px solid #6366f1;
+}
+
+.ge-summary {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: rgba(255,255,255,0.5);
+  margin-bottom: 10px;
+}
+
+.ge-cat-badge {
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.7);
+  text-transform: capitalize;
+}
+
+.ge-slip-link {
+  color: #a5b4fc;
+  font-weight: 600;
+  text-decoration: underline;
+  font-size: 13px;
+}
+
+.ge-slip-link:hover {
+  color: #a5b4fc;
+}
+
+/* ---------- Hardware quantity input ---------- */
+.hw-qty-input {
+  width: 70px;
+  padding: 4px 8px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.hw-qty-input:focus {
+  outline: none;
+  border-color: #a5b4fc;
+}
+/* ---------- Hardware: sub-tabs (Suppliers / Best Price Finder) ---------- */
+.hw-subtabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.hw-subtab-btn {
+  padding: 10px 18px;
+  cursor: pointer;
+  font-size: 14px;
+  color: rgba(255,255,255,0.5);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+}
+
+.hw-subtab-btn:hover {
+  color: rgba(255,255,255,0.92);
+}
+
+.hw-subtab-btn.active {
+  color: #a5b4fc;
+  font-weight: 600;
+  border-bottom: 2px solid #6366f1;
+}
+
+/* ---------- Hardware: shared small utilities ---------- */
+.hw-inline-heading {
+  margin: 0;
+}
+
+.hw-supplier-phone {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: rgba(255,255,255,0.5);
+}
+
+.hw-supplier-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+/* Horizontally-scrolling wrapper for wide tables (many columns + action
+   buttons), so the buttons never get squeezed into multi-line text - the
+   table scrolls instead of the columns shrinking. */
+.hw-table-scroll {
+  overflow-x: auto;
+  margin-top: 12px;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.hw-table-scroll .hw-items-table {
+  margin-top: 0;
+  min-width: max-content;
+}
+
+.hw-supplier-card {
+  margin-bottom: 16px;
+}
+
+.hw-item-form {
+  margin-top: 10px;
+}
+
+.hw-empty-text {
+  text-align: center;
+  padding: 20px;
+  color: rgba(255,255,255,0.45);
+}
+
+.hw-empty-text-inline {
+  padding: 0;
+  text-align: left;
+  font-size: 13px;
+}
+
+.hw-items-table {
+  margin-top: 12px;
+}
+
+.hw-total-summary {
+  margin-top: 8px;
+}
+
+/* ---------- Hardware: edit item form ---------- */
+.hw-edit-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.hw-item-actions-cell {
+  display: flex;
+  gap: 8px;
+}
+
+.hw-edit-btn,
+.hw-delete-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.2;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.hw-edit-btn {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid #6366f1;
+  color: #a5b4fc;
+}
+
+.hw-edit-btn:hover {
+  background: var(--lp-grad);
+  color: var(--white);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.hw-delete-btn {
+  background: rgba(248,113,113,0.14);
+  border: 1px solid rgba(248,113,113,0.3);
+  color: #f87171;
+}
+
+.hw-delete-btn:hover {
+  background: #f87171;
+  color: var(--white);
+  border-color: #f87171;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+/* ---------- Hardware: order form ---------- */
+.hw-order-row {
+  justify-content: space-between;
+}
+
+.hw-order-row-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  flex: 1;
+}
+
+.hw-order-summary {
+  margin-top: 12px;
+}
+
+.hw-order-submit-btn {
+  margin-top: 10px;
+}
+
+.hw-last-order {
+  margin-top: 10px;
+  color: #4ade80;
+  font-weight: 600;
+}
+
+/* ---------- Hardware: Best Price Finder ---------- */
+.hw-finder {
+  max-width: 720px;
+}
+
+.hw-finder-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+  align-items: center;
+}
+
+.hw-finder-row input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.hw-finder-remove-btn {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.5);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.hw-finder-remove-btn:hover {
+  border-color: #f87171;
+  color: #f87171;
+}
+
+.hw-finder-add-btn {
+  display: inline-block;
+  margin-bottom: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #a5b4fc;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.hw-finder-add-btn:hover {
+  text-decoration: underline;
+}
+
+.hw-finder-error {
+  color: #f87171;
+  font-size: 13px;
+  margin: 0 0 10px;
+}
+
+.hw-finder-submit-btn {
+  display: block;
+  margin-top: 4px;
+}
+
+.hw-quote-results {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.hw-quote-card {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  padding: 18px 20px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+
+.hw-quote-card.best {
+  border: 1px solid #a5b4fc;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+}
+
+.hw-quote-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.hw-quote-card-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hw-quote-best-badge {
+  background: rgba(251,191,36,0.14);
+  color: #fbbf24;
+  border: 1px solid rgba(251,191,36,0.4);
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.hw-quote-total {
+  font-size: 18px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.92);
+}
+
+.hw-quote-missing {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: #f87171;
+}
+
+/* ---------- Contractors: search + summary spacing ---------- */
+.contractor-search-row {
+  margin-bottom: 16px;
+}
+
+.contractor-summary-row {
+  margin-top: 10px;
+}
+
+.contractor-edit-field {
+  margin-top: 14px;
+}
+
+.contractor-payments-header {
+  margin-top: 36px;
+}
+
+/* ---------- Contractors: Estimation Plans ---------- */
+.plan-section {
+  margin-top: 20px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  padding-top: 16px;
+}
+
+.plan-section-header {
+  margin-bottom: 4px;
+}
+
+.plan-section-title {
+  margin: 0;
+}
+
+.plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.plan-card {
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.04);
+}
+
+.plan-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  color: rgba(255,255,255,0.92);
+  font-size: 14px;
+}
+
+.plan-card-amount {
+  color: #a5b4fc;
+}
+
+.plan-card-bottom {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+}
+
+/* ---------- Payment forms: shared bits (contractor payments + hardware payments) ---------- */
+.plan-preview-summary {
+  margin: 10px 0;
+  background: rgba(99,102,241,0.14);
+  border: 1px solid rgba(99,102,241,0.3);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #a5b4fc;
+  font-weight: 600;
+}
+
+.plan-preview-title {
+  margin-top: 10px;
+}
+
+.payment-method-option {
+  flex: 1;
+}
+
+.upload-row {
+  margin-top: 10px;
+}
+
+.upload-field {
+  flex: 1;
+}
+
+.upload-field-label {
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.payment-note-textarea {
+  margin-top: 10px;
+}
+
+.hw-payments-title {
+  margin-top: 20px;
+}
+
+/* ---------- Project Summary ---------- */
+.project-summary {
+  max-width: 900px;
+}
+
+.project-search-form {
+  margin-bottom: 24px;
+}
+
+.project-summary-totals {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+
+.project-summary-totals .sa-stat-card {
+  flex: 1 1 200px;
+}
+
+.project-section {
+  margin-bottom: 28px;
+}
+
+.project-section-title {
+  margin-bottom: 12px;
+}
+
+.project-contractor-card {
+  margin-bottom: 14px;
+}
+/* ---------- Project name select-or-add field ---------- */
+.project-name-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.project-name-back-link {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  color: #4a6cf7;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ---------- Project Summary quick actions ---------- */
+.project-quick-actions-header {
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.project-quick-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/* ---------- Report generation (button + modal + print) ---------- */
+.report-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.7);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.report-btn:hover:not(:disabled) {
+  background: var(--lp-grad);
+  color: var(--white);
+  border-color: #6366f1;
+}
+
+.report-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.report-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.report-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
+.report-modal {
+  background: var(--white);
+  border-radius: 10px;
+  width: 100%;
+  max-width: 1000px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+}
+
+.report-modal-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--slate-100);
+  flex-shrink: 0;
+}
+
+.report-modal-toolbar .sa-save-btn,
+.report-modal-toolbar .sa-manage-btn,
+.report-modal-toolbar .sa-reject-btn {
+  flex: none;
+  padding: 8px 18px;
+}
+
+#report-print-area {
+  overflow-y: auto;
+  padding: 24px 28px 32px;
+  /* The printed report is its own self-contained "paper" theme (dark
+     text on white), independent of the dark-glass theme around it.
+     Without this, plain <td> text with no explicit color of its own
+     inherited the near-white ink color from .sa-container further up
+     the tree and became invisible on this light background - that
+     was the "no details showing" bug. */
+  color: var(--slate-900);
+  background: var(--white);
+}
+
+.report-header {
+  margin-bottom: 18px;
+  border-bottom: 3px solid #6366f1;
+  padding-bottom: 12px;
+}
+
+.report-header h2 {
+  margin: 0 0 4px;
+  color: var(--slate-900);
+}
+
+.report-subtitle {
+  margin: 0 0 4px;
+  color: var(--slate-700);
+  font-weight: 600;
+}
+
+.report-meta {
+  margin: 0;
+  color: var(--slate-500);
+  font-size: 12.5px;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.report-table th,
+.report-table td {
+  border: 1px solid var(--slate-200);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+  color: var(--slate-900);
+}
+
+.report-table thead th {
+  background: #eef0fe;
+  color: #4338ca;
+  font-weight: 700;
+}
+
+.report-table tfoot td {
+  font-weight: 700;
+  background: var(--slate-50);
+}
+
+.report-summary-table {
+  max-width: 420px;
+  margin-bottom: 28px;
+}
+
+.report-summary-table td:last-child,
+.report-summary-table th:last-child {
+  text-align: right;
+}
+
+.report-summary-highlight td {
+  font-weight: 700;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(236, 72, 153, 0.1));
+  color: var(--slate-900);
+}
+
+.report-status-paid,
+.report-status-pending {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.report-status-paid {
+  background: rgba(74, 222, 128, 0.15);
+  color: #15803d;
+}
+
+.report-status-pending {
+  background: rgba(251, 191, 36, 0.18);
+  color: #92400e;
+}
+
+.report-section {
+  margin-bottom: 26px;
+}
+
+.report-section-title {
+  margin: 0 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--slate-200);
+  color: var(--slate-900);
+  font-size: 15px;
+}
+
+.report-subsection {
+  margin-bottom: 18px;
+  padding-bottom: 4px;
+}
+
+.report-subsection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.report-subsection-meta {
+  color: var(--slate-500);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+.report-subsection-amount {
+  font-weight: 700;
+  color: var(--primary-700);
+  white-space: nowrap;
+}
+
+/* Only the report content is printed - everything else on the page
+   (sidebar, tables, forms, the modal chrome) is hidden while printing,
+   so "Print / Save as PDF" produces a clean, standalone document. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  #report-print-area,
+  #report-print-area * {
+    visibility: visible;
+  }
+
+  #report-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 0;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .report-modal-overlay,
+  .report-modal {
+    position: static;
+    background: none;
+    box-shadow: none;
+    max-height: none;
+    max-width: none;
+  }
+
+  .report-modal-toolbar {
+    display: none;
+  }
+}
