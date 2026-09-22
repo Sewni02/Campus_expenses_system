@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import useTabState from '../hooks/useTabState';
 import axios from 'axios';
 import { API_BASE_URL } from '../config/api';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import './SuperAdminDashboard.css';
 
 // ---------- Shared input sanitizers & formatters ----------
@@ -250,6 +252,518 @@ function ComingSoon({ label }) {
   );
 }
 
+// ---------- Shared: report generation ----------
+// A reusable "Generate Report" button + modal. Every tab / sub-tab that
+// lists records can drop this in: pass it the report title, an optional
+// subtitle/context line, the column headers, and the rows (each row is an
+// array of cell values, same order as columns). It renders a full-detail,
+// on-screen report that can also be printed or saved as a PDF straight
+// from the browser's print dialog.
+function ReportButton({ label = 'Generate Report', title, subtitle, subtitleText, columns, rows, totals, disabled = false }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        className="report-btn"
+        onClick={() => setOpen(true)}
+        disabled={disabled}
+        title={disabled ? 'No records to report on yet' : undefined}
+      >
+        🖨 {label}
+      </button>
+
+      {open && (
+        <ReportModal
+          title={title}
+          subtitle={subtitle}
+          subtitleText={subtitleText}
+          columns={columns}
+          rows={rows}
+          totals={totals}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+// Turns a report title into a safe file name, e.g.
+// "Contractor Payments Report" -> "Contractor_Payments_Report.pdf".
+const toFileName = (title) =>
+  `${(title || 'report').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '')}.pdf`;
+
+function ReportModal({ title, subtitle, subtitleText, columns, rows, totals, onClose }) {
+  const generatedOn = new Date().toLocaleString();
+
+  // Builds an actual PDF file client-side (jsPDF + autoTable) and triggers
+  // a browser download - no print dialog involved, works the same on
+  // desktop and mobile.
+  const handleDownloadPdf = () => {
+    const doc = new jsPDF({ orientation: columns.length > 6 ? 'landscape' : 'portrait' });
+
+    doc.setFontSize(16);
+    doc.text(title || 'Report', 14, 16);
+
+    let cursorY = 24;
+    const subtitleLine = subtitleText || (typeof subtitle === 'string' ? subtitle : '');
+    if (subtitleLine) {
+      doc.setFontSize(10);
+      doc.text(subtitleLine, 14, cursorY);
+      cursorY += 6;
+    }
+
+    doc.setFontSize(9);
+    doc.setTextColor(120);
+    doc.text(`Generated on ${generatedOn} · ${rows.length} record${rows.length === 1 ? '' : 's'}`, 14, cursorY);
+    doc.setTextColor(0);
+
+    autoTable(doc, {
+      startY: cursorY + 6,
+      head: [columns],
+      body: rows.length > 0
+        ? rows.map((row) => row.map((cell) => (cell === null || cell === undefined || cell === '' ? '-' : String(cell))))
+        : [columns.map(() => '-')],
+      foot: totals ? [totals.map((cell) => (cell === null || cell === undefined ? '' : String(cell)))] : undefined,
+      styles: { fontSize: 8, cellPadding: 3 },
+      headStyles: { fillColor: [65, 45, 21] },
+      footStyles: { fillColor: [230, 224, 201], textColor: 20, fontStyle: 'bold' },
+    });
+
+    doc.save(toFileName(title));
+  };
+
+  return (
+    <div className="report-modal-overlay" onClick={onClose}>
+      <div className="report-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="report-modal-toolbar">
+          <button type="button" className="sa-save-btn report-print-btn" onClick={handleDownloadPdf}>
+            ⬇ Download PDF
+          </button>
+          <button type="button" className="sa-manage-btn report-print-btn" onClick={() => window.print()}>
+            Print
+          </button>
+          <button type="button" className="sa-reject-btn" onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        <div id="report-print-area">
+          <div className="report-header">
+            <h2>{title}</h2>
+            {subtitle && <p className="report-subtitle">{subtitle}</p>}
+            <p className="report-meta">Generated on {generatedOn} &middot; {rows.length} record{rows.length === 1 ? '' : 's'}</p>
+          </div>
+
+          <table className="report-table">
+            <thead>
+              <tr>
+                {columns.map((col) => (
+                  <th key={col}>{col}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={columns.length} className="hw-empty-text">
+                    No records found
+                  </td>
+                </tr>
+              ) : (
+                rows.map((row, i) => (
+                  <tr key={i}>
+                    {row.map((cell, j) => (
+                      <td key={j}>{cell === null || cell === undefined || cell === '' ? '-' : cell}</td>
+                    ))}
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {totals && (
+              <tfoot>
+                <tr>
+                  {totals.map((cell, j) => (
+                    <td key={j}>{cell}</td>
+                  ))}
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Shared: Project Summary report (dedicated, multi-section) ----------
+// The flat single-table report doesn't do justice to the Project Summary
+// page - it's really three separate breakdowns (contractors, hardware,
+// other payments) plus a set of totals. This renders - and prints to PDF -
+// the same section-by-section layout as the live page itself, however many
+// pages that ends up taking.
+function ProjectSummaryReportButton({ searchedFor, result }) {
+  const [open, setOpen] = useState(false);
+  const hasAnyData =
+    result.contractors.length > 0 || result.hardware.length > 0 || (result.otherPayments || []).length > 0;
+
+  return (
+    <>
+      <button type="button" className="report-btn" onClick={() => setOpen(true)} disabled={!hasAnyData}>
+        🖨 Generate Report
+      </button>
+      {open && (
+        <ProjectSummaryReportModal searchedFor={searchedFor} result={result} onClose={() => setOpen(false)} />
+      )}
+    </>
+  );
+}
+
+function ProjectSummaryReportModal({ searchedFor, result, onClose }) {
+  const generatedOn = new Date().toLocaleString();
+  const s = result.summary;
+
+  const handleDownloadPdf = () => {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const marginX = 14;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let y = 18;
+
+    const ensureSpace = (needed) => {
+      if (y + needed > pageHeight - 14) {
+        doc.addPage();
+        y = 18;
+      }
+    };
+
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Project Summary Report', marginX, y);
+    doc.setFont('helvetica', 'normal');
+    y += 7;
+
+    doc.setFontSize(11);
+    doc.setTextColor(70);
+    doc.text(`Project: ${searchedFor}`, marginX, y);
+    doc.setTextColor(0);
+    y += 6;
+
+    doc.setFontSize(9);
+    doc.setTextColor(130);
+    doc.text(`Generated on ${generatedOn}`, marginX, y);
+    doc.setTextColor(0);
+    y += 5;
+
+    // ---- Totals ----
+    autoTable(doc, {
+      startY: y,
+      head: [['Metric', 'Amount (LKR)']],
+      body: [
+        ['Total Estimated', formatLKR(s.totalEstimate)],
+        ['Paid to Contractors', formatLKR(s.totalContractorPaid)],
+        ['Paid to Hardware', formatLKR(s.totalHardwarePaid)],
+        ['Other Payments', formatLKR(s.totalOtherPaid)],
+        ['Total Paid (All)', formatLKR(s.totalPaidOverall)],
+        ['Remaining (vs Estimate)', formatLKR(s.remaining)],
+      ],
+      styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: [65, 45, 21] },
+      columnStyles: { 1: { halign: 'right' } },
+      bodyStyles: { fontStyle: 'normal' },
+      didParseCell: (data) => {
+        if (data.section === 'body' && (data.row.index === 4)) {
+          data.cell.styles.fontStyle = 'bold';
+        }
+      },
+      margin: { left: marginX, right: marginX },
+    });
+    y = doc.lastAutoTable.finalY + 10;
+
+    // ---- Contractor breakdown ----
+    if (result.contractors.length > 0) {
+      ensureSpace(12);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Contractor Breakdown', marginX, y);
+      doc.setFont('helvetica', 'normal');
+      y += 6;
+
+      result.contractors.forEach((c) => {
+        ensureSpace(16);
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${c.name}${c.phone ? '  ·  ' + c.phone : ''}`, marginX, y);
+        doc.text(`${formatLKR(c.totalPaid)} / ${formatLKR(c.totalEstimate)}`, pageWidth - marginX, y, { align: 'right' });
+        doc.setFont('helvetica', 'normal');
+        y += 5;
+
+        if (c.payments.length > 0) {
+          autoTable(doc, {
+            startY: y,
+            head: [['Invoice No.', 'Amount (LKR)', 'Invoice Date', 'Reason', 'Payment Date', 'Reference No.', 'Status']],
+            body: c.payments.map((p) => {
+              const paid = p.status !== 'pending';
+              return [
+                p.invoiceNo || '-',
+                formatLKR(p.amount),
+                p.invoiceDate ? new Date(p.invoiceDate).toLocaleDateString() : '-',
+                p.reason || '-',
+                paid && p.paymentDate ? new Date(p.paymentDate).toLocaleDateString() : '-',
+                paid ? (p.referenceNo || '-') : '-',
+                paid ? 'Paid' : 'Pending',
+              ];
+            }),
+            styles: { fontSize: 8, cellPadding: 2.5 },
+            headStyles: { fillColor: [140, 98, 36] },
+            margin: { left: marginX, right: marginX },
+          });
+          y = doc.lastAutoTable.finalY + 8;
+        } else {
+          doc.setFontSize(9);
+          doc.setTextColor(140);
+          doc.text('No payments recorded', marginX, y);
+          doc.setTextColor(0);
+          y += 8;
+        }
+      });
+    }
+
+    // ---- Hardware breakdown ----
+    if (result.hardware.length > 0) {
+      ensureSpace(12);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Hardware Breakdown (highest spend first)', marginX, y);
+      doc.setFont('helvetica', 'normal');
+      y += 6;
+
+      result.hardware.forEach((hw) => {
+        ensureSpace(16);
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${hw.supplierName}${hw.phone ? '  ·  ' + hw.phone : ''}`, marginX, y);
+        doc.text(formatLKR(hw.totalPaid), pageWidth - marginX, y, { align: 'right' });
+        doc.setFont('helvetica', 'normal');
+        y += 5;
+
+        autoTable(doc, {
+          startY: y,
+          head: [['Amount (LKR)', 'Date', 'Reference No.', 'Bills']],
+          body: hw.payments.map((p) => [
+            formatLKR(p.amount),
+            p.date ? new Date(p.date).toLocaleDateString() : '-',
+            p.referenceNo || '-',
+            p.bills?.length > 0 ? `${p.bills.length} bill(s)` : (p.billUrl ? '1 bill' : '-'),
+          ]),
+          styles: { fontSize: 8, cellPadding: 2.5 },
+          headStyles: { fillColor: [140, 98, 36] },
+          margin: { left: marginX, right: marginX },
+        });
+        y = doc.lastAutoTable.finalY + 8;
+      });
+    }
+
+    // ---- Other payments ----
+    if ((result.otherPayments || []).length > 0) {
+      ensureSpace(12);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Other Payments', marginX, y);
+      doc.setFont('helvetica', 'normal');
+      y += 6;
+
+      autoTable(doc, {
+        startY: y,
+        head: [['Title', 'Paid To', 'Reference No.', 'Amount (LKR)', 'Date', 'Status']],
+        body: result.otherPayments.map((p) => {
+          const paid = p.status !== 'pending';
+          return [
+            p.title,
+            p.paidTo || '-',
+            paid ? (p.referenceNo || '-') : '-',
+            formatLKR(p.amount),
+            p.date ? new Date(p.date).toLocaleDateString() : '-',
+            paid ? 'Paid' : 'Pending',
+          ];
+        }),
+        styles: { fontSize: 8, cellPadding: 2.5 },
+        headStyles: { fillColor: [65, 45, 21] },
+        margin: { left: marginX, right: marginX },
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    }
+
+    doc.save(toFileName(`Project_Summary_${searchedFor}`));
+  };
+
+  return (
+    <div className="report-modal-overlay" onClick={onClose}>
+      <div className="report-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="report-modal-toolbar">
+          <button type="button" className="sa-save-btn report-print-btn" onClick={handleDownloadPdf}>
+            ⬇ Download PDF
+          </button>
+          <button type="button" className="sa-manage-btn report-print-btn" onClick={() => window.print()}>
+            Print
+          </button>
+          <button type="button" className="sa-reject-btn" onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        <div id="report-print-area">
+          <div className="report-header">
+            <h2>Project Summary Report</h2>
+            <p className="report-subtitle">Project: {searchedFor}</p>
+            <p className="report-meta">Generated on {generatedOn}</p>
+          </div>
+
+          <table className="report-table report-summary-table">
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>Amount (LKR)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>Total Estimated</td><td>{formatLKR(s.totalEstimate)}</td></tr>
+              <tr><td>Paid to Contractors</td><td>{formatLKR(s.totalContractorPaid)}</td></tr>
+              <tr><td>Paid to Hardware</td><td>{formatLKR(s.totalHardwarePaid)}</td></tr>
+              <tr><td>Other Payments</td><td>{formatLKR(s.totalOtherPaid)}</td></tr>
+              <tr className="report-summary-highlight"><td>Total Paid (All)</td><td>{formatLKR(s.totalPaidOverall)}</td></tr>
+              <tr><td>Remaining (vs Estimate)</td><td>{formatLKR(s.remaining)}</td></tr>
+            </tbody>
+          </table>
+
+          {result.contractors.length > 0 && (
+            <div className="report-section">
+              <h3 className="report-section-title">Contractor Breakdown</h3>
+              {result.contractors.map((c) => (
+                <div key={c.contractorId} className="report-subsection">
+                  <div className="report-subsection-header">
+                    <div>
+                      <strong>{c.name}</strong>
+                      {c.phone && <span className="report-subsection-meta"> · {c.phone}</span>}
+                    </div>
+                    <div className="report-subsection-amount">
+                      {formatLKR(c.totalPaid)} / {formatLKR(c.totalEstimate)}
+                    </div>
+                  </div>
+                  {c.payments.length > 0 ? (
+                    <table className="report-table">
+                      <thead>
+                        <tr>
+                          <th>Invoice No.</th>
+                          <th>Amount (LKR)</th>
+                          <th>Invoice Date</th>
+                          <th>Reason</th>
+                          <th>Payment Date</th>
+                          <th>Reference No.</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {c.payments.map((p, i) => {
+                          const paid = p.status !== 'pending';
+                          return (
+                            <tr key={i}>
+                              <td>{p.invoiceNo || '-'}</td>
+                              <td>{formatLKR(p.amount)}</td>
+                              <td>{p.invoiceDate ? new Date(p.invoiceDate).toLocaleDateString() : '-'}</td>
+                              <td>{p.reason || '-'}</td>
+                              <td>{paid && p.paymentDate ? new Date(p.paymentDate).toLocaleDateString() : '-'}</td>
+                              <td>{paid ? (p.referenceNo || '-') : '-'}</td>
+                              <td>{paid ? 'Paid' : 'Pending'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="hw-empty-text">No payments recorded</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {result.hardware.length > 0 && (
+            <div className="report-section">
+              <h3 className="report-section-title">Hardware Breakdown (highest spend first)</h3>
+              {result.hardware.map((hw) => (
+                <div key={hw.hardwareId} className="report-subsection">
+                  <div className="report-subsection-header">
+                    <div>
+                      <strong>{hw.supplierName}</strong>
+                      {hw.phone && <span className="report-subsection-meta"> · {hw.phone}</span>}
+                    </div>
+                    <div className="report-subsection-amount">{formatLKR(hw.totalPaid)}</div>
+                  </div>
+                  <table className="report-table">
+                    <thead>
+                      <tr>
+                        <th>Amount (LKR)</th>
+                        <th>Date</th>
+                        <th>Reference No.</th>
+                        <th>Bills</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hw.payments.map((p, i) => (
+                        <tr key={i}>
+                          <td>{formatLKR(p.amount)}</td>
+                          <td>{p.date ? new Date(p.date).toLocaleDateString() : '-'}</td>
+                          <td>{p.referenceNo || '-'}</td>
+                          <td>{p.bills?.length > 0 ? `${p.bills.length} bill(s)` : (p.billUrl ? '1 bill' : '-')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {(result.otherPayments || []).length > 0 && (
+            <div className="report-section">
+              <h3 className="report-section-title">Other Payments</h3>
+              <table className="report-table">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Paid To</th>
+                    <th>Reference No.</th>
+                    <th>Amount (LKR)</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.otherPayments.map((p) => {
+                    const paid = p.status !== 'pending';
+                    return (
+                      <tr key={p._id}>
+                        <td>{p.title}</td>
+                        <td>{p.paidTo || '-'}</td>
+                        <td>{paid ? (p.referenceNo || '-') : '-'}</td>
+                        <td>{formatLKR(p.amount)}</td>
+                        <td>{p.date ? new Date(p.date).toLocaleDateString() : '-'}</td>
+                        <td>{paid ? 'Paid' : 'Pending'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Section A: User Management ----------
 function UserManagement() {
   const [users, setUsers] = useState([]);
@@ -454,7 +968,7 @@ function Constructions() {
         <Contractors />
       </div>
       <div style={{ display: subTab === 'payments' ? 'block' : 'none' }}>
-        <ConstructionPayments />
+        <PaymentsSection />
       </div>
       <div style={{ display: subTab === 'hardware' ? 'block' : 'none' }}>
         <Hardware />
@@ -680,9 +1194,27 @@ function Contractors() {
     <div>
       <div className="ge-header">
         <h3 className="hw-inline-heading">Registered Contractors</h3>
-        <button className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
-          {showForm ? 'Cancel' : '+ Add Contractor'}
-        </button>
+        <div className="report-header-actions">
+          <ReportButton
+            title="Registered Contractors Report"
+            subtitle={searchTerm ? `Filtered by: "${searchTerm}"` : 'All contractors'}
+            columns={['Name', 'Phone', 'Registered On', 'Account No.', 'Bank / Branch', 'Estimation Plans', 'Total Estimated (LKR)', 'Total Paid (LKR)']}
+            rows={contractors.map((c) => [
+              c.name,
+              c.phone,
+              c.registrationDate ? new Date(c.registrationDate).toLocaleDateString() : '-',
+              c.accountNumber,
+              [c.bankName, c.bankBranch].filter(Boolean).join(' / '),
+              c.estimationPlans.length,
+              formatLKR(totalEstimated(c)),
+              formatLKR(totalPaid(c)),
+            ])}
+            disabled={contractors.length === 0}
+          />
+          <button className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
+            {showForm ? 'Cancel' : '+ Add Contractor'}
+          </button>
+        </div>
       </div>
 
       <div className="ge-form-row contractor-search-row">
@@ -978,7 +1510,43 @@ function Contractors() {
   );
 }
 
-// ---------- Sub-section: Payments (general construction payments + contractor payments) ----------
+// ---------- Sub-section: Payments wrapper ----------
+// Holds two payment displays side by side as inner tabs:
+//   - Construction Payments: general/site payments (existing behaviour)
+//   - Contractor Payments: every contractor's invoices, aggregated across
+//     all contractors (this was previously not shown anywhere in the UI,
+//     even though the backend has always supported it).
+function PaymentsSection() {
+  const [payTab, setPayTab] = useTabState('paysec', 'construction'); // 'construction' | 'contractor'
+
+  return (
+    <div>
+      <div className="ge-tabs">
+        <div
+          className={`ge-tab ${payTab === 'construction' ? 'active' : ''}`}
+          onClick={() => setPayTab('construction')}
+        >
+          Construction Payments
+        </div>
+        <div
+          className={`ge-tab ${payTab === 'contractor' ? 'active' : ''}`}
+          onClick={() => setPayTab('contractor')}
+        >
+          Contractor Payments
+        </div>
+      </div>
+
+      <div style={{ display: payTab === 'construction' ? 'block' : 'none' }}>
+        <ConstructionPayments />
+      </div>
+      <div style={{ display: payTab === 'contractor' ? 'block' : 'none' }}>
+        <ContractorPayments />
+      </div>
+    </div>
+  );
+}
+
+// ---------- Sub-section: Payments (general construction payments) ----------
 function ConstructionPayments() {
   const [projectNames, refetchProjectNames] = useProjectNames();
 
@@ -1213,9 +1781,34 @@ function ConstructionPayments() {
           has no payment details yet. */}
       <div className="ge-header">
         <h3 className="hw-inline-heading">Construction Payments</h3>
-        <button className="ge-add-btn" onClick={() => setShowInvoiceForm(!showInvoiceForm)}>
-          {showInvoiceForm ? 'Cancel' : '+ Raise Invoice'}
-        </button>
+        <div className="report-header-actions">
+          <ReportButton
+            title="Construction Payments Report"
+            subtitle={`Pending: ${pendingInvoices.length} &middot; Paid: ${paidInvoices.length}`.replace('&middot;', '·')}
+            columns={['Invoice No.', 'Title', 'Paid To', 'Project', 'Amount (LKR)', 'Invoice Date', 'Payment Date', 'Reference No.', 'Account No.', 'Bank / Branch', 'Status']}
+            rows={payments.map((p) => {
+              const paid = isInvoicePaid(p);
+              return [
+                p.invoiceNo,
+                p.title,
+                p.paidTo,
+                p.projectName,
+                formatLKR(p.amount),
+                p.date ? new Date(p.date).toLocaleDateString() : '-',
+                paid && p.paymentDate ? new Date(p.paymentDate).toLocaleDateString() : '-',
+                paid ? p.referenceNo : '-',
+                paid ? p.accountNumber : '-',
+                paid ? [p.bankName, p.bankBranch].filter(Boolean).join(' / ') : '-',
+                paid ? 'Paid' : 'Pending',
+              ];
+            })}
+            totals={['', '', '', '', formatLKR(payments.reduce((s, p) => s + p.amount, 0)), '', '', '', '', '', '']}
+            disabled={payments.length === 0}
+          />
+          <button className="ge-add-btn" onClick={() => setShowInvoiceForm(!showInvoiceForm)}>
+            {showInvoiceForm ? 'Cancel' : '+ Raise Invoice'}
+          </button>
+        </div>
       </div>
 
       <div className="ge-summary">
@@ -1550,6 +2143,751 @@ function ConstructionPayments() {
                         Edit
                       </button>
                       <button className="hw-delete-btn" onClick={() => handleDeletePayment(p._id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// ---------- Sub-section: Contractor Payments ----------
+// Contractor invoices live inside each Contractor document
+// (contractor.payments[], status 'pending' | 'paid' - see
+// backend/models/contractor.model.js). This view flattens every
+// contractor's invoices into one list so pending/paid contractor
+// payments can be reviewed and settled from the Payments tab, using the
+// exact same "raise invoice -> mark as paid" flow already used for
+// Construction Payments and Hardware invoices.
+function ContractorPayments() {
+  const [contractors, setContractors] = useState([]);
+  const [projectNames, refetchProjectNames] = useProjectNames();
+  const [invoiceTab, setInvoiceTab] = useTabState('cinv', 'pending'); // 'pending' | 'paid'
+
+  // Step 1: raise a new invoice against a contractor's estimation plan -
+  // invoice-side details only, no bank info yet.
+  const [showInvoiceForm, setShowInvoiceForm] = useState(false);
+  const [invoiceForm, setInvoiceForm] = useState({ contractorId: '', planId: '', amount: '', reason: '', date: '', note: '' });
+  const [invoiceBillFile, setInvoiceBillFile] = useState(null);
+  const [isInvoiceSubmitting, setIsInvoiceSubmitting] = useState(false);
+
+  // Inline "+ New Plan" - lets a plan be added for the selected contractor
+  // without leaving this tab. Uses the same addEstimationPlan endpoint as
+  // the Contractors tab, so the new plan shows up there too (same
+  // contractor document / same GET /api/contractors response).
+  const [showNewPlanForm, setShowNewPlanForm] = useState(false);
+  const [newPlanForm, setNewPlanForm] = useState({ projectName: '', totalEstimate: '', note: '' });
+  const [newPlanFile, setNewPlanFile] = useState(null);
+  const [isNewPlanSubmitting, setIsNewPlanSubmitting] = useState(false);
+
+  // Step 2: record the actual bank payment against a pending invoice
+  const [payingInvoice, setPayingInvoice] = useState(null); // { contractorId, paymentId, title }
+  const [payDate, setPayDate] = useState('');
+  const [payReferenceNo, setPayReferenceNo] = useState('');
+  const [payAccountNumber, setPayAccountNumber] = useState('');
+  const [payBankName, setPayBankName] = useState('');
+  const [payBankBranch, setPayBankBranch] = useState('');
+  const [payNote, setPayNote] = useState('');
+  const [paySlipFile, setPaySlipFile] = useState(null);
+  const [isPaySubmitting, setIsPaySubmitting] = useState(false);
+
+  const [editingInvoice, setEditingInvoice] = useState(null); // { contractorId, paymentId, status, title }
+  const [editInvoiceForm, setEditInvoiceForm] = useState({
+    amount: '', reason: '', date: '', note: '',
+    referenceNo: '', accountNumber: '', bankName: '', bankBranch: '', paymentDate: '', paymentNote: '',
+  });
+  const [isEditInvoiceSubmitting, setIsEditInvoiceSubmitting] = useState(false);
+
+  useEffect(() => {
+    fetchContractors();
+  }, []);
+
+  const fetchContractors = async () => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/api/contractors`);
+      setContractors(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Every invoice from every contractor, flattened into one list, tagged
+  // with which contractor it belongs to.
+  const allInvoices = contractors.flatMap((c) =>
+    (c.payments || []).map((p) => ({
+      ...p,
+      contractorId: c._id,
+      contractorName: c.name,
+    }))
+  );
+
+  const selectedContractor = contractors.find((c) => c._id === invoiceForm.contractorId);
+
+  const resetInvoiceForm = () => {
+    setInvoiceForm({ contractorId: '', planId: '', amount: '', reason: '', date: '', note: '' });
+    setInvoiceBillFile(null);
+    setShowNewPlanForm(false);
+    setNewPlanForm({ projectName: '', totalEstimate: '', note: '' });
+    setNewPlanFile(null);
+  };
+
+  // Add an estimation plan for the currently-selected contractor, right
+  // from the invoice form. On success the new plan is auto-selected for
+  // the invoice being raised, and - since it's saved on the contractor's
+  // own document - it shows up in that contractor's profile (Contractors
+  // tab) as well, no separate step needed there.
+  const handleCreateNewPlan = async (e) => {
+    e.preventDefault();
+    if (!invoiceForm.contractorId || isNewPlanSubmitting) return;
+    setIsNewPlanSubmitting(true);
+    try {
+      const data = new FormData();
+      data.append('projectName', newPlanForm.projectName);
+      data.append('totalEstimate', newPlanForm.totalEstimate);
+      data.append('note', newPlanForm.note);
+      if (newPlanFile) data.append('plan', newPlanFile);
+
+      const res = await axios.post(
+        `${API_BASE_URL}/api/contractors/${invoiceForm.contractorId}/plans`,
+        data,
+        { headers: { 'Content-Type': 'multipart/form-data' } },
+      );
+
+      const updatedContractor = res.data.contractor;
+      setContractors((prev) => prev.map((c) => (c._id === updatedContractor._id ? updatedContractor : c)));
+
+      // Auto-select the plan that was just created (the last one in the list)
+      const newPlan = updatedContractor.estimationPlans[updatedContractor.estimationPlans.length - 1];
+      setInvoiceForm((prev) => ({ ...prev, planId: newPlan?._id || '' }));
+
+      setShowNewPlanForm(false);
+      setNewPlanForm({ projectName: '', totalEstimate: '', note: '' });
+      setNewPlanFile(null);
+      refetchProjectNames();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not create the plan. Please try again.');
+    } finally {
+      setIsNewPlanSubmitting(false);
+    }
+  };
+
+  const resetPayForm = () => {
+    setPayingInvoice(null);
+    setPayDate('');
+    setPayReferenceNo('');
+    setPayAccountNumber('');
+    setPayBankName('');
+    setPayBankBranch('');
+    setPayNote('');
+    setPaySlipFile(null);
+  };
+
+  // STEP 1: raise an invoice against one of the contractor's estimation
+  // plans. Created as 'pending' - only gets paid details once settled.
+  const handleCreateInvoice = async (e) => {
+    e.preventDefault();
+    if (isInvoiceSubmitting) return;
+    setIsInvoiceSubmitting(true);
+    try {
+      const data = new FormData();
+      data.append('amount', invoiceForm.amount);
+      data.append('reason', invoiceForm.reason);
+      data.append('planId', invoiceForm.planId);
+      if (invoiceForm.date) data.append('date', invoiceForm.date);
+      data.append('note', invoiceForm.note);
+      if (invoiceBillFile) data.append('bill', invoiceBillFile);
+
+      await axios.post(`${API_BASE_URL}/api/contractors/${invoiceForm.contractorId}/payments`, data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      resetInvoiceForm();
+      setShowInvoiceForm(false);
+      setInvoiceTab('pending');
+      fetchContractors();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not create the invoice. Please try again.');
+    } finally {
+      setIsInvoiceSubmitting(false);
+    }
+  };
+
+  // Open the "record payment" form for a specific pending invoice.
+  // Bank details are auto-filled: use the invoice's own bank details if it
+  // already has some (e.g. re-opening after an edit), otherwise fall back
+  // to the contractor's own registered bank details - same fallback the
+  // backend already applies when saving (see payInvoice in
+  // contractor.controller.js).
+  const startPayingInvoice = (invoice) => {
+    resetPayForm();
+    const contractor = contractors.find((c) => c._id === invoice.contractorId);
+    setPayingInvoice({
+      contractorId: invoice.contractorId,
+      paymentId: invoice._id,
+      title: `${invoice.contractorName} - ${invoice.invoiceNo || ''}`,
+    });
+    setPayAccountNumber(invoice.accountNumber || contractor?.accountNumber || '');
+    setPayBankName(invoice.bankName || contractor?.bankName || '');
+    setPayBankBranch(invoice.bankBranch || contractor?.bankBranch || '');
+  };
+
+  // STEP 2: record the actual bank payment made against a pending invoice.
+  // This attaches the payment/bank details to that invoice and flips its
+  // status from 'pending' to 'paid'.
+  const handlePayInvoice = async (e) => {
+    e.preventDefault();
+    if (!payingInvoice || isPaySubmitting) return;
+    setIsPaySubmitting(true);
+    try {
+      const data = new FormData();
+      if (payDate) data.append('date', payDate);
+      data.append('referenceNo', payReferenceNo);
+      data.append('accountNumber', payAccountNumber);
+      data.append('bankName', payBankName);
+      data.append('bankBranch', payBankBranch);
+      data.append('note', payNote);
+      if (paySlipFile) data.append('slip', paySlipFile);
+
+      await axios.put(
+        `${API_BASE_URL}/api/contractors/${payingInvoice.contractorId}/payments/${payingInvoice.paymentId}/pay`,
+        data,
+      );
+
+      resetPayForm();
+      setInvoiceTab('paid');
+      fetchContractors();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not record the payment. Please try again.');
+    } finally {
+      setIsPaySubmitting(false);
+    }
+  };
+
+  const handleDeletePayment = async (invoice) => {
+    if (!window.confirm('Delete this invoice? This cannot be undone.')) return;
+    try {
+      await axios.delete(`${API_BASE_URL}/api/contractors/${invoice.contractorId}/payments/${invoice._id}`);
+      fetchContractors();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not delete the invoice. Please check the backend server is running and try again.');
+    }
+  };
+
+  const startEditInvoice = (invoice) => {
+    setEditingInvoice({
+      contractorId: invoice.contractorId,
+      paymentId: invoice._id,
+      status: invoice.status,
+      title: `${invoice.contractorName} - ${invoice.invoiceNo || ''}`,
+    });
+    setEditInvoiceForm({
+      amount: invoice.amount ?? '',
+      reason: invoice.reason || '',
+      date: invoice.invoiceDate ? new Date(invoice.invoiceDate).toISOString().slice(0, 10) : '',
+      note: invoice.note || '',
+      referenceNo: invoice.referenceNo || '',
+      accountNumber: invoice.accountNumber || '',
+      bankName: invoice.bankName || '',
+      bankBranch: invoice.bankBranch || '',
+      paymentDate: invoice.paymentDate ? new Date(invoice.paymentDate).toISOString().slice(0, 10) : '',
+      paymentNote: invoice.paymentNote || '',
+    });
+  };
+
+  const closeEditInvoice = () => {
+    setEditingInvoice(null);
+    setEditInvoiceForm({
+      amount: '', reason: '', date: '', note: '',
+      referenceNo: '', accountNumber: '', bankName: '', bankBranch: '', paymentDate: '', paymentNote: '',
+    });
+  };
+
+  const handleUpdateInvoice = async (e) => {
+    e.preventDefault();
+    if (!editingInvoice || isEditInvoiceSubmitting) return;
+    setIsEditInvoiceSubmitting(true);
+    try {
+      const payload = {
+        amount: editInvoiceForm.amount,
+        reason: editInvoiceForm.reason,
+        date: editInvoiceForm.date,
+        note: editInvoiceForm.note,
+      };
+      if (editingInvoice.status === 'paid') {
+        payload.referenceNo = editInvoiceForm.referenceNo;
+        payload.accountNumber = editInvoiceForm.accountNumber;
+        payload.bankName = editInvoiceForm.bankName;
+        payload.bankBranch = editInvoiceForm.bankBranch;
+        payload.paymentDate = editInvoiceForm.paymentDate;
+        payload.paymentNote = editInvoiceForm.paymentNote;
+      }
+      await axios.put(
+        `${API_BASE_URL}/api/contractors/${editingInvoice.contractorId}/payments/${editingInvoice.paymentId}`,
+        payload
+      );
+      closeEditInvoice();
+      fetchContractors();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not update the invoice. Please try again.');
+    } finally {
+      setIsEditInvoiceSubmitting(false);
+    }
+  };
+
+  // A record is "paid" once it has been explicitly settled.
+  const isInvoicePaid = (invoice) => invoice.status !== 'pending';
+
+  const sortByContractor = (a, b) =>
+    (a.contractorName || '').localeCompare(b.contractorName || '', undefined, { sensitivity: 'base' });
+  const pendingInvoices = allInvoices.filter((p) => !isInvoicePaid(p)).sort(sortByContractor);
+  const paidInvoices = allInvoices.filter((p) => isInvoicePaid(p)).sort(sortByContractor);
+  const totalPaid = paidInvoices.reduce((sum, p) => sum + p.amount, 0);
+
+  return (
+    <div>
+      {/* CONTRACTOR PAYMENT INVOICES - raised against a contractor's
+          estimation plan, then settled once finance actually pays it.
+          Aggregated across every contractor so it can all be reviewed and
+          managed from one place, same pattern as Construction Payments. */}
+      <div className="ge-header">
+        <h3 className="hw-inline-heading">Contractor Payments</h3>
+        <div className="report-header-actions">
+          <ReportButton
+            title="Contractor Payments Report"
+            subtitle={`Pending: ${pendingInvoices.length} · Paid: ${paidInvoices.length}`}
+            columns={['Invoice No.', 'Contractor', 'Project', 'Reason', 'Amount (LKR)', 'Invoice Date', 'Payment Date', 'Reference No.', 'Account No.', 'Bank / Branch', 'Status']}
+            rows={allInvoices.map((p) => {
+              const paid = isInvoicePaid(p);
+              return [
+                p.invoiceNo,
+                p.contractorName,
+                p.projectName,
+                p.reason,
+                formatLKR(p.amount),
+                p.invoiceDate ? new Date(p.invoiceDate).toLocaleDateString() : '-',
+                paid && p.paymentDate ? new Date(p.paymentDate).toLocaleDateString() : '-',
+                paid ? p.referenceNo : '-',
+                paid ? p.accountNumber : '-',
+                paid ? [p.bankName, p.bankBranch].filter(Boolean).join(' / ') : '-',
+                paid ? 'Paid' : 'Pending',
+              ];
+            })}
+            totals={['', '', '', '', formatLKR(allInvoices.reduce((s, p) => s + p.amount, 0)), '', '', '', '', '', '']}
+            disabled={allInvoices.length === 0}
+          />
+          <button className="ge-add-btn" onClick={() => setShowInvoiceForm(!showInvoiceForm)}>
+            {showInvoiceForm ? 'Cancel' : '+ Raise Invoice'}
+          </button>
+        </div>
+      </div>
+
+      <div className="ge-summary">
+        <span>{allInvoices.length} invoice(s)</span>
+        <span>Total Paid: {formatLKR(totalPaid)}</span>
+      </div>
+
+      {showInvoiceForm && (
+        <form className="ge-form" onSubmit={handleCreateInvoice}>
+          <div className="ge-form-row">
+            <select
+              value={invoiceForm.contractorId}
+              onChange={(e) => {
+                setInvoiceForm({ ...invoiceForm, contractorId: e.target.value, planId: '' });
+                setShowNewPlanForm(false);
+                setNewPlanForm({ projectName: '', totalEstimate: '', note: '' });
+                setNewPlanFile(null);
+              }}
+              required
+            >
+              <option value="">Select contractor...</option>
+              {[...contractors].sort((a, b) => a.name.localeCompare(b.name)).map((c) => (
+                <option key={c._id} value={c._id}>{c.name}</option>
+              ))}
+            </select>
+            <select
+              value={invoiceForm.planId}
+              onChange={(e) => setInvoiceForm({ ...invoiceForm, planId: e.target.value })}
+              required={!showNewPlanForm}
+              disabled={!selectedContractor || showNewPlanForm}
+            >
+              <option value="">
+                {selectedContractor ? 'Select estimation plan...' : 'Select a contractor first'}
+              </option>
+              {(selectedContractor?.estimationPlans || []).map((plan) => (
+                <option key={plan._id} value={plan._id}>
+                  {plan.projectName} ({formatLKR(plan.totalEstimate)})
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="hw-finder-add-btn"
+              disabled={!selectedContractor}
+              onClick={() => setShowNewPlanForm(!showNewPlanForm)}
+            >
+              {showNewPlanForm ? 'Cancel New Plan' : '+ New Plan'}
+            </button>
+          </div>
+
+          {/* Add an estimation plan for the selected contractor without
+              leaving this form. Saved on the contractor's own document, so
+              it also shows up under that contractor's profile (Contractors
+              tab) - same data, same place. */}
+          {showNewPlanForm && (
+            <div className="hw-item-form new-plan-inline-form">
+              <p className="sa-group-title plan-preview-title">
+                New Estimation Plan - {selectedContractor?.name}
+              </p>
+              <div className="ge-form-row">
+                <ProjectNameField
+                  value={newPlanForm.projectName}
+                  onChange={(val) => setNewPlanForm({ ...newPlanForm, projectName: val })}
+                  projectNames={projectNames}
+                />
+                <input
+                  type="number"
+                  placeholder="Total estimate (LKR)"
+                  value={newPlanForm.totalEstimate}
+                  onChange={(e) => setNewPlanForm({ ...newPlanForm, totalEstimate: sanitizeAmountInput(e.target.value) })}
+                  required
+                />
+              </div>
+              <div className="ge-form-row">
+                <input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.pdf"
+                  onChange={(e) => setNewPlanFile(e.target.files[0])}
+                />
+              </div>
+              <textarea
+                placeholder="Plan note (optional)"
+                value={newPlanForm.note}
+                onChange={(e) => setNewPlanForm({ ...newPlanForm, note: e.target.value })}
+                rows={2}
+              />
+              <button
+                type="button"
+                className="ge-save-btn"
+                disabled={isNewPlanSubmitting || !newPlanForm.projectName || !newPlanForm.totalEstimate}
+                onClick={handleCreateNewPlan}
+              >
+                {isNewPlanSubmitting ? 'Saving...' : 'Save Plan & Use It'}
+              </button>
+            </div>
+          )}
+
+          <div className="ge-form-row">
+            <input
+              type="number"
+              placeholder="Invoice amount (LKR)"
+              value={invoiceForm.amount}
+              onChange={(e) => setInvoiceForm({ ...invoiceForm, amount: sanitizeAmountInput(e.target.value) })}
+              required
+            />
+            <input
+              type="date"
+              value={invoiceForm.date}
+              onChange={(e) => setInvoiceForm({ ...invoiceForm, date: e.target.value })}
+            />
+          </div>
+          <div className="ge-form-row">
+            <input
+              type="text"
+              placeholder="Reason for this invoice"
+              value={invoiceForm.reason}
+              onChange={(e) => setInvoiceForm({ ...invoiceForm, reason: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="ge-form-row upload-row">
+            <div className="upload-field">
+              <label className="upload-field-label">Bill / invoice</label>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf"
+                onChange={(e) => setInvoiceBillFile(e.target.files[0])}
+              />
+            </div>
+          </div>
+
+          <textarea
+            placeholder="Note (optional)"
+            value={invoiceForm.note}
+            onChange={(e) => setInvoiceForm({ ...invoiceForm, note: e.target.value })}
+            rows={2}
+          />
+          <button type="submit" className="ge-save-btn" disabled={isInvoiceSubmitting}>
+            {isInvoiceSubmitting ? 'Saving...' : 'Raise Invoice'}
+          </button>
+        </form>
+      )}
+
+      {editingInvoice && (
+        <form className="ge-form pay-invoice-form" onSubmit={handleUpdateInvoice}>
+          <p className="sa-group-title plan-preview-title">
+            Edit Invoice - {editingInvoice.title}
+          </p>
+          <div className="ge-form-row">
+            <input
+              type="number"
+              placeholder="Invoice amount (LKR)"
+              value={editInvoiceForm.amount}
+              onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, amount: sanitizeAmountInput(e.target.value) })}
+              required
+            />
+            <input
+              type="date"
+              value={editInvoiceForm.date}
+              onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, date: e.target.value })}
+            />
+          </div>
+          <textarea
+            placeholder="Reason for this invoice"
+            value={editInvoiceForm.reason}
+            onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, reason: e.target.value })}
+            rows={2}
+            className="payment-note-textarea"
+          />
+          <textarea
+            placeholder="Note (optional)"
+            value={editInvoiceForm.note}
+            onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, note: e.target.value })}
+            rows={2}
+            className="payment-note-textarea"
+          />
+
+          {editingInvoice.status === 'paid' && (
+            <>
+              <p className="sa-group-title plan-preview-title">Payment details</p>
+              <div className="ge-form-row">
+                <input
+                  type="date"
+                  value={editInvoiceForm.paymentDate}
+                  onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, paymentDate: e.target.value })}
+                />
+                <input
+                  type="text"
+                  placeholder="Cheque / Reference No."
+                  value={editInvoiceForm.referenceNo}
+                  onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, referenceNo: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="ge-form-row">
+                <input type="text" placeholder="Payee account number" value={editInvoiceForm.accountNumber} onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, accountNumber: e.target.value })} />
+                <BankNameField value={editInvoiceForm.bankName} onChange={(val) => setEditInvoiceForm({ ...editInvoiceForm, bankName: val })} />
+                <input type="text" placeholder="Payee branch" value={editInvoiceForm.bankBranch} onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, bankBranch: e.target.value })} />
+              </div>
+              <textarea
+                placeholder="Payment note (optional)"
+                value={editInvoiceForm.paymentNote}
+                onChange={(e) => setEditInvoiceForm({ ...editInvoiceForm, paymentNote: e.target.value })}
+                rows={2}
+                className="payment-note-textarea"
+              />
+            </>
+          )}
+
+          <div className="sa-panel-actions">
+            <button type="submit" className="ge-save-btn" disabled={isEditInvoiceSubmitting}>
+              {isEditInvoiceSubmitting ? 'Saving...' : 'Save Changes'}
+            </button>
+            <button type="button" className="sa-reject-btn" onClick={closeEditInvoice}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Step 2 form - only shown while recording the payment for one
+          specific pending invoice (opened via "Mark as Paid" below) */}
+      {payingInvoice && (
+        <form className="ge-form pay-invoice-form" onSubmit={handlePayInvoice}>
+          <p className="sa-group-title plan-preview-title">
+            Record Payment for Invoice - {payingInvoice.title}
+          </p>
+          <div className="ge-form-row">
+            <input
+              type="date"
+              value={payDate}
+              onChange={(e) => setPayDate(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="Cheque / Reference No."
+              value={payReferenceNo}
+              onChange={(e) => setPayReferenceNo(e.target.value)}
+              required
+            />
+          </div>
+          <div className="ge-form-row">
+            <input type="text" placeholder="Payee account number" value={payAccountNumber} onChange={(e) => setPayAccountNumber(e.target.value)} />
+            <BankNameField value={payBankName} onChange={setPayBankName} />
+            <input type="text" placeholder="Payee branch" value={payBankBranch} onChange={(e) => setPayBankBranch(e.target.value)} />
+          </div>
+
+          <div className="ge-form-row upload-row">
+            <div className="upload-field">
+              <label className="upload-field-label">Bank payment slip</label>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf"
+                onChange={(e) => setPaySlipFile(e.target.files[0])}
+              />
+            </div>
+          </div>
+
+          <textarea
+            placeholder="Note (optional)"
+            value={payNote}
+            onChange={(e) => setPayNote(e.target.value)}
+            rows={2}
+            className="payment-note-textarea"
+          />
+          <div className="sa-panel-actions">
+            <button type="submit" className="ge-save-btn" disabled={isPaySubmitting}>
+              {isPaySubmitting ? 'Saving...' : 'Mark as Paid'}
+            </button>
+            <button type="button" className="sa-reject-btn" onClick={resetPayForm}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      <div className="hw-subtabs">
+        <button
+          type="button"
+          className={`hw-subtab-btn ${invoiceTab === 'pending' ? 'active' : ''}`}
+          onClick={() => setInvoiceTab('pending')}
+        >
+          Pending Invoices ({pendingInvoices.length})
+        </button>
+        <button
+          type="button"
+          className={`hw-subtab-btn ${invoiceTab === 'paid' ? 'active' : ''}`}
+          onClick={() => setInvoiceTab('paid')}
+        >
+          Paid Invoices ({paidInvoices.length})
+        </button>
+      </div>
+
+      {invoiceTab === 'pending' ? (
+        // Pending invoices only carry invoice-side details - there is no
+        // payment/bank info yet, so those columns don't apply here.
+        <table className="sa-table hw-items-table">
+          <thead>
+            <tr>
+              <th>Invoice No.</th>
+              <th>Contractor</th>
+              <th>Project</th>
+              <th>Reason</th>
+              <th>Amount (LKR)</th>
+              <th>Invoice Date</th>
+              <th>Bill</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {pendingInvoices.length === 0 ? (
+              <tr>
+                <td colSpan="9" className="hw-empty-text">
+                  No pending invoices
+                </td>
+              </tr>
+            ) : (
+              pendingInvoices.map((p) => (
+                <tr key={p._id}>
+                  <td>{p.invoiceNo || '-'}</td>
+                  <td>{p.contractorName}</td>
+                  <td>{p.projectName || '-'}</td>
+                  <td>{p.reason || '-'}</td>
+                  <td>{formatLKR(p.amount)}</td>
+                  <td>{p.invoiceDate ? new Date(p.invoiceDate).toLocaleDateString() : '-'}</td>
+                  <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
+                  <td><span className="sa-badge sa-badge-pending">Pending</span></td>
+                  <td>
+                    <div className="hw-supplier-actions">
+                      <button className="sa-manage-btn" onClick={() => startPayingInvoice(p)}>
+                        Mark as Paid
+                      </button>
+                      <button className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
+                        Edit
+                      </button>
+                      <button className="hw-delete-btn" onClick={() => handleDeletePayment(p)}>
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      ) : (
+        // Paid invoices show everything together - the original invoice
+        // details plus the bank/payment details recorded once it was settled.
+        <table className="sa-table hw-items-table">
+          <thead>
+            <tr>
+              <th>Invoice No.</th>
+              <th>Contractor</th>
+              <th>Project</th>
+              <th>Reason</th>
+              <th>Amount (LKR)</th>
+              <th>Invoice Date</th>
+              <th>Payment Date</th>
+              <th>Reference No.</th>
+              <th>Account No.</th>
+              <th>Bank / Branch</th>
+              <th>Bill</th>
+              <th>Slip</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {paidInvoices.length === 0 ? (
+              <tr>
+                <td colSpan="14" className="hw-empty-text">
+                  No paid invoices yet
+                </td>
+              </tr>
+            ) : (
+              paidInvoices.map((p) => (
+                <tr key={p._id}>
+                  <td>{p.invoiceNo || '-'}</td>
+                  <td>{p.contractorName}</td>
+                  <td>{p.projectName || '-'}</td>
+                  <td>{p.reason || '-'}</td>
+                  <td>{formatLKR(p.amount)}</td>
+                  <td>{p.invoiceDate ? new Date(p.invoiceDate).toLocaleDateString() : '-'}</td>
+                  <td>{p.paymentDate ? new Date(p.paymentDate).toLocaleDateString() : '-'}</td>
+                  <td>{p.referenceNo || '-'}</td>
+                  <td>{p.accountNumber || '-'}</td>
+                  <td>{[p.bankName, p.bankBranch].filter(Boolean).join(' / ') || '-'}</td>
+                  <td>{p.billUrl ? <a href={p.billUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
+                  <td>{p.slipUrl ? <a href={p.slipUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a> : '-'}</td>
+                  <td><span className="sa-badge sa-badge-approved">Paid</span></td>
+                  <td>
+                    <div className="hw-supplier-actions">
+                      <button className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
+                        Edit
+                      </button>
+                      <button className="hw-delete-btn" onClick={() => handleDeletePayment(p)}>
                         Delete
                       </button>
                     </div>
@@ -2075,6 +3413,21 @@ function Hardware() {
     }
   };
 
+  // Same merge as the invoices table below (true invoices + legacy
+  // bill/slip payment records into one unified list), computed here too
+  // so the report button in the header can use it without waiting on the
+  // inline IIFE further down.
+  const hwReportEntries = hardwareList.flatMap((h) => [
+    ...(h.invoices || []).map((inv) => ({ ...inv, supplierName: h.supplierName, _isPaid: inv.status === 'paid' })),
+    ...(h.payments || []).map((p) => ({
+      ...p,
+      supplierName: h.supplierName,
+      _isPaid: p.status !== 'pending',
+      invoiceDate: p.date,
+      paymentDate: p.date,
+    })),
+  ]);
+
   return (
     <div>
       <div className="hw-subtabs">
@@ -2108,9 +3461,28 @@ function Hardware() {
             supplier for a project instead of an estimation plan. */}
         <div className="ge-header contractor-payments-header">
           <h3 className="hw-inline-heading">Hardware Invoices</h3>
-          <button className="ge-add-btn" onClick={() => setShowHwInvoiceForm(!showHwInvoiceForm)}>
-            {showHwInvoiceForm ? 'Cancel' : '+ Raise Invoice'}
-          </button>
+          <div className="report-header-actions">
+            <ReportButton
+              title="Hardware Invoices Report"
+              subtitle={`Pending: ${hwReportEntries.filter((e) => !e._isPaid).length} · Paid: ${hwReportEntries.filter((e) => e._isPaid).length}`}
+              columns={['Supplier', 'Project', 'Reason', 'Amount (LKR)', 'Invoice Date', 'Payment Date', 'Reference No.', 'Status']}
+              rows={hwReportEntries.map((e) => [
+                e.supplierName,
+                e.projectName,
+                e.reason,
+                formatLKR(e.amount),
+                e.invoiceDate ? new Date(e.invoiceDate).toLocaleDateString() : '-',
+                e._isPaid && e.paymentDate ? new Date(e.paymentDate).toLocaleDateString() : '-',
+                e._isPaid ? e.referenceNo : '-',
+                e._isPaid ? 'Paid' : 'Pending',
+              ])}
+              totals={['', '', '', formatLKR(hwReportEntries.reduce((s, e) => s + e.amount, 0)), '', '', '', '']}
+              disabled={hwReportEntries.length === 0}
+            />
+            <button className="ge-add-btn" onClick={() => setShowHwInvoiceForm(!showHwInvoiceForm)}>
+              {showHwInvoiceForm ? 'Cancel' : '+ Raise Invoice'}
+            </button>
+          </div>
         </div>
 
         {showHwInvoiceForm && (
@@ -2649,9 +4021,26 @@ function Hardware() {
         <>
           <div className="ge-header">
             <h3 className="hw-inline-heading">Hardware Suppliers</h3>
-            <button className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
-              {showForm ? 'Cancel' : '+ Add Hardware Supplier'}
-            </button>
+            <div className="report-header-actions">
+              <ReportButton
+                title="Hardware Suppliers Report"
+                subtitle="All registered hardware suppliers"
+                columns={['Supplier', 'Phone', 'Account No.', 'Bank / Branch', 'Items', 'Total Value of Items (LKR)', 'Total Paid (LKR)']}
+                rows={hardwareList.map((hw) => [
+                  hw.supplierName,
+                  hw.phone,
+                  hw.accountNumber,
+                  [hw.bankName, hw.bankBranch].filter(Boolean).join(' / '),
+                  hw.items.length,
+                  formatLKR(hardwareTotal(hw)),
+                  formatLKR(paymentsTotal(hw)),
+                ])}
+                disabled={hardwareList.length === 0}
+              />
+              <button className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
+                {showForm ? 'Cancel' : '+ Add Hardware Supplier'}
+              </button>
+            </div>
           </div>
 
           {showForm && (
@@ -3513,6 +4902,11 @@ function ProjectSummary() {
 
       {hasData && (
         <>
+          <div className="ge-header project-quick-actions-header">
+            <p className="sa-group-title project-section-title">Project: {searchedFor}</p>
+            <ProjectSummaryReportButton searchedFor={searchedFor} result={result} />
+          </div>
+
           <div className="project-summary-totals">
             <div className="sa-stat-card sa-stat-total">
               <p>Total Estimated</p>
