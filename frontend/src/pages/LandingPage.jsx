@@ -6,11 +6,10 @@ function LandingPage() {
   const navigate = useNavigate();
 
   const features = [
-    { title: 'Track Expenses', desc: 'Track all campus expenses in real-time with detailed reports.' },
-    { title: 'Smart Analytics', desc: 'Get insights with smart analytics and visual dashboards.' },
-    { title: 'Secure System', desc: 'Role-based access and secure data management you can trust.' },
-    { title: 'Easy Approvals', desc: 'Simplify approval workflows and ensure accountability every step.' },
-    { title: 'Stay Notified', desc: 'Instant notifications for requests, approvals, and updates.' },
+    { title: 'Track Expenses', desc: 'Track all campus expenses in real time, from small purchases to major budget items.' },
+    { title: 'Role-Based Access', desc: 'Admins, staff and students each get a dashboard tailored to what they need to see.' },
+    { title: 'Approval Workflow', desc: 'Submit, review and approve expense requests without the paper trail.' },
+    { title: 'Clear Reports', desc: 'See spending trends at a glance with simple, exportable reports.' },
   ];
 
   return (
@@ -35,42 +34,40 @@ function LandingPage() {
         </div>
       </nav>
 
-      <section id="home" className="lp-hero">
+      <section className="lp-hero">
         <div className="lp-hero-text">
-          <span className="lp-badge"><span className="lp-pip"></span>Smart • Simple • Secure</span>
+          <div className="lp-badge">
+            <span className="lp-pip"></span>
+            Campus Expense Management
+          </div>
           <h1 className="lp-heading">
-            Manage Campus Expenses with <span className="lp-heading-accent">Ease and Clarity</span>
+            Manage your campus budget with <span className="lp-heading-accent">total clarity</span>
           </h1>
           <p className="lp-subtext">
-            A smart solution to track, manage, and optimize campus expenses
-            efficiently. Built for transparency, accountability, and better
-            financial decisions.
+            One simple platform to submit, track and approve every campus expense —
+            built for students, staff and admins alike.
           </p>
           <div className="lp-hero-buttons">
-            <button onClick={() => navigate('/signup')} className="lp-btn-solid lp-btn-large">
-              Get Started &rarr;
-            </button>
-            <button className="lp-btn-outline lp-btn-large">Learn More</button>
+            <button onClick={() => navigate('/signup')} className="lp-btn-solid lp-btn-large">Get Started</button>
+            <button onClick={() => navigate('/login')} className="lp-btn-outline lp-btn-large">Sign In</button>
           </div>
         </div>
 
         <div className="lp-hero-image-wrap">
           <div className="lp-image-frame">
-            <img src={image1} alt="Campus" className="lp-hero-image" />
+            <img src={image1} alt="Campus Expenses dashboard preview" className="lp-hero-image" />
           </div>
-
           <div className="lp-mockup-card">
-            <h3>Dashboard</h3>
+            <h3>This Month</h3>
             <div className="lp-mockup-stats">
               <div className="lp-mockup-stat">
-                <p>Total Expenses</p>
-                <h4>Rs. 1,245,000</h4>
-                <span className="lp-mockup-up">+12.5%</span>
+                <p>Approved</p>
+                <h4>128</h4>
+                <span className="lp-mockup-up">+12%</span>
               </div>
               <div className="lp-mockup-stat">
-                <p>This Month</p>
-                <h4>Rs. 245,000</h4>
-                <span className="lp-mockup-up">+8.2%</span>
+                <p>Pending</p>
+                <h4>14</h4>
               </div>
             </div>
           </div>
@@ -79,23 +76,22 @@ function LandingPage() {
 
       <section className="lp-quote-section">
         <p className="lp-quote">
-          <span className="lp-quote-mark">&ldquo;</span>
-          Good financial management isn&apos;t about restriction, it&apos;s about
-          creating <span className="lp-quote-accent">better opportunities</span> for everyone.
-          <span className="lp-quote-mark">&rdquo;</span>
+          <span className="lp-quote-mark">"</span>
+          Campus Expenses turned a messy spreadsheet process into a{' '}
+          <span className="lp-quote-accent">clear, approvable workflow</span> everyone actually uses.
+          <span className="lp-quote-mark">"</span>
         </p>
       </section>
 
-      <section id="features" className="lp-features">
+      <section className="lp-features" id="features">
         {features.map((f, i) => (
-          <div key={i} className="lp-feature-card">
+          <div className="lp-feature-card" key={f.title}>
             <span className="lp-feature-num">{String(i + 1).padStart(2, '0')}</span>
             <h4>{f.title}</h4>
             <p>{f.desc}</p>
           </div>
         ))}
       </section>
-
     </div>
   );
 }

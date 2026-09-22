@@ -1,9 +1,13 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 
 // Wrap any <Route> element with this to require login (and optionally a
 // specific role) before it renders. Keeps unauthenticated / unauthorized
 // users from ever seeing a protected page, instead of just silently
 // failing to load its data.
+//
+// The page the user actually tried to open (path + query string, so the
+// exact tab they were on) is remembered in `next`, and Login sends them
+// back there after a successful sign-in.
 //
 // Usage:
 //   <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
@@ -11,12 +15,14 @@ import { Navigate } from 'react-router-dom';
 //     <ProtectedRoute allowedRoles={['super_admin']}><SuperAdminDashboard /></ProtectedRoute>
 //   } />
 function ProtectedRoute({ children, allowedRoles }) {
+  const location = useLocation();
   const token = localStorage.getItem('token');
   const userRaw = localStorage.getItem('user');
   const user = userRaw ? JSON.parse(userRaw) : null;
 
   if (!token || !user) {
-    return <Navigate to="/login" replace />;
+    const next = encodeURIComponent(location.pathname + location.search);
+    return <Navigate to={`/login?next=${next}`} replace />;
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {

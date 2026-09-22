@@ -18,14 +18,19 @@ axios.interceptors.request.use((config) => {
 });
 
 // If the backend says the token is missing/expired (401), log the user
-// out on the frontend too and send them back to the login page.
+// out on the frontend too and send them back to the login page - keeping
+// a note of the page + tab they were on so login can return them there.
 axios.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+
+      const current = window.location.pathname + window.location.search;
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.href = `/login?next=${encodeURIComponent(current)}`;
+      }
     }
     return Promise.reject(error);
   }
