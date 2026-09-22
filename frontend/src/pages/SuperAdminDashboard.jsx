@@ -675,7 +675,11 @@ function ProjectSummaryReportModal({ searchedFor, result, onClose }) {
                               <td>{p.reason || '-'}</td>
                               <td>{paid && p.paymentDate ? new Date(p.paymentDate).toLocaleDateString() : '-'}</td>
                               <td>{paid ? (p.referenceNo || '-') : '-'}</td>
-                              <td>{paid ? 'Paid' : 'Pending'}</td>
+                              <td>
+                                <span className={paid ? 'report-status-paid' : 'report-status-pending'}>
+                                  {paid ? 'Paid' : 'Pending'}
+                                </span>
+                              </td>
                             </tr>
                           );
                         })}
@@ -750,7 +754,11 @@ function ProjectSummaryReportModal({ searchedFor, result, onClose }) {
                         <td>{paid ? (p.referenceNo || '-') : '-'}</td>
                         <td>{formatLKR(p.amount)}</td>
                         <td>{p.date ? new Date(p.date).toLocaleDateString() : '-'}</td>
-                        <td>{paid ? 'Paid' : 'Pending'}</td>
+                        <td>
+                          <span className={paid ? 'report-status-paid' : 'report-status-pending'}>
+                            {paid ? 'Paid' : 'Pending'}
+                          </span>
+                        </td>
                       </tr>
                     );
                   })}

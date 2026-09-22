@@ -3,12 +3,90 @@
 }
 
 .sa-container {
+  --lp-grad: linear-gradient(135deg, #6366f1, #ec4899);
   display: flex;
   height: 100vh;
   overflow: hidden;
   font-family: var(--font-main);
-  background: var(--white);
-  color: var(--slate-900);
+  background: #0a0e1a;
+  color: rgba(255,255,255,0.92);
+}
+
+/* Catch-all for every plain <input>/<select>/<textarea> in the dashboard
+   (search boxes, form fields) - most of them have no className of their
+   own, so without this they fall back to the browser's white default. */
+.sa-container input,
+.sa-container select,
+.sa-container textarea {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.sa-container input::placeholder,
+.sa-container textarea::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.sa-container input:focus,
+.sa-container select:focus,
+.sa-container textarea:focus {
+  outline: none;
+  border-color: #a5b4fc;
+}
+
+/* The dropdown list a <select> opens is drawn by the browser, not by
+   our CSS - background/color on the closed box (above) don't reach it.
+   Chrome and Firefox both let <option> take its own background/color,
+   which is what actually fixes the dropdown list's white rows. The
+   row the mouse is over still uses the OS's own highlight color -
+   that one part browsers don't allow overriding. */
+.sa-container select option {
+  background: #0d1220;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* Dark scrollbars everywhere in the dashboard (main content, sidebar,
+   horizontally-scrolling tables, side panels) instead of the browser's
+   light default track/thumb showing up as a stray white bar. */
+.sa-content,
+.sa-sidebar,
+.hw-table-scroll,
+.sa-permission-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(165, 180, 252, 0.4) transparent;
+}
+
+.sa-content::-webkit-scrollbar,
+.sa-sidebar::-webkit-scrollbar,
+.hw-table-scroll::-webkit-scrollbar,
+.sa-permission-list::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.sa-content::-webkit-scrollbar-track,
+.sa-sidebar::-webkit-scrollbar-track,
+.hw-table-scroll::-webkit-scrollbar-track,
+.sa-permission-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sa-content::-webkit-scrollbar-thumb,
+.sa-sidebar::-webkit-scrollbar-thumb,
+.hw-table-scroll::-webkit-scrollbar-thumb,
+.sa-permission-list::-webkit-scrollbar-thumb {
+  background: rgba(165, 180, 252, 0.4);
+  border-radius: 100px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.sa-content::-webkit-scrollbar-thumb:hover,
+.sa-sidebar::-webkit-scrollbar-thumb:hover,
+.hw-table-scroll::-webkit-scrollbar-thumb:hover,
+.sa-permission-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(165, 180, 252, 0.7);
+  background-clip: padding-box;
 }
 
 /* ---------- Sidebar ---------- */
@@ -19,7 +97,7 @@
   position: sticky;
   top: 0;
   overflow-y: auto;
-  background: linear-gradient(180deg, var(--slate-900), var(--slate-800));
+  background: linear-gradient(180deg, #0a0e1a, #0d1220);
   color: var(--white);
   padding: 24px 0;
 }
@@ -35,14 +113,14 @@
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: var(--white);
+  background: var(--lp-grad);
   margin: 0 auto 12px;
-  border: 2px solid var(--primary-500);
+  border: 2px solid #a5b4fc;
 }
 
 .sa-sidebar-header p {
   font-size: 13px;
-  color: var(--slate-400);
+  color: rgba(255,255,255,0.45);
   letter-spacing: 0.5px;
   text-transform: uppercase;
 }
@@ -53,7 +131,7 @@
   border-left: 3px solid transparent;
   transition: background 0.15s ease;
   font-size: 14px;
-  color: var(--slate-300);
+  color: rgba(255,255,255,0.4);
 }
 
 .sa-sidebar-item:hover {
@@ -63,7 +141,7 @@
 
 .sa-sidebar-item.active {
   background: rgba(99, 102, 241, 0.18);
-  border-left: 3px solid var(--primary-500);
+  border-left: 3px solid #a5b4fc;
   font-weight: 600;
   color: var(--white);
 }
@@ -73,7 +151,7 @@
   flex: 1;
   height: 100vh;
   overflow-y: auto;
-  background: var(--slate-50);
+  background: rgba(255,255,255,0.04);
 }
 
 .sa-coming-soon {
@@ -81,7 +159,7 @@
 }
 
 .sa-coming-soon p {
-  color: var(--slate-500);
+  color: rgba(255,255,255,0.5);
 }
 
 .sa-page {
@@ -92,7 +170,7 @@
   margin-bottom: 28px;
   font-size: 24px;
   font-weight: 600;
-  color: var(--slate-900);
+  color: rgba(255,255,255,0.92);
   letter-spacing: -0.3px;
 }
 
@@ -107,14 +185,14 @@
   flex: 1;
   border-radius: 8px;
   padding: 20px 24px;
-  background: var(--white);
-  border: 1px solid var(--slate-200);
-  box-shadow: var(--shadow-sm);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
 }
 
 .sa-stat-card p {
   margin: 0;
-  color: var(--slate-500);
+  color: rgba(255,255,255,0.5);
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
@@ -124,14 +202,14 @@
   margin: 10px 0 0;
   font-size: 26px;
   font-weight: 600;
-  color: var(--slate-900);
+  color: rgba(255,255,255,0.92);
 }
 
-.sa-stat-total { border-left: 3px solid var(--primary-600); }
-.sa-stat-approved { border-left: 3px solid var(--success); }
-.sa-stat-approved h2 { color: var(--success); }
-.sa-stat-rejected { border-left: 3px solid var(--danger); }
-.sa-stat-rejected h2 { color: var(--danger); }
+.sa-stat-total { border-left: 3px solid #6366f1; }
+.sa-stat-approved { border-left: 3px solid #4ade80; }
+.sa-stat-approved h2 { color: #4ade80; }
+.sa-stat-rejected { border-left: 3px solid #f87171; }
+.sa-stat-rejected h2 { color: #f87171; }
 
 /* ---------- Table + Panel layout ---------- */
 .sa-table-panel-row {
@@ -143,10 +221,10 @@
 .sa-table {
   flex: 1 1 100%;
   border-collapse: collapse;
-  background: var(--white);
+  background: rgba(255,255,255,0.06);
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid var(--slate-200);
+  border: 1px solid rgba(255,255,255,0.1);
   transition: flex 0.25s ease;
   width: 100%;
 }
@@ -156,16 +234,16 @@
 }
 
 .sa-table thead tr {
-  background: var(--slate-100);
+  background: rgba(255,255,255,0.08);
   text-align: left;
-  border-bottom: 1px solid var(--slate-200);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
 }
 
 .sa-table th {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  color: var(--slate-500);
+  color: rgba(255,255,255,0.5);
   font-weight: 600;
 }
 
@@ -176,19 +254,19 @@
 
 .sa-table td {
   font-size: 14px;
-  color: var(--slate-800);
+  color: rgba(255,255,255,0.85);
 }
 
 .sa-table tbody tr {
-  border-bottom: 1px solid var(--slate-100);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
 }
 
 .sa-table tbody tr:hover {
-  background: var(--slate-50);
+  background: rgba(255,255,255,0.04);
 }
 
 .sa-table tbody tr.selected-row {
-  background: var(--primary-50);
+  background: rgba(99,102,241,0.14);
 }
 
 .sa-badge {
@@ -202,29 +280,29 @@
 }
 
 .sa-badge-approved {
-  background: var(--success-bg);
-  color: var(--success);
-  border-color: var(--success-border);
+  background: rgba(74,222,128,0.14);
+  color: #4ade80;
+  border-color: rgba(74,222,128,0.3);
 }
 
 .sa-badge-rejected {
-  background: var(--danger-bg);
-  color: var(--danger);
-  border-color: var(--danger-border);
+  background: rgba(248,113,113,0.14);
+  color: #f87171;
+  border-color: rgba(248,113,113,0.3);
 }
 
 .sa-badge-pending {
-  background: var(--accent-100);
-  color: var(--accent-700);
-  border-color: var(--accent-500);
+  background: rgba(251,191,36,0.14);
+  color: #fbbf24;
+  border-color: rgba(251,191,36,0.4);
 }
 
 .sa-manage-btn {
   padding: 6px 14px;
   border-radius: 6px;
-  border: 1px solid var(--primary-600);
-  background: var(--white);
-  color: var(--primary-600);
+  border: 1px solid #6366f1;
+  background: rgba(255,255,255,0.06);
+  color: #a5b4fc;
   cursor: pointer;
   font-weight: 600;
   font-size: 12.5px;
@@ -234,7 +312,7 @@
 }
 
 .sa-manage-btn:hover {
-  background: var(--primary-600);
+  background: var(--lp-grad);
   color: var(--white);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
@@ -242,9 +320,9 @@
 /* ---------- Permission side panel ---------- */
 .sa-permission-panel {
   flex: 0 0 40%;
-  background: var(--white);
+  background: rgba(255,255,255,0.06);
   border-radius: 8px;
-  border: 1px solid var(--slate-200);
+  border: 1px solid rgba(255,255,255,0.1);
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -268,22 +346,22 @@
   margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: var(--slate-900);
+  color: rgba(255,255,255,0.92);
 }
 
 .sa-close-btn {
   cursor: pointer;
-  color: var(--slate-400);
+  color: rgba(255,255,255,0.45);
   font-size: 18px;
   line-height: 1;
 }
 
 .sa-close-btn:hover {
-  color: var(--slate-900);
+  color: rgba(255,255,255,0.92);
 }
 
 .sa-panel-email {
-  color: var(--slate-500);
+  color: rgba(255,255,255,0.5);
   font-size: 13px;
   margin-top: 2px;
   margin-bottom: 0;
@@ -302,11 +380,11 @@
 .sa-group-title {
   font-weight: 600;
   margin-bottom: 8px;
-  color: var(--slate-900);
+  color: rgba(255,255,255,0.92);
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  border-bottom: 1px solid var(--slate-100);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
   padding-bottom: 6px;
 }
 
@@ -319,20 +397,20 @@
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
-  color: var(--slate-700);
+  color: rgba(255,255,255,0.7);
   border: 1px solid transparent;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .sa-checkbox-row:hover {
-  background: var(--slate-100);
+  background: rgba(255,255,255,0.08);
 }
 
 .sa-checkbox-row.checked {
-  background: var(--primary-50);
-  border: 1px solid var(--primary-600);
+  background: rgba(99,102,241,0.14);
+  border: 1px solid #6366f1;
   font-weight: 600;
-  color: var(--primary-700);
+  color: #a5b4fc;
 }
 
 .sa-checkbox-row input[type='checkbox'] {
@@ -343,7 +421,7 @@
   width: 18px;
   height: 18px;
   border-radius: 4px;
-  border: 2px solid var(--slate-300);
+  border: 2px solid rgba(255,255,255,0.15);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -353,8 +431,8 @@
 }
 
 .sa-checkbox-row.checked .sa-checkbox-custom {
-  background: var(--primary-600);
-  border-color: var(--primary-600);
+  background: var(--lp-grad);
+  border-color: #6366f1;
 }
 
 /* ---------- Panel actions ---------- */
@@ -362,7 +440,7 @@
   display: flex;
   gap: 10px;
   margin-top: 16px;
-  border-top: 1px solid var(--slate-100);
+  border-top: 1px solid rgba(255,255,255,0.1);
   padding-top: 16px;
 }
 
@@ -378,23 +456,23 @@
 }
 
 .sa-save-btn {
-  border: 1px solid var(--primary-600);
-  background: var(--primary-600);
+  border: 1px solid #6366f1;
+  background: var(--lp-grad);
   color: var(--white);
 }
 
 .sa-save-btn:hover {
-  background: var(--primary-700);
+  background: #4f46e5;
 }
 
 .sa-reject-btn {
-  background: var(--white);
-  color: var(--slate-700);
-  border: 1px solid var(--slate-300);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.7);
+  border: 1px solid rgba(255,255,255,0.15);
 }
 
 .sa-reject-btn:hover {
-  background: var(--slate-100);
+  background: rgba(255,255,255,0.08);
 }
 
 /* ---------- General Expenses ---------- */
@@ -408,8 +486,8 @@
 .ge-add-btn {
   padding: 8px 18px;
   border-radius: 6px;
-  border: 1px solid var(--primary-600);
-  background: var(--primary-600);
+  border: 1px solid #6366f1;
+  background: var(--lp-grad);
   color: var(--white);
   font-weight: 600;
   cursor: pointer;
@@ -417,12 +495,12 @@
 }
 
 .ge-add-btn:hover {
-  background: var(--primary-700);
+  background: #4f46e5;
 }
 
 .ge-form {
-  background: var(--white);
-  border: 1px solid var(--slate-200);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 20px;
@@ -438,14 +516,14 @@
 .ge-form-row select {
   flex: 1;
   padding: 8px 10px;
-  border: 1px solid var(--slate-300);
+  border: 1px solid rgba(255,255,255,0.15);
   border-radius: 6px;
   font-size: 14px;
 }
 
 .ge-form-row input[type='file'] {
   padding: 6px;
-  background: var(--white);
+  background: rgba(255,255,255,0.06);
   font-size: 13px;
 }
 
@@ -456,7 +534,7 @@
 .ge-form textarea {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid var(--slate-300);
+  border: 1px solid rgba(255,255,255,0.15);
   border-radius: 6px;
   font-size: 14px;
   margin-bottom: 10px;
@@ -473,7 +551,7 @@
   width: 100%;
   box-sizing: border-box;
   padding: 8px 10px;
-  border: 1px solid var(--slate-300);
+  border: 1px solid rgba(255,255,255,0.15);
   border-radius: 6px;
   font-size: 14px;
   font-family: inherit;
@@ -493,15 +571,15 @@
 .ge-save-btn {
   padding: 8px 18px;
   border-radius: 6px;
-  border: 1px solid var(--primary-600);
-  background: var(--white);
-  color: var(--primary-600);
+  border: 1px solid #6366f1;
+  background: rgba(255,255,255,0.06);
+  color: #a5b4fc;
   font-weight: 600;
   cursor: pointer;
 }
 
 .ge-save-btn:hover {
-  background: var(--primary-600);
+  background: var(--lp-grad);
   color: var(--white);
 }
 
@@ -509,32 +587,32 @@
   display: flex;
   gap: 6px;
   margin-bottom: 16px;
-  border-bottom: 1px solid var(--slate-200);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
 }
 
 .ge-tab {
   padding: 10px 18px;
   cursor: pointer;
   font-size: 14px;
-  color: var(--slate-500);
+  color: rgba(255,255,255,0.5);
   border-bottom: 2px solid transparent;
 }
 
 .ge-tab:hover {
-  color: var(--slate-900);
+  color: rgba(255,255,255,0.92);
 }
 
 .ge-tab.active {
-  color: var(--primary-600);
+  color: #a5b4fc;
   font-weight: 600;
-  border-bottom: 2px solid var(--primary-600);
+  border-bottom: 2px solid #6366f1;
 }
 
 .ge-summary {
   display: flex;
   justify-content: space-between;
   font-size: 13px;
-  color: var(--slate-500);
+  color: rgba(255,255,255,0.5);
   margin-bottom: 10px;
 }
 
@@ -543,62 +621,62 @@
   border-radius: 4px;
   font-size: 12px;
   font-weight: 600;
-  border: 1px solid var(--slate-200);
-  background: var(--slate-100);
-  color: var(--slate-700);
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.7);
   text-transform: capitalize;
 }
 
 .ge-slip-link {
-  color: var(--primary-600);
+  color: #a5b4fc;
   font-weight: 600;
   text-decoration: underline;
   font-size: 13px;
 }
 
 .ge-slip-link:hover {
-  color: var(--primary-700);
+  color: #a5b4fc;
 }
 
 /* ---------- Hardware quantity input ---------- */
 .hw-qty-input {
   width: 70px;
   padding: 4px 8px;
-  border: 1px solid var(--slate-300);
+  border: 1px solid rgba(255,255,255,0.15);
   border-radius: 4px;
   font-size: 13px;
 }
 
 .hw-qty-input:focus {
   outline: none;
-  border-color: var(--primary-500);
+  border-color: #a5b4fc;
 }
 /* ---------- Hardware: sub-tabs (Suppliers / Best Price Finder) ---------- */
 .hw-subtabs {
   display: flex;
   gap: 6px;
   margin-bottom: 20px;
-  border-bottom: 1px solid var(--slate-200);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
 }
 
 .hw-subtab-btn {
   padding: 10px 18px;
   cursor: pointer;
   font-size: 14px;
-  color: var(--slate-500);
+  color: rgba(255,255,255,0.5);
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
 }
 
 .hw-subtab-btn:hover {
-  color: var(--slate-900);
+  color: rgba(255,255,255,0.92);
 }
 
 .hw-subtab-btn.active {
-  color: var(--primary-600);
+  color: #a5b4fc;
   font-weight: 600;
-  border-bottom: 2px solid var(--primary-600);
+  border-bottom: 2px solid #6366f1;
 }
 
 /* ---------- Hardware: shared small utilities ---------- */
@@ -609,7 +687,7 @@
 .hw-supplier-phone {
   margin: 4px 0 0;
   font-size: 13px;
-  color: var(--slate-500);
+  color: rgba(255,255,255,0.5);
 }
 
 .hw-supplier-actions {
@@ -626,6 +704,7 @@
   overflow-x: auto;
   margin-top: 12px;
   border-radius: 8px;
+  background: transparent;
 }
 
 .hw-table-scroll .hw-items-table {
@@ -644,7 +723,7 @@
 .hw-empty-text {
   text-align: center;
   padding: 20px;
-  color: var(--slate-400);
+  color: rgba(255,255,255,0.45);
 }
 
 .hw-empty-text-inline {
@@ -686,27 +765,27 @@
 }
 
 .hw-edit-btn {
-  background: var(--white);
-  border: 1px solid var(--primary-600);
-  color: var(--primary-600);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid #6366f1;
+  color: #a5b4fc;
 }
 
 .hw-edit-btn:hover {
-  background: var(--primary-600);
+  background: var(--lp-grad);
   color: var(--white);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
 
 .hw-delete-btn {
-  background: var(--danger-bg);
-  border: 1px solid var(--danger-border);
-  color: var(--danger);
+  background: rgba(248,113,113,0.14);
+  border: 1px solid rgba(248,113,113,0.3);
+  color: #f87171;
 }
 
 .hw-delete-btn:hover {
-  background: var(--danger);
+  background: #f87171;
   color: var(--white);
-  border-color: var(--danger);
+  border-color: #f87171;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
 
@@ -733,7 +812,7 @@
 
 .hw-last-order {
   margin-top: 10px;
-  color: var(--success);
+  color: #4ade80;
   font-weight: 600;
 }
 
@@ -752,7 +831,7 @@
 .hw-finder-row input {
   flex: 1;
   padding: 8px 10px;
-  border: 1px solid var(--slate-300);
+  border: 1px solid rgba(255,255,255,0.15);
   border-radius: 6px;
   font-size: 14px;
 }
@@ -762,16 +841,16 @@
   height: 32px;
   flex-shrink: 0;
   border-radius: 6px;
-  border: 1px solid var(--slate-300);
-  background: var(--white);
-  color: var(--slate-500);
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.5);
   cursor: pointer;
   font-size: 13px;
 }
 
 .hw-finder-remove-btn:hover {
-  border-color: var(--danger);
-  color: var(--danger);
+  border-color: #f87171;
+  color: #f87171;
 }
 
 .hw-finder-add-btn {
@@ -780,7 +859,7 @@
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--primary-600);
+  color: #a5b4fc;
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
@@ -791,7 +870,7 @@
 }
 
 .hw-finder-error {
-  color: var(--danger);
+  color: #f87171;
   font-size: 13px;
   margin: 0 0 10px;
 }
@@ -809,16 +888,16 @@
 }
 
 .hw-quote-card {
-  background: var(--white);
-  border: 1px solid var(--slate-200);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
   border-radius: 10px;
   padding: 18px 20px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
 }
 
 .hw-quote-card.best {
-  border: 1px solid var(--primary-500);
-  box-shadow: var(--shadow-md);
+  border: 1px solid #a5b4fc;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.35);
 }
 
 .hw-quote-card-header {
@@ -835,9 +914,9 @@
 }
 
 .hw-quote-best-badge {
-  background: var(--accent-100);
-  color: var(--accent-700);
-  border: 1px solid var(--accent-500);
+  background: rgba(251,191,36,0.14);
+  color: #fbbf24;
+  border: 1px solid rgba(251,191,36,0.4);
   padding: 3px 10px;
   border-radius: 20px;
   font-size: 11px;
@@ -849,13 +928,13 @@
 .hw-quote-total {
   font-size: 18px;
   font-weight: 700;
-  color: var(--slate-900);
+  color: rgba(255,255,255,0.92);
 }
 
 .hw-quote-missing {
   margin: 10px 0 0;
   font-size: 13px;
-  color: var(--danger);
+  color: #f87171;
 }
 
 /* ---------- Contractors: search + summary spacing ---------- */
@@ -878,7 +957,7 @@
 /* ---------- Contractors: Estimation Plans ---------- */
 .plan-section {
   margin-top: 20px;
-  border-top: 1px solid var(--slate-100);
+  border-top: 1px solid rgba(255,255,255,0.1);
   padding-top: 16px;
 }
 
@@ -898,10 +977,10 @@
 }
 
 .plan-card {
-  border: 1px solid var(--slate-200);
+  border: 1px solid rgba(255,255,255,0.1);
   border-radius: 8px;
   padding: 10px 12px;
-  background: var(--slate-50);
+  background: rgba(255,255,255,0.04);
 }
 
 .plan-card-top {
@@ -909,12 +988,12 @@
   justify-content: space-between;
   align-items: center;
   font-weight: 600;
-  color: var(--slate-900);
+  color: rgba(255,255,255,0.92);
   font-size: 14px;
 }
 
 .plan-card-amount {
-  color: var(--primary-700);
+  color: #a5b4fc;
 }
 
 .plan-card-bottom {
@@ -923,17 +1002,17 @@
   gap: 12px;
   margin-top: 8px;
   font-size: 12px;
-  color: var(--slate-500);
+  color: rgba(255,255,255,0.5);
 }
 
 /* ---------- Payment forms: shared bits (contractor payments + hardware payments) ---------- */
 .plan-preview-summary {
   margin: 10px 0;
-  background: var(--primary-50);
-  border: 1px solid var(--primary-100);
+  background: rgba(99,102,241,0.14);
+  border: 1px solid rgba(99,102,241,0.3);
   border-radius: 6px;
   padding: 8px 12px;
-  color: var(--primary-700);
+  color: #a5b4fc;
   font-weight: 600;
 }
 
@@ -955,7 +1034,7 @@
 
 .upload-field-label {
   font-size: 12px;
-  color: var(--slate-500);
+  color: rgba(255,255,255,0.5);
   display: block;
   margin-bottom: 4px;
 }
@@ -1033,9 +1112,9 @@
 .report-btn {
   padding: 8px 16px;
   border-radius: 6px;
-  border: 1px solid var(--slate-300);
-  background: var(--white);
-  color: var(--slate-700);
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.7);
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
@@ -1044,9 +1123,9 @@
 }
 
 .report-btn:hover:not(:disabled) {
-  background: var(--primary-600);
+  background: var(--lp-grad);
   color: var(--white);
-  border-color: var(--primary-600);
+  border-color: #6366f1;
 }
 
 .report-btn:disabled {
@@ -1103,11 +1182,19 @@
 #report-print-area {
   overflow-y: auto;
   padding: 24px 28px 32px;
+  /* The printed report is its own self-contained "paper" theme (dark
+     text on white), independent of the dark-glass theme around it.
+     Without this, plain <td> text with no explicit color of its own
+     inherited the near-white ink color from .sa-container further up
+     the tree and became invisible on this light background - that
+     was the "no details showing" bug. */
+  color: var(--slate-900);
+  background: var(--white);
 }
 
 .report-header {
   margin-bottom: 18px;
-  border-bottom: 2px solid var(--slate-900);
+  border-bottom: 3px solid #6366f1;
   padding-bottom: 12px;
 }
 
@@ -1140,11 +1227,12 @@
   padding: 8px 10px;
   text-align: left;
   vertical-align: top;
+  color: var(--slate-900);
 }
 
 .report-table thead th {
-  background: var(--slate-50);
-  color: var(--slate-900);
+  background: #eef0fe;
+  color: #4338ca;
   font-weight: 700;
 }
 
@@ -1165,7 +1253,29 @@
 
 .report-summary-highlight td {
   font-weight: 700;
-  background: var(--primary-50);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(236, 72, 153, 0.1));
+  color: var(--slate-900);
+}
+
+.report-status-paid,
+.report-status-pending {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.report-status-paid {
+  background: rgba(74, 222, 128, 0.15);
+  color: #15803d;
+}
+
+.report-status-pending {
+  background: rgba(251, 191, 36, 0.18);
+  color: #92400e;
 }
 
 .report-section {
