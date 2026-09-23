@@ -68,6 +68,10 @@ app.use((req, res) => {
 });
 
 // --- Centralized error handler (must be last, 4 args so Express treats it as an error handler) ---
+// Every controller now uses asyncHandler (see utils/asyncHandler.js), which
+// forwards any thrown error here via next(err) instead of each controller
+// handling its own try/catch. Controllers throw ApiError(statusCode, message)
+// for expected cases (400/404/etc); anything else falls through as a 500.
 app.use((err, req, res, next) => {
   console.error(err);
 
@@ -75,7 +79,24 @@ app.use((err, req, res, next) => {
     return res.status(400).json({ message: `File upload error: ${err.message}` });
   }
 
-  res.status(err.status || 500).json({
+  // Invalid ObjectId passed as a route param (e.g. GET /api/hardware/not-an-id)
+  if (err.name === 'CastError') {
+    return res.status(404).json({ message: 'Resource not found' });
+  }
+
+  // Mongoose schema validation failure
+  if (err.name === 'ValidationError') {
+    const message = Object.values(err.errors).map((e) => e.message).join(', ');
+    return res.status(400).json({ message });
+  }
+
+  // Duplicate unique field (e.g. signing up with an email that's already registered)
+  if (err.code === 11000) {
+    const field = Object.keys(err.keyValue || {})[0] || 'field';
+    return res.status(409).json({ message: `${field} already in use` });
+  }
+
+  res.status(err.statusCode || err.status || 500).json({
     message: err.message || 'Server error',
   });
 });
