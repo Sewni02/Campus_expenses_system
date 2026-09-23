@@ -1218,16 +1218,28 @@
 .report-period-refdate {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 16px;
   font-size: 0.82rem;
   color: var(--slate-700, #45403a);
 }
 
-.report-period-refdate input[type='date'] {
+/* When Monthly is selected, .report-period-refdate wraps two separate
+   <label> fields (Month + Year) side by side instead of one input. */
+.report-period-refdate label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.report-period-refdate input[type='date'],
+.report-period-refdate select {
   padding: 5px 8px;
   border-radius: 6px;
   border: 1px solid var(--slate-200, #ddd6ca);
   font-size: 0.82rem;
+  background: var(--white);
+  color: var(--slate-900);
 }
 
 #report-print-area {

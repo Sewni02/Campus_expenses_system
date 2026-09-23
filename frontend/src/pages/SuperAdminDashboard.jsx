@@ -262,13 +262,16 @@ const REPORT_PERIODS = [
   { value: 'yearly', label: 'Yearly' },
 ];
 
-// Given a period and a reference date (a "yyyy-mm-dd" string or Date),
-// returns the [start, end) boundaries of that period. Weekly runs Mon-Sun.
-const getPeriodRange = (period, refDate) => {
-  const ref = new Date(refDate);
-  if (Number.isNaN(ref.getTime())) return null;
+// Given a period and the current reference selections ({ weekDate, year,
+// month }), returns the [start, end) boundaries of that period. Weekly
+// runs Mon-Sun, based on weekDate; Monthly uses year+month; Yearly uses
+// year only.
+const getPeriodRange = (period, refValues) => {
+  const { weekDate, year, month } = refValues || {};
 
   if (period === 'weekly') {
+    const ref = new Date(weekDate);
+    if (Number.isNaN(ref.getTime())) return null;
     const day = ref.getDay(); // 0=Sun..6=Sat
     const diffToMonday = (day === 0 ? -6 : 1) - day;
     const start = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate());
@@ -278,25 +281,27 @@ const getPeriodRange = (period, refDate) => {
     return { start, end };
   }
   if (period === 'monthly') {
-    const start = new Date(ref.getFullYear(), ref.getMonth(), 1);
-    const end = new Date(ref.getFullYear(), ref.getMonth() + 1, 1);
+    if (!year || !month) return null;
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 1);
     return { start, end };
   }
   if (period === 'yearly') {
-    const start = new Date(ref.getFullYear(), 0, 1);
-    const end = new Date(ref.getFullYear() + 1, 0, 1);
+    if (!year) return null;
+    const start = new Date(year, 0, 1);
+    const end = new Date(year + 1, 0, 1);
     return { start, end };
   }
   return null; // 'all'
 };
 
-// True if `dateValue` falls inside the period + reference date given.
+// True if `dateValue` falls inside the period + reference selections given.
 // Period 'all' (or no period at all) always matches - used for the Project
 // Summary's "Overall" option and as a safe default for records with no date.
-const isWithinPeriod = (dateValue, period, refDate) => {
+const isWithinPeriod = (dateValue, period, refValues) => {
   if (!period || period === 'all') return true;
   if (!dateValue) return false;
-  const range = getPeriodRange(period, refDate);
+  const range = getPeriodRange(period, refValues);
   if (!range) return true;
   const d = new Date(dateValue);
   if (Number.isNaN(d.getTime())) return false;
@@ -306,9 +311,9 @@ const isWithinPeriod = (dateValue, period, refDate) => {
 // A short human-readable label for the selected period, used as part of the
 // report subtitle so it's clear on-screen/print/PDF exactly what range it
 // covers, e.g. "Week of 9/8/2026 – 9/14/2026", "September 2026", "2026".
-const describePeriod = (period, refDate) => {
+const describePeriod = (period, refValues) => {
   if (!period || period === 'all') return 'Overall (all time)';
-  const range = getPeriodRange(period, refDate);
+  const range = getPeriodRange(period, refValues);
   if (!range) return '';
   if (period === 'weekly') {
     const endInclusive = new Date(range.end);
@@ -323,10 +328,20 @@ const describePeriod = (period, refDate) => {
 
 // Shared period-picker shown inside every report modal: Weekly / Monthly /
 // Yearly (plus "Overall" when allowAll is set, for the Project Summary
-// report), and - for anything but Overall - a date input used as the
-// reference date for that period (any date inside the desired week/month/
-// year).
-function PeriodSelector({ period, setPeriod, refDate, setRefDate, allowAll = false }) {
+// report). Weekly still uses a plain date input (pick any date inside the
+// desired week); Monthly and Yearly use proper Month/Year dropdowns instead
+// of asking for an arbitrary date, so picking e.g. "March 2025" or just
+// "2024" is direct.
+const CURRENT_REPORT_YEAR = new Date().getFullYear();
+// A handful of years back plus one ahead - covers normal use; the dropdown
+// still works for any year already in that range.
+const REPORT_YEAR_OPTIONS = Array.from({ length: 8 }, (_, i) => CURRENT_REPORT_YEAR - 6 + i);
+const REPORT_MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+function PeriodSelector({ period, setPeriod, weekDate, setWeekDate, year, setYear, month, setMonth, allowAll = false }) {
   return (
     <div className="report-period-selector">
       <div className="report-period-options">
@@ -355,10 +370,43 @@ function PeriodSelector({ period, setPeriod, refDate, setRefDate, allowAll = fal
           </label>
         ))}
       </div>
-      {period !== 'all' && (
+
+      {period === 'weekly' && (
         <label className="report-period-refdate">
-          {period === 'weekly' ? 'Any date in the week' : period === 'monthly' ? 'Any date in the month' : 'Any date in the year'}:
-          <input type="date" value={refDate} onChange={(e) => setRefDate(e.target.value)} />
+          Any date in the week:
+          <input type="date" value={weekDate} onChange={(e) => setWeekDate(e.target.value)} />
+        </label>
+      )}
+
+      {period === 'monthly' && (
+        <div className="report-period-refdate">
+          <label>
+            Month:
+            <select value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+              {REPORT_MONTH_NAMES.map((name, i) => (
+                <option key={name} value={i + 1}>{name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Year:
+            <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+              {REPORT_YEAR_OPTIONS.map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+
+      {period === 'yearly' && (
+        <label className="report-period-refdate">
+          Year:
+          <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            {REPORT_YEAR_OPTIONS.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
         </label>
       )}
     </div>
@@ -410,16 +458,20 @@ const toFileName = (title) =>
   `${(title || 'report').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '')}.pdf`;
 
 function ReportModal({ title, subtitleText, columns, entries, getDate, buildRow, buildTotals, onClose }) {
+  const now = new Date();
   // Every flat report defaults to Monthly - a sensible middle ground
   // between Weekly (too narrow for most review purposes) and Yearly.
   const [period, setPeriod] = useState('monthly');
-  const [refDate, setRefDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [weekDate, setWeekDate] = useState(() => now.toISOString().slice(0, 10));
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
   const generatedOn = new Date().toLocaleString();
 
-  const filteredEntries = entries.filter((entry) => isWithinPeriod(getDate(entry), period, refDate));
+  const refValues = { weekDate, year, month };
+  const filteredEntries = entries.filter((entry) => isWithinPeriod(getDate(entry), period, refValues));
   const rows = filteredEntries.map(buildRow);
   const totals = buildTotals ? buildTotals(filteredEntries) : undefined;
-  const periodLabel = describePeriod(period, refDate);
+  const periodLabel = describePeriod(period, refValues);
   const subtitleLine = [subtitleText, periodLabel].filter(Boolean).join(' · ');
 
   // Builds an actual PDF file client-side (jsPDF + autoTable) and triggers
@@ -473,7 +525,16 @@ function ReportModal({ title, subtitleText, columns, entries, getDate, buildRow,
           </button>
         </div>
 
-        <PeriodSelector period={period} setPeriod={setPeriod} refDate={refDate} setRefDate={setRefDate} />
+        <PeriodSelector
+          period={period}
+          setPeriod={setPeriod}
+          weekDate={weekDate}
+          setWeekDate={setWeekDate}
+          year={year}
+          setYear={setYear}
+          month={month}
+          setMonth={setMonth}
+        />
 
         <div id="report-print-area">
           <div className="report-header">
@@ -555,24 +616,24 @@ function ProjectSummaryReportButton({ searchedFor, result }) {
 // payment/invoice list down to that period and rebuilds the totals from
 // what's left. Plan estimates aren't period-based (a plan doesn't recur
 // weekly/monthly), so totalEstimate always stays the overall figure.
-const filterProjectSummaryByPeriod = (result, period, refDate) => {
+const filterProjectSummaryByPeriod = (result, period, refValues) => {
   if (!period || period === 'all') return result;
 
   const contractors = result.contractors.map((c) => {
-    const payments = c.payments.filter((p) => isWithinPeriod(p.invoiceDate, period, refDate));
+    const payments = c.payments.filter((p) => isWithinPeriod(p.invoiceDate, period, refValues));
     const totalPaid = payments.filter((p) => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0);
     return { ...c, payments, totalPaid, remaining: c.totalEstimate - totalPaid };
   });
 
   const hardware = result.hardware
     .map((hw) => {
-      const payments = hw.payments.filter((p) => isWithinPeriod(p.date, period, refDate));
+      const payments = hw.payments.filter((p) => isWithinPeriod(p.date, period, refValues));
       const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
       return { ...hw, payments, totalPaid };
     })
     .filter((hw) => hw.payments.length > 0);
 
-  const otherPayments = (result.otherPayments || []).filter((p) => isWithinPeriod(p.date, period, refDate));
+  const otherPayments = (result.otherPayments || []).filter((p) => isWithinPeriod(p.date, period, refValues));
 
   const totalEstimate = result.summary.totalEstimate;
   const totalContractorPaid = contractors.reduce((sum, c) => sum + c.totalPaid, 0);
@@ -598,12 +659,16 @@ const filterProjectSummaryByPeriod = (result, period, refDate) => {
 };
 
 function ProjectSummaryReportModal({ searchedFor, result: rawResult, onClose }) {
+  const now = new Date();
   // Project Summary defaults to Overall, unlike the flat reports - it's
   // most useful as a whole-project progress view.
   const [period, setPeriod] = useState('all');
-  const [refDate, setRefDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const result = filterProjectSummaryByPeriod(rawResult, period, refDate);
-  const periodLabel = describePeriod(period, refDate);
+  const [weekDate, setWeekDate] = useState(() => now.toISOString().slice(0, 10));
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const refValues = { weekDate, year, month };
+  const result = filterProjectSummaryByPeriod(rawResult, period, refValues);
+  const periodLabel = describePeriod(period, refValues);
   const generatedOn = new Date().toLocaleString();
   const s = result.summary;
 
@@ -796,7 +861,17 @@ function ProjectSummaryReportModal({ searchedFor, result: rawResult, onClose }) 
           </button>
         </div>
 
-        <PeriodSelector period={period} setPeriod={setPeriod} refDate={refDate} setRefDate={setRefDate} allowAll />
+        <PeriodSelector
+          period={period}
+          setPeriod={setPeriod}
+          weekDate={weekDate}
+          setWeekDate={setWeekDate}
+          year={year}
+          setYear={setYear}
+          month={month}
+          setMonth={setMonth}
+          allowAll
+        />
 
         <div id="report-print-area">
           <div className="report-header">
