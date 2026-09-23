@@ -1179,6 +1179,57 @@
   padding: 8px 18px;
 }
 
+/* Weekly / Monthly / Yearly (and Overall, on the Project Summary report)
+   period picker shown inside every report modal, above the print area.
+   Lives outside #report-print-area on purpose so it's automatically
+   hidden by the @media print rule below - it should never show up on the
+   printed/PDF report itself. */
+.report-period-selector {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--slate-100);
+  flex-shrink: 0;
+  background: var(--slate-50, #f8f7f4);
+}
+
+.report-period-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.report-period-option {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--slate-900);
+  cursor: pointer;
+}
+
+.report-period-option input {
+  cursor: pointer;
+}
+
+.report-period-refdate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--slate-700, #45403a);
+}
+
+.report-period-refdate input[type='date'] {
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--slate-200, #ddd6ca);
+  font-size: 0.82rem;
+}
+
 #report-print-area {
   overflow-y: auto;
   padding: 24px 28px 32px;
