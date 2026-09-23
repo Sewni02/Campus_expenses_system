@@ -252,14 +252,128 @@ function ComingSoon({ label }) {
   );
 }
 
+// ---------- Shared: report period filtering ----------
+// Every report can be generated for one of three rolling periods. "All"
+// (all-time, no filtering) is only offered on the Project Summary report -
+// every other report always shows one of these three.
+const REPORT_PERIODS = [
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'yearly', label: 'Yearly' },
+];
+
+// Given a period and a reference date (a "yyyy-mm-dd" string or Date),
+// returns the [start, end) boundaries of that period. Weekly runs Mon-Sun.
+const getPeriodRange = (period, refDate) => {
+  const ref = new Date(refDate);
+  if (Number.isNaN(ref.getTime())) return null;
+
+  if (period === 'weekly') {
+    const day = ref.getDay(); // 0=Sun..6=Sat
+    const diffToMonday = (day === 0 ? -6 : 1) - day;
+    const start = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate());
+    start.setDate(start.getDate() + diffToMonday);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    return { start, end };
+  }
+  if (period === 'monthly') {
+    const start = new Date(ref.getFullYear(), ref.getMonth(), 1);
+    const end = new Date(ref.getFullYear(), ref.getMonth() + 1, 1);
+    return { start, end };
+  }
+  if (period === 'yearly') {
+    const start = new Date(ref.getFullYear(), 0, 1);
+    const end = new Date(ref.getFullYear() + 1, 0, 1);
+    return { start, end };
+  }
+  return null; // 'all'
+};
+
+// True if `dateValue` falls inside the period + reference date given.
+// Period 'all' (or no period at all) always matches - used for the Project
+// Summary's "Overall" option and as a safe default for records with no date.
+const isWithinPeriod = (dateValue, period, refDate) => {
+  if (!period || period === 'all') return true;
+  if (!dateValue) return false;
+  const range = getPeriodRange(period, refDate);
+  if (!range) return true;
+  const d = new Date(dateValue);
+  if (Number.isNaN(d.getTime())) return false;
+  return d >= range.start && d < range.end;
+};
+
+// A short human-readable label for the selected period, used as part of the
+// report subtitle so it's clear on-screen/print/PDF exactly what range it
+// covers, e.g. "Week of 9/8/2026 – 9/14/2026", "September 2026", "2026".
+const describePeriod = (period, refDate) => {
+  if (!period || period === 'all') return 'Overall (all time)';
+  const range = getPeriodRange(period, refDate);
+  if (!range) return '';
+  if (period === 'weekly') {
+    const endInclusive = new Date(range.end);
+    endInclusive.setDate(endInclusive.getDate() - 1);
+    return `Week of ${range.start.toLocaleDateString()} – ${endInclusive.toLocaleDateString()}`;
+  }
+  if (period === 'monthly') {
+    return range.start.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  }
+  return String(range.start.getFullYear());
+};
+
+// Shared period-picker shown inside every report modal: Weekly / Monthly /
+// Yearly (plus "Overall" when allowAll is set, for the Project Summary
+// report), and - for anything but Overall - a date input used as the
+// reference date for that period (any date inside the desired week/month/
+// year).
+function PeriodSelector({ period, setPeriod, refDate, setRefDate, allowAll = false }) {
+  return (
+    <div className="report-period-selector">
+      <div className="report-period-options">
+        {allowAll && (
+          <label className="report-period-option">
+            <input
+              type="radio"
+              name="report-period"
+              value="all"
+              checked={period === 'all'}
+              onChange={() => setPeriod('all')}
+            />
+            Overall
+          </label>
+        )}
+        {REPORT_PERIODS.map((opt) => (
+          <label key={opt.value} className="report-period-option">
+            <input
+              type="radio"
+              name="report-period"
+              value={opt.value}
+              checked={period === opt.value}
+              onChange={() => setPeriod(opt.value)}
+            />
+            {opt.label}
+          </label>
+        ))}
+      </div>
+      {period !== 'all' && (
+        <label className="report-period-refdate">
+          {period === 'weekly' ? 'Any date in the week' : period === 'monthly' ? 'Any date in the month' : 'Any date in the year'}:
+          <input type="date" value={refDate} onChange={(e) => setRefDate(e.target.value)} />
+        </label>
+      )}
+    </div>
+  );
+}
+
 // ---------- Shared: report generation ----------
 // A reusable "Generate Report" button + modal. Every tab / sub-tab that
-// lists records can drop this in: pass it the report title, an optional
-// subtitle/context line, the column headers, and the rows (each row is an
+// lists records can drop this in: pass it the report title, the column
+// headers, the raw records (`entries`), a `getDate` accessor (used for the
+// Weekly/Monthly/Yearly period filter), and a `buildRow` mapper (record ->
 // array of cell values, same order as columns). It renders a full-detail,
-// on-screen report that can also be printed or saved as a PDF straight
-// from the browser's print dialog.
-function ReportButton({ label = 'Generate Report', title, subtitle, subtitleText, columns, rows, totals, disabled = false }) {
+// on-screen report - scoped to the selected period - that can also be
+// printed or saved as a PDF straight from the browser.
+function ReportButton({ label = 'Generate Report', title, subtitleText, columns, entries, getDate, buildRow, buildTotals, disabled = false }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -277,11 +391,12 @@ function ReportButton({ label = 'Generate Report', title, subtitle, subtitleText
       {open && (
         <ReportModal
           title={title}
-          subtitle={subtitle}
           subtitleText={subtitleText}
           columns={columns}
-          rows={rows}
-          totals={totals}
+          entries={entries}
+          getDate={getDate}
+          buildRow={buildRow}
+          buildTotals={buildTotals}
           onClose={() => setOpen(false)}
         />
       )}
@@ -294,8 +409,18 @@ function ReportButton({ label = 'Generate Report', title, subtitle, subtitleText
 const toFileName = (title) =>
   `${(title || 'report').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '')}.pdf`;
 
-function ReportModal({ title, subtitle, subtitleText, columns, rows, totals, onClose }) {
+function ReportModal({ title, subtitleText, columns, entries, getDate, buildRow, buildTotals, onClose }) {
+  // Every flat report defaults to Monthly - a sensible middle ground
+  // between Weekly (too narrow for most review purposes) and Yearly.
+  const [period, setPeriod] = useState('monthly');
+  const [refDate, setRefDate] = useState(() => new Date().toISOString().slice(0, 10));
   const generatedOn = new Date().toLocaleString();
+
+  const filteredEntries = entries.filter((entry) => isWithinPeriod(getDate(entry), period, refDate));
+  const rows = filteredEntries.map(buildRow);
+  const totals = buildTotals ? buildTotals(filteredEntries) : undefined;
+  const periodLabel = describePeriod(period, refDate);
+  const subtitleLine = [subtitleText, periodLabel].filter(Boolean).join(' · ');
 
   // Builds an actual PDF file client-side (jsPDF + autoTable) and triggers
   // a browser download - no print dialog involved, works the same on
@@ -307,7 +432,6 @@ function ReportModal({ title, subtitle, subtitleText, columns, rows, totals, onC
     doc.text(title || 'Report', 14, 16);
 
     let cursorY = 24;
-    const subtitleLine = subtitleText || (typeof subtitle === 'string' ? subtitle : '');
     if (subtitleLine) {
       doc.setFontSize(10);
       doc.text(subtitleLine, 14, cursorY);
@@ -349,10 +473,12 @@ function ReportModal({ title, subtitle, subtitleText, columns, rows, totals, onC
           </button>
         </div>
 
+        <PeriodSelector period={period} setPeriod={setPeriod} refDate={refDate} setRefDate={setRefDate} />
+
         <div id="report-print-area">
           <div className="report-header">
             <h2>{title}</h2>
-            {subtitle && <p className="report-subtitle">{subtitle}</p>}
+            {subtitleLine && <p className="report-subtitle">{subtitleLine}</p>}
             <p className="report-meta">Generated on {generatedOn} &middot; {rows.length} record{rows.length === 1 ? '' : 's'}</p>
           </div>
 
@@ -368,7 +494,7 @@ function ReportModal({ title, subtitle, subtitleText, columns, rows, totals, onC
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length} className="hw-empty-text">
-                    No records found
+                    No records found for this period
                   </td>
                 </tr>
               ) : (
@@ -403,6 +529,10 @@ function ReportModal({ title, subtitle, subtitleText, columns, rows, totals, onC
 // other payments) plus a set of totals. This renders - and prints to PDF -
 // the same section-by-section layout as the live page itself, however many
 // pages that ends up taking.
+//
+// Unlike the flat reports, this one also offers "Overall" (all-time, no
+// filtering) alongside Weekly/Monthly/Yearly, since seeing the whole
+// project's progress against its estimate is the main reason to open it.
 function ProjectSummaryReportButton({ searchedFor, result }) {
   const [open, setOpen] = useState(false);
   const hasAnyData =
@@ -420,7 +550,60 @@ function ProjectSummaryReportButton({ searchedFor, result }) {
   );
 }
 
-function ProjectSummaryReportModal({ searchedFor, result, onClose }) {
+// Recomputes the Project Summary result for a given period ('all' |
+// 'weekly' | 'monthly' | 'yearly') + reference date - filters every
+// payment/invoice list down to that period and rebuilds the totals from
+// what's left. Plan estimates aren't period-based (a plan doesn't recur
+// weekly/monthly), so totalEstimate always stays the overall figure.
+const filterProjectSummaryByPeriod = (result, period, refDate) => {
+  if (!period || period === 'all') return result;
+
+  const contractors = result.contractors.map((c) => {
+    const payments = c.payments.filter((p) => isWithinPeriod(p.invoiceDate, period, refDate));
+    const totalPaid = payments.filter((p) => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0);
+    return { ...c, payments, totalPaid, remaining: c.totalEstimate - totalPaid };
+  });
+
+  const hardware = result.hardware
+    .map((hw) => {
+      const payments = hw.payments.filter((p) => isWithinPeriod(p.date, period, refDate));
+      const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+      return { ...hw, payments, totalPaid };
+    })
+    .filter((hw) => hw.payments.length > 0);
+
+  const otherPayments = (result.otherPayments || []).filter((p) => isWithinPeriod(p.date, period, refDate));
+
+  const totalEstimate = result.summary.totalEstimate;
+  const totalContractorPaid = contractors.reduce((sum, c) => sum + c.totalPaid, 0);
+  const totalHardwarePaid = hardware.reduce((sum, hw) => sum + hw.totalPaid, 0);
+  const totalOtherPaid = otherPayments
+    .filter((p) => p.status !== 'pending')
+    .reduce((sum, p) => sum + p.amount, 0);
+
+  return {
+    ...result,
+    contractors,
+    hardware,
+    otherPayments,
+    summary: {
+      totalEstimate,
+      totalContractorPaid,
+      totalHardwarePaid,
+      totalOtherPaid,
+      totalPaidOverall: totalContractorPaid + totalHardwarePaid + totalOtherPaid,
+      remaining: totalEstimate - totalContractorPaid,
+    },
+  };
+};
+
+function ProjectSummaryReportModal({ searchedFor, result: rawResult, onClose }) {
+  // Project Summary defaults to Overall, unlike the flat reports - it's
+  // most useful as a whole-project progress view.
+  const [period, setPeriod] = useState('all');
+  const [refDate, setRefDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const result = filterProjectSummaryByPeriod(rawResult, period, refDate);
+  const periodLabel = describePeriod(period, refDate);
   const generatedOn = new Date().toLocaleString();
   const s = result.summary;
 
@@ -446,7 +629,7 @@ function ProjectSummaryReportModal({ searchedFor, result, onClose }) {
 
     doc.setFontSize(11);
     doc.setTextColor(70);
-    doc.text(`Project: ${searchedFor}`, marginX, y);
+    doc.text(`Project: ${searchedFor} · ${periodLabel}`, marginX, y);
     doc.setTextColor(0);
     y += 6;
 
@@ -613,10 +796,12 @@ function ProjectSummaryReportModal({ searchedFor, result, onClose }) {
           </button>
         </div>
 
+        <PeriodSelector period={period} setPeriod={setPeriod} refDate={refDate} setRefDate={setRefDate} allowAll />
+
         <div id="report-print-area">
           <div className="report-header">
             <h2>Project Summary Report</h2>
-            <p className="report-subtitle">Project: {searchedFor}</p>
+            <p className="report-subtitle">Project: {searchedFor} &middot; {periodLabel}</p>
             <p className="report-meta">Generated on {generatedOn}</p>
           </div>
 
@@ -1205,9 +1390,11 @@ function Contractors() {
         <div className="report-header-actions">
           <ReportButton
             title="Registered Contractors Report"
-            subtitle={searchTerm ? `Filtered by: "${searchTerm}"` : 'All contractors'}
+            subtitleText={searchTerm ? `Filtered by: "${searchTerm}"` : 'All contractors'}
             columns={['Name', 'Phone', 'Registered On', 'Account No.', 'Bank / Branch', 'Estimation Plans', 'Total Estimated (LKR)', 'Total Paid (LKR)']}
-            rows={contractors.map((c) => [
+            entries={contractors}
+            getDate={(c) => c.registrationDate}
+            buildRow={(c) => [
               c.name,
               c.phone,
               c.registrationDate ? new Date(c.registrationDate).toLocaleDateString() : '-',
@@ -1216,7 +1403,7 @@ function Contractors() {
               c.estimationPlans.length,
               formatLKR(totalEstimated(c)),
               formatLKR(totalPaid(c)),
-            ])}
+            ]}
             disabled={contractors.length === 0}
           />
           <button className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
@@ -1792,9 +1979,11 @@ function ConstructionPayments() {
         <div className="report-header-actions">
           <ReportButton
             title="Construction Payments Report"
-            subtitle={`Pending: ${pendingInvoices.length} &middot; Paid: ${paidInvoices.length}`.replace('&middot;', '·')}
+            subtitleText={`Pending: ${pendingInvoices.length} · Paid: ${paidInvoices.length}`}
             columns={['Invoice No.', 'Title', 'Paid To', 'Project', 'Amount (LKR)', 'Invoice Date', 'Payment Date', 'Reference No.', 'Account No.', 'Bank / Branch', 'Status']}
-            rows={payments.map((p) => {
+            entries={payments}
+            getDate={(p) => p.date}
+            buildRow={(p) => {
               const paid = isInvoicePaid(p);
               return [
                 p.invoiceNo,
@@ -1809,8 +1998,8 @@ function ConstructionPayments() {
                 paid ? [p.bankName, p.bankBranch].filter(Boolean).join(' / ') : '-',
                 paid ? 'Paid' : 'Pending',
               ];
-            })}
-            totals={['', '', '', '', formatLKR(payments.reduce((s, p) => s + p.amount, 0)), '', '', '', '', '', '']}
+            }}
+            buildTotals={(filtered) => ['', '', '', '', formatLKR(filtered.reduce((s, p) => s + p.amount, 0)), '', '', '', '', '', '']}
             disabled={payments.length === 0}
           />
           <button className="ge-add-btn" onClick={() => setShowInvoiceForm(!showInvoiceForm)}>
@@ -2473,9 +2662,11 @@ function ContractorPayments() {
         <div className="report-header-actions">
           <ReportButton
             title="Contractor Payments Report"
-            subtitle={`Pending: ${pendingInvoices.length} · Paid: ${paidInvoices.length}`}
+            subtitleText={`Pending: ${pendingInvoices.length} · Paid: ${paidInvoices.length}`}
             columns={['Invoice No.', 'Contractor', 'Project', 'Reason', 'Amount (LKR)', 'Invoice Date', 'Payment Date', 'Reference No.', 'Account No.', 'Bank / Branch', 'Status']}
-            rows={allInvoices.map((p) => {
+            entries={allInvoices}
+            getDate={(p) => p.invoiceDate}
+            buildRow={(p) => {
               const paid = isInvoicePaid(p);
               return [
                 p.invoiceNo,
@@ -2490,8 +2681,8 @@ function ContractorPayments() {
                 paid ? [p.bankName, p.bankBranch].filter(Boolean).join(' / ') : '-',
                 paid ? 'Paid' : 'Pending',
               ];
-            })}
-            totals={['', '', '', '', formatLKR(allInvoices.reduce((s, p) => s + p.amount, 0)), '', '', '', '', '', '']}
+            }}
+            buildTotals={(filtered) => ['', '', '', '', formatLKR(filtered.reduce((s, p) => s + p.amount, 0)), '', '', '', '', '', '']}
             disabled={allInvoices.length === 0}
           />
           <button className="ge-add-btn" onClick={() => setShowInvoiceForm(!showInvoiceForm)}>
@@ -3472,9 +3663,11 @@ function Hardware() {
           <div className="report-header-actions">
             <ReportButton
               title="Hardware Invoices Report"
-              subtitle={`Pending: ${hwReportEntries.filter((e) => !e._isPaid).length} · Paid: ${hwReportEntries.filter((e) => e._isPaid).length}`}
+              subtitleText={`Pending: ${hwReportEntries.filter((e) => !e._isPaid).length} · Paid: ${hwReportEntries.filter((e) => e._isPaid).length}`}
               columns={['Supplier', 'Project', 'Reason', 'Amount (LKR)', 'Invoice Date', 'Payment Date', 'Reference No.', 'Status']}
-              rows={hwReportEntries.map((e) => [
+              entries={hwReportEntries}
+              getDate={(e) => e.invoiceDate}
+              buildRow={(e) => [
                 e.supplierName,
                 e.projectName,
                 e.reason,
@@ -3483,8 +3676,8 @@ function Hardware() {
                 e._isPaid && e.paymentDate ? new Date(e.paymentDate).toLocaleDateString() : '-',
                 e._isPaid ? e.referenceNo : '-',
                 e._isPaid ? 'Paid' : 'Pending',
-              ])}
-              totals={['', '', '', formatLKR(hwReportEntries.reduce((s, e) => s + e.amount, 0)), '', '', '', '']}
+              ]}
+              buildTotals={(filtered) => ['', '', '', formatLKR(filtered.reduce((s, e) => s + e.amount, 0)), '', '', '', '']}
               disabled={hwReportEntries.length === 0}
             />
             <button className="ge-add-btn" onClick={() => setShowHwInvoiceForm(!showHwInvoiceForm)}>
@@ -4032,9 +4225,11 @@ function Hardware() {
             <div className="report-header-actions">
               <ReportButton
                 title="Hardware Suppliers Report"
-                subtitle="All registered hardware suppliers"
+                subtitleText="All registered hardware suppliers"
                 columns={['Supplier', 'Phone', 'Account No.', 'Bank / Branch', 'Items', 'Total Value of Items (LKR)', 'Total Paid (LKR)']}
-                rows={hardwareList.map((hw) => [
+                entries={hardwareList}
+                getDate={(hw) => hw.createdAt}
+                buildRow={(hw) => [
                   hw.supplierName,
                   hw.phone,
                   hw.accountNumber,
@@ -4042,7 +4237,7 @@ function Hardware() {
                   hw.items.length,
                   formatLKR(hardwareTotal(hw)),
                   formatLKR(paymentsTotal(hw)),
-                ])}
+                ]}
                 disabled={hardwareList.length === 0}
               />
               <button className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
