@@ -3,13 +3,13 @@
 }
 
 .sa-container {
-  --lp-grad: linear-gradient(135deg, #6366f1, #ec4899);
+  --lp-grad: linear-gradient(135deg, #1FB5A4, #2469C9);
   display: flex;
   height: 100vh;
   overflow: hidden;
   font-family: var(--font-main);
-  background: #0a0e1a;
-  color: rgba(255,255,255,0.92);
+  background: #F4F7FB;
+  color: #0A1F44;
 }
 
 /* Catch-all for every plain <input>/<select>/<textarea> in the dashboard
@@ -18,20 +18,20 @@
 .sa-container input,
 .sa-container select,
 .sa-container textarea {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.92);
+  background: #FFFFFF;
+  color: #0A1F44;
 }
 
 .sa-container input::placeholder,
 .sa-container textarea::placeholder {
-  color: rgba(255, 255, 255, 0.35);
+  color: #7C8FAD;
 }
 
 .sa-container input:focus,
 .sa-container select:focus,
 .sa-container textarea:focus {
   outline: none;
-  border-color: #a5b4fc;
+  border-color: #0F7A6F;
 }
 
 /* The dropdown list a <select> opens is drawn by the browser, not by
@@ -41,8 +41,8 @@
    row the mouse is over still uses the OS's own highlight color -
    that one part browsers don't allow overriding. */
 .sa-container select option {
-  background: #0d1220;
-  color: rgba(255, 255, 255, 0.92);
+  background: #FFFFFF;
+  color: #0A1F44;
 }
 
 /* Dark scrollbars everywhere in the dashboard (main content, sidebar,
@@ -53,7 +53,7 @@
 .hw-table-scroll,
 .sa-permission-list {
   scrollbar-width: thin;
-  scrollbar-color: rgba(165, 180, 252, 0.4) transparent;
+  scrollbar-color: rgba(30, 86, 194, 0.3) transparent;
 }
 
 .sa-content::-webkit-scrollbar,
@@ -75,7 +75,7 @@
 .sa-sidebar::-webkit-scrollbar-thumb,
 .hw-table-scroll::-webkit-scrollbar-thumb,
 .sa-permission-list::-webkit-scrollbar-thumb {
-  background: rgba(165, 180, 252, 0.4);
+  background: rgba(30, 86, 194, 0.3);
   border-radius: 100px;
   border: 2px solid transparent;
   background-clip: padding-box;
@@ -85,19 +85,19 @@
 .sa-sidebar::-webkit-scrollbar-thumb:hover,
 .hw-table-scroll::-webkit-scrollbar-thumb:hover,
 .sa-permission-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(165, 180, 252, 0.7);
+  background: rgba(30, 86, 194, 0.5);
   background-clip: padding-box;
 }
 
 /* ---------- Sidebar ---------- */
 .sa-sidebar {
-  width: 220px;
+  width: 250px;
   flex-shrink: 0;
   height: 100vh;
   position: sticky;
   top: 0;
   overflow-y: auto;
-  background: linear-gradient(180deg, #0a0e1a, #0d1220);
+  background: linear-gradient(180deg, #06122A, #0A1F44);
   color: var(--white);
   padding: 24px 0;
 }
@@ -110,12 +110,22 @@
 }
 
 .sa-avatar {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: var(--lp-grad);
-  margin: 0 auto 12px;
-  border: 2px solid #a5b4fc;
+  position: relative;
+  width: 88px;
+  height: 88px;
+  margin: 0 auto 14px;
+  border-radius: 26px;
+  overflow: hidden;
+  border: 2px solid #7FE0D3;
+  background: #12305F url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%237FE0D3'%3E%3Ccircle cx='12' cy='8.5' r='4'/%3E%3Cpath d='M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z'/%3E%3C/svg%3E") center 60% / 60% no-repeat;
+}
+
+.sa-avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .sa-sidebar-header p {
@@ -126,12 +136,25 @@
 }
 
 .sa-sidebar-item {
-  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 14px;
+  padding: 12px 16px;
+  white-space: nowrap;
   cursor: pointer;
-  border-left: 3px solid transparent;
-  transition: background 0.15s ease;
+  border-radius: 14px;
+  transition: background 0.2s ease, color 0.2s ease;
   font-size: 14px;
-  color: rgba(255,255,255,0.4);
+  font-weight: 500;
+  color: rgba(255,255,255,0.5);
+}
+
+/* Icon before each tab name (inline SVG, follows the tab's text colour). */
+.sa-sidebar-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
 
 .sa-sidebar-item:hover {
@@ -140,8 +163,7 @@
 }
 
 .sa-sidebar-item.active {
-  background: rgba(99, 102, 241, 0.18);
-  border-left: 3px solid #a5b4fc;
+  background: rgba(31, 181, 164, 0.22);
   font-weight: 600;
   color: var(--white);
 }
@@ -151,7 +173,7 @@
   flex: 1;
   height: 100vh;
   overflow-y: auto;
-  background: rgba(255,255,255,0.04);
+  background: #F4F7FB;
 }
 
 .sa-coming-soon {
@@ -159,7 +181,7 @@
 }
 
 .sa-coming-soon p {
-  color: rgba(255,255,255,0.5);
+  color: #4A6288;
 }
 
 .sa-page {
@@ -170,7 +192,7 @@
   margin-bottom: 28px;
   font-size: 24px;
   font-weight: 600;
-  color: rgba(255,255,255,0.92);
+  color: #0A1F44;
   letter-spacing: -0.3px;
 }
 
@@ -185,14 +207,14 @@
   flex: 1;
   border-radius: 8px;
   padding: 20px 24px;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.1);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  background: #FFFFFF;
+  border: 1px solid #E1E8F2;
+  box-shadow: 0 4px 16px rgba(10, 31, 68, 0.07);
 }
 
 .sa-stat-card p {
   margin: 0;
-  color: rgba(255,255,255,0.5);
+  color: #4A6288;
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
@@ -202,14 +224,14 @@
   margin: 10px 0 0;
   font-size: 26px;
   font-weight: 600;
-  color: rgba(255,255,255,0.92);
+  color: #0A1F44;
 }
 
-.sa-stat-total { border-left: 3px solid #6366f1; }
-.sa-stat-approved { border-left: 3px solid #4ade80; }
-.sa-stat-approved h2 { color: #4ade80; }
-.sa-stat-rejected { border-left: 3px solid #f87171; }
-.sa-stat-rejected h2 { color: #f87171; }
+.sa-stat-total { border-left: 3px solid #1E56C2; }
+.sa-stat-approved { border-left: 3px solid #2F7D57; }
+.sa-stat-approved h2 { color: #2F7D57; }
+.sa-stat-rejected { border-left: 3px solid #B3382C; }
+.sa-stat-rejected h2 { color: #B3382C; }
 
 /* ---------- Table + Panel layout ---------- */
 .sa-table-panel-row {
@@ -221,10 +243,10 @@
 .sa-table {
   flex: 1 1 100%;
   border-collapse: collapse;
-  background: rgba(255,255,255,0.06);
+  background: #FFFFFF;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid #E1E8F2;
   transition: flex 0.25s ease;
   width: 100%;
 }
@@ -234,16 +256,16 @@
 }
 
 .sa-table thead tr {
-  background: rgba(255,255,255,0.08);
+  background: #EAF1FC;
   text-align: left;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid #E1E8F2;
 }
 
 .sa-table th {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  color: rgba(255,255,255,0.5);
+  color: #4A6288;
   font-weight: 600;
 }
 
@@ -254,19 +276,19 @@
 
 .sa-table td {
   font-size: 14px;
-  color: rgba(255,255,255,0.85);
+  color: #0A1F44;
 }
 
 .sa-table tbody tr {
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid #E1E8F2;
 }
 
 .sa-table tbody tr:hover {
-  background: rgba(255,255,255,0.04);
+  background: rgba(30, 86, 194, 0.06);
 }
 
 .sa-table tbody tr.selected-row {
-  background: rgba(99,102,241,0.14);
+  background: rgba(31,181,164,0.14);
 }
 
 .sa-badge {
@@ -281,28 +303,28 @@
 
 .sa-badge-approved {
   background: rgba(74,222,128,0.14);
-  color: #4ade80;
+  color: #2F7D57;
   border-color: rgba(74,222,128,0.3);
 }
 
 .sa-badge-rejected {
   background: rgba(248,113,113,0.14);
-  color: #f87171;
+  color: #B3382C;
   border-color: rgba(248,113,113,0.3);
 }
 
 .sa-badge-pending {
   background: rgba(251,191,36,0.14);
-  color: #fbbf24;
+  color: #B7791F;
   border-color: rgba(251,191,36,0.4);
 }
 
 .sa-manage-btn {
   padding: 6px 14px;
   border-radius: 6px;
-  border: 1px solid #6366f1;
-  background: rgba(255,255,255,0.06);
-  color: #a5b4fc;
+  border: 1px solid #1E56C2;
+  background: #FFFFFF;
+  color: #0F7A6F;
   cursor: pointer;
   font-weight: 600;
   font-size: 12.5px;
@@ -314,15 +336,15 @@
 .sa-manage-btn:hover {
   background: var(--lp-grad);
   color: var(--white);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 4px rgba(10, 31, 68, 0.1);
 }
 
 /* ---------- Permission side panel ---------- */
 .sa-permission-panel {
   flex: 0 0 40%;
-  background: rgba(255,255,255,0.06);
+  background: #FFFFFF;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid #E1E8F2;
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -346,22 +368,22 @@
   margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: rgba(255,255,255,0.92);
+  color: #0A1F44;
 }
 
 .sa-close-btn {
   cursor: pointer;
-  color: rgba(255,255,255,0.45);
+  color: #4A6288;
   font-size: 18px;
   line-height: 1;
 }
 
 .sa-close-btn:hover {
-  color: rgba(255,255,255,0.92);
+  color: #0A1F44;
 }
 
 .sa-panel-email {
-  color: rgba(255,255,255,0.5);
+  color: #4A6288;
   font-size: 13px;
   margin-top: 2px;
   margin-bottom: 0;
@@ -380,11 +402,11 @@
 .sa-group-title {
   font-weight: 600;
   margin-bottom: 8px;
-  color: rgba(255,255,255,0.92);
+  color: #0A1F44;
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid #E1E8F2;
   padding-bottom: 6px;
 }
 
@@ -397,20 +419,20 @@
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
-  color: rgba(255,255,255,0.7);
+  color: #1E3F73;
   border: 1px solid transparent;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .sa-checkbox-row:hover {
-  background: rgba(255,255,255,0.08);
+  background: rgba(30, 86, 194, 0.06);
 }
 
 .sa-checkbox-row.checked {
-  background: rgba(99,102,241,0.14);
-  border: 1px solid #6366f1;
+  background: rgba(31,181,164,0.14);
+  border: 1px solid #1E56C2;
   font-weight: 600;
-  color: #a5b4fc;
+  color: #0F7A6F;
 }
 
 .sa-checkbox-row input[type='checkbox'] {
@@ -421,7 +443,7 @@
   width: 18px;
   height: 18px;
   border-radius: 4px;
-  border: 2px solid rgba(255,255,255,0.15);
+  border: 2px solid #D5DDEA;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -432,7 +454,7 @@
 
 .sa-checkbox-row.checked .sa-checkbox-custom {
   background: var(--lp-grad);
-  border-color: #6366f1;
+  border-color: #1E56C2;
 }
 
 /* ---------- Panel actions ---------- */
@@ -440,7 +462,7 @@
   display: flex;
   gap: 10px;
   margin-top: 16px;
-  border-top: 1px solid rgba(255,255,255,0.1);
+  border-top: 1px solid #E1E8F2;
   padding-top: 16px;
 }
 
@@ -456,23 +478,23 @@
 }
 
 .sa-save-btn {
-  border: 1px solid #6366f1;
+  border: 1px solid #1E56C2;
   background: var(--lp-grad);
   color: var(--white);
 }
 
 .sa-save-btn:hover {
-  background: #4f46e5;
+  background: #2A62C9;
 }
 
 .sa-reject-btn {
-  background: rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.7);
-  border: 1px solid rgba(255,255,255,0.15);
+  background: #FFFFFF;
+  color: #1E3F73;
+  border: 1px solid #D5DDEA;
 }
 
 .sa-reject-btn:hover {
-  background: rgba(255,255,255,0.08);
+  background: rgba(30, 86, 194, 0.06);
 }
 
 /* ---------- General Expenses ---------- */
@@ -488,7 +510,7 @@
 .ge-add-btn {
   padding: 8px 18px;
   border-radius: 6px;
-  border: 1px solid #6366f1;
+  border: 1px solid #1E56C2;
   background: var(--lp-grad);
   color: var(--white);
   font-weight: 600;
@@ -497,12 +519,12 @@
 }
 
 .ge-add-btn:hover {
-  background: #4f46e5;
+  background: #2A62C9;
 }
 
 .ge-form {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: #FFFFFF;
+  border: 1px solid #E1E8F2;
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 20px;
@@ -518,14 +540,14 @@
 .ge-form-row select {
   flex: 1;
   padding: 8px 10px;
-  border: 1px solid rgba(255,255,255,0.15);
+  border: 1px solid #D5DDEA;
   border-radius: 6px;
   font-size: 14px;
 }
 
 .ge-form-row input[type='file'] {
   padding: 6px;
-  background: rgba(255,255,255,0.06);
+  background: #FFFFFF;
   font-size: 13px;
 }
 
@@ -536,7 +558,7 @@
 .ge-form textarea {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid rgba(255,255,255,0.15);
+  border: 1px solid #D5DDEA;
   border-radius: 6px;
   font-size: 14px;
   margin-bottom: 10px;
@@ -553,7 +575,7 @@
   width: 100%;
   box-sizing: border-box;
   padding: 8px 10px;
-  border: 1px solid rgba(255,255,255,0.15);
+  border: 1px solid #D5DDEA;
   border-radius: 6px;
   font-size: 14px;
   font-family: inherit;
@@ -567,15 +589,15 @@
 .ge-form textarea:focus {
   outline: none;
   border-color: var(--primary-600, #92400e);
-  box-shadow: 0 0 0 2px rgba(146, 64, 14, 0.12);
+  box-shadow: 0 0 0 2px rgba(30, 86, 194, 0.12);
 }
 
 .ge-save-btn {
   padding: 8px 18px;
   border-radius: 6px;
-  border: 1px solid #6366f1;
-  background: rgba(255,255,255,0.06);
-  color: #a5b4fc;
+  border: 1px solid #1E56C2;
+  background: #FFFFFF;
+  color: #0F7A6F;
   font-weight: 600;
   cursor: pointer;
 }
@@ -589,32 +611,32 @@
   display: flex;
   gap: 6px;
   margin-bottom: 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid #E1E8F2;
 }
 
 .ge-tab {
   padding: 10px 18px;
   cursor: pointer;
   font-size: 14px;
-  color: rgba(255,255,255,0.5);
+  color: #4A6288;
   border-bottom: 2px solid transparent;
 }
 
 .ge-tab:hover {
-  color: rgba(255,255,255,0.92);
+  color: #0A1F44;
 }
 
 .ge-tab.active {
-  color: #a5b4fc;
+  color: #0F7A6F;
   font-weight: 600;
-  border-bottom: 2px solid #6366f1;
+  border-bottom: 2px solid #1E56C2;
 }
 
 .ge-summary {
   display: flex;
   justify-content: space-between;
   font-size: 13px;
-  color: rgba(255,255,255,0.5);
+  color: #4A6288;
   margin-bottom: 10px;
 }
 
@@ -623,62 +645,62 @@
   border-radius: 4px;
   font-size: 12px;
   font-weight: 600;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.7);
+  border: 1px solid #E1E8F2;
+  background: #EAF1FC;
+  color: #1E3F73;
   text-transform: capitalize;
 }
 
 .ge-slip-link {
-  color: #a5b4fc;
+  color: #0F7A6F;
   font-weight: 600;
   text-decoration: underline;
   font-size: 13px;
 }
 
 .ge-slip-link:hover {
-  color: #a5b4fc;
+  color: #0F7A6F;
 }
 
 /* ---------- Hardware quantity input ---------- */
 .hw-qty-input {
   width: 70px;
   padding: 4px 8px;
-  border: 1px solid rgba(255,255,255,0.15);
+  border: 1px solid #D5DDEA;
   border-radius: 4px;
   font-size: 13px;
 }
 
 .hw-qty-input:focus {
   outline: none;
-  border-color: #a5b4fc;
+  border-color: #0F7A6F;
 }
 /* ---------- Hardware: sub-tabs (Suppliers / Best Price Finder) ---------- */
 .hw-subtabs {
   display: flex;
   gap: 6px;
   margin-bottom: 20px;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid #E1E8F2;
 }
 
 .hw-subtab-btn {
   padding: 10px 18px;
   cursor: pointer;
   font-size: 14px;
-  color: rgba(255,255,255,0.5);
+  color: #4A6288;
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
 }
 
 .hw-subtab-btn:hover {
-  color: rgba(255,255,255,0.92);
+  color: #0A1F44;
 }
 
 .hw-subtab-btn.active {
-  color: #a5b4fc;
+  color: #0F7A6F;
   font-weight: 600;
-  border-bottom: 2px solid #6366f1;
+  border-bottom: 2px solid #1E56C2;
 }
 
 /* ---------- Hardware: shared small utilities ---------- */
@@ -689,7 +711,7 @@
 .hw-supplier-phone {
   margin: 4px 0 0;
   font-size: 13px;
-  color: rgba(255,255,255,0.5);
+  color: #4A6288;
 }
 
 .hw-supplier-actions {
@@ -725,7 +747,7 @@
 .hw-empty-text {
   text-align: center;
   padding: 20px;
-  color: rgba(255,255,255,0.45);
+  color: #4A6288;
 }
 
 .hw-empty-text-inline {
@@ -767,28 +789,28 @@
 }
 
 .hw-edit-btn {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid #6366f1;
-  color: #a5b4fc;
+  background: #FFFFFF;
+  border: 1px solid #1E56C2;
+  color: #0F7A6F;
 }
 
 .hw-edit-btn:hover {
   background: var(--lp-grad);
   color: var(--white);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 4px rgba(10, 31, 68, 0.1);
 }
 
 .hw-delete-btn {
   background: rgba(248,113,113,0.14);
   border: 1px solid rgba(248,113,113,0.3);
-  color: #f87171;
+  color: #B3382C;
 }
 
 .hw-delete-btn:hover {
-  background: #f87171;
+  background: #B3382C;
   color: var(--white);
-  border-color: #f87171;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  border-color: #B3382C;
+  box-shadow: 0 1px 4px rgba(10, 31, 68, 0.1);
 }
 
 /* ---------- Hardware: order form ---------- */
@@ -814,7 +836,7 @@
 
 .hw-last-order {
   margin-top: 10px;
-  color: #4ade80;
+  color: #2F7D57;
   font-weight: 600;
 }
 
@@ -833,7 +855,7 @@
 .hw-finder-row input {
   flex: 1;
   padding: 8px 10px;
-  border: 1px solid rgba(255,255,255,0.15);
+  border: 1px solid #D5DDEA;
   border-radius: 6px;
   font-size: 14px;
 }
@@ -843,16 +865,16 @@
   height: 32px;
   flex-shrink: 0;
   border-radius: 6px;
-  border: 1px solid rgba(255,255,255,0.15);
-  background: rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.5);
+  border: 1px solid #D5DDEA;
+  background: #FFFFFF;
+  color: #4A6288;
   cursor: pointer;
   font-size: 13px;
 }
 
 .hw-finder-remove-btn:hover {
-  border-color: #f87171;
-  color: #f87171;
+  border-color: #B3382C;
+  color: #B3382C;
 }
 
 .hw-finder-add-btn {
@@ -861,7 +883,7 @@
   padding: 0;
   border: none;
   background: transparent;
-  color: #a5b4fc;
+  color: #0F7A6F;
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
@@ -872,7 +894,7 @@
 }
 
 .hw-finder-error {
-  color: #f87171;
+  color: #B3382C;
   font-size: 13px;
   margin: 0 0 10px;
 }
@@ -890,16 +912,16 @@
 }
 
 .hw-quote-card {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: #FFFFFF;
+  border: 1px solid #E1E8F2;
   border-radius: 10px;
   padding: 18px 20px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  box-shadow: 0 4px 16px rgba(10, 31, 68, 0.07);
 }
 
 .hw-quote-card.best {
-  border: 1px solid #a5b4fc;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+  border: 1px solid #0F7A6F;
+  box-shadow: 0 8px 28px rgba(31, 181, 164, 0.2);
 }
 
 .hw-quote-card-header {
@@ -917,7 +939,7 @@
 
 .hw-quote-best-badge {
   background: rgba(251,191,36,0.14);
-  color: #fbbf24;
+  color: #B7791F;
   border: 1px solid rgba(251,191,36,0.4);
   padding: 3px 10px;
   border-radius: 20px;
@@ -930,13 +952,13 @@
 .hw-quote-total {
   font-size: 18px;
   font-weight: 700;
-  color: rgba(255,255,255,0.92);
+  color: #0A1F44;
 }
 
 .hw-quote-missing {
   margin: 10px 0 0;
   font-size: 13px;
-  color: #f87171;
+  color: #B3382C;
 }
 
 /* ---------- Contractors: search + summary spacing ---------- */
@@ -959,7 +981,7 @@
 /* ---------- Contractors: Estimation Plans ---------- */
 .plan-section {
   margin-top: 20px;
-  border-top: 1px solid rgba(255,255,255,0.1);
+  border-top: 1px solid #E1E8F2;
   padding-top: 16px;
 }
 
@@ -979,10 +1001,10 @@
 }
 
 .plan-card {
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid #E1E8F2;
   border-radius: 8px;
   padding: 10px 12px;
-  background: rgba(255,255,255,0.04);
+  background: #FFFFFF;
 }
 
 .plan-card-top {
@@ -990,12 +1012,12 @@
   justify-content: space-between;
   align-items: center;
   font-weight: 600;
-  color: rgba(255,255,255,0.92);
+  color: #0A1F44;
   font-size: 14px;
 }
 
 .plan-card-amount {
-  color: #a5b4fc;
+  color: #0F7A6F;
 }
 
 .plan-card-bottom {
@@ -1004,17 +1026,17 @@
   gap: 12px;
   margin-top: 8px;
   font-size: 12px;
-  color: rgba(255,255,255,0.5);
+  color: #4A6288;
 }
 
 /* ---------- Payment forms: shared bits (contractor payments + hardware payments) ---------- */
 .plan-preview-summary {
   margin: 10px 0;
-  background: rgba(99,102,241,0.14);
-  border: 1px solid rgba(99,102,241,0.3);
+  background: rgba(31,181,164,0.14);
+  border: 1px solid rgba(31,181,164,0.3);
   border-radius: 6px;
   padding: 8px 12px;
-  color: #a5b4fc;
+  color: #0F7A6F;
   font-weight: 600;
 }
 
@@ -1036,7 +1058,7 @@
 
 .upload-field-label {
   font-size: 12px;
-  color: rgba(255,255,255,0.5);
+  color: #4A6288;
   display: block;
   margin-bottom: 4px;
 }
@@ -1093,7 +1115,7 @@
   background: none;
   border: none;
   padding: 0;
-  color: #4a6cf7;
+  color: #1E56C2;
   font-size: 12px;
   cursor: pointer;
   text-decoration: underline;
@@ -1114,9 +1136,9 @@
 .report-btn {
   padding: 8px 16px;
   border-radius: 6px;
-  border: 1px solid rgba(255,255,255,0.15);
-  background: rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.7);
+  border: 1px solid #D5DDEA;
+  background: #FFFFFF;
+  color: #1E3F73;
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
@@ -1127,7 +1149,7 @@
 .report-btn:hover:not(:disabled) {
   background: var(--lp-grad);
   color: var(--white);
-  border-color: #6366f1;
+  border-color: #1E56C2;
 }
 
 .report-btn:disabled {
@@ -1145,7 +1167,7 @@
 .report-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(10, 31, 68, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1162,7 +1184,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 10px 40px rgba(10, 31, 68, 0.14);
 }
 
 .report-modal-toolbar {
@@ -1260,7 +1282,7 @@
 
 .report-header {
   margin-bottom: 18px;
-  border-bottom: 3px solid #6366f1;
+  border-bottom: 3px solid #1E56C2;
   padding-bottom: 12px;
 }
 
@@ -1297,8 +1319,8 @@
 }
 
 .report-table thead th {
-  background: #eef0fe;
-  color: #4338ca;
+  background: #F4F7FB;
+  color: #2452A8;
   font-weight: 700;
 }
 
@@ -1319,7 +1341,7 @@
 
 .report-summary-highlight td {
   font-weight: 700;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(236, 72, 153, 0.1));
+  background: linear-gradient(135deg, rgba(31, 181, 164, 0.1), rgba(36, 105, 201, 0.08));
   color: var(--slate-900);
 }
 
