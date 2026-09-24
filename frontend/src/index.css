@@ -1,58 +1,60 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Urbanist:wght@300;400;500;600;700&display=swap');
 
 :root {
-  /* ---- Neutral scale: black -> espresso brown -> cream ----
-     Anchored on the 4 supplied colors:
-     #000000 (black), #1F150C (dark brown),
-     #412D15 (medium brown), #E1DCC9 (cream) */
-  --slate-900: #000000;
-  --slate-800: #1F150C;
-  --slate-700: #34240F;
-  --slate-600: #412D15;
-  --slate-500: #6E5330;
-  --slate-400: #9C8760;
-  --slate-300: #C2B393;
-  --slate-200: #DCD2B8;
-  --slate-100: #E1DCC9;
-  --slate-50: #F5F1E6;
+  /* ---- Neutral scale: black -> blue -> cream (Xpendly navy scale) ---- */
+  --slate-900: #050F24;
+  --slate-800: #0A1F44;
+  --slate-700: #12305F;
+  --slate-600: #1E3F73;
+  --slate-500: #4A6288;
+  --slate-400: #7C8FAD;
+  --slate-300: #AEBBD0;
+  --slate-200: #D5DDEA;
+  --slate-100: #E6ECF5;
+  --slate-50: #F4F7FB;
   --white: #FFFFFF;
 
-  /* ---- Primary accent: espresso brown (buttons, links, active states) ---- */
-  --primary-50: #F0E9DD;
-  --primary-100: #DDCBAE;
-  --primary-500: #5A3E1E;
-  --primary-600: #412D15;
-  --primary-700: #2B1D0E;
-  --primary-rgb: 65, 45, 21;
+  /* ---- Primary accent: blue ---- */
+  --primary-50: #EAF1FC;
+  --primary-100: #C9DBF7;
+  --primary-500: #2C6FDB;
+  --primary-600: #1E56C2;
+  --primary-700: #17439B;
+  --primary-rgb: 30, 86, 194;
 
-  /* ---- Secondary accent: warm gold (used sparingly — pending status only) ---- */
-  --accent-100: #F3E4C4;
-  --accent-500: #A8792E;
-  --accent-600: #8C6224;
-  --accent-700: #6B4A1B;
+  /* ---- Secondary accent: teal ---- */
+  --accent-100: #D5F3EF;
+  --accent-500: #1FB5A4;
+  --accent-600: #159A8B;
+  --accent-700: #0F7A6F;
 
-  /* ---- Semantic: status colors (approve/reject only — functional, not decorative) ---- */
-  --success: #3F6B3F;
-  --success-bg: #EAF1E7;
-  --success-border: #C7DAC0;
-  --danger: #8C2F24;
-  --danger-bg: #F5E7E3;
-  --danger-border: #E0C2B8;
+  /* ---- Semantic status colours ---- */
+  --success: #2F7D57;
+  --success-bg: #E7F4EE;
+  --success-border: #BFE0CF;
+  --danger: #B3382C;
+  --danger-bg: #FBEAE8;
+  --danger-border: #F0C4BE;
 
-  /* ---- Shadows & shared tokens ---- */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
-  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.10);
-  --shadow-lg: 0 20px 44px rgba(0, 0, 0, 0.16);
-  --radius: 10px;
-  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  /* ---- Brand gradient (teal -> blue, from the Xpendly logo) ---- */
+  --teal: #1FB5A4;
+  --teal-soft: #7FE0D3;
+  --brand-grad: linear-gradient(135deg, #1FB5A4 0%, #2469C9 100%);
+
+  /* ---- Soft, airy shadows (HappyHome look) ---- */
+  --shadow-sm: 0 1px 2px rgba(10, 31, 68, 0.06);
+  --shadow-md: 0 10px 30px rgba(10, 31, 68, 0.08);
+  --shadow-lg: 0 24px 60px rgba(10, 31, 68, 0.14);
+
+  /* ---- Shape: rounded cards, pill buttons ---- */
+  --radius: 16px;
+  --radius-lg: 24px;
+  --radius-pill: 999px;
+
+  --font-main: 'Urbanist', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
 }
 
-/* ---- Bootstrap theme bridge ----
-   Bootstrap is imported in main.jsx BEFORE this file, so these
-   overrides win the cascade and re-point every Bootstrap component
-   (btn, form-control, card, navbar, badge...) at our own
-   black / espresso-brown / cream design tokens instead of
-   Bootstrap's default blue. */
+/* ---- Bootstrap theme bridge (kept so existing components keep our colours) ---- */
 :root {
   --bs-primary: var(--primary-600);
   --bs-primary-rgb: var(--primary-rgb);
@@ -61,7 +63,7 @@
   --bs-primary-border-subtle: var(--primary-100);
 
   --bs-secondary: var(--slate-600);
-  --bs-secondary-rgb: 65, 45, 21;
+  --bs-secondary-rgb: 30, 63, 115;
 
   --bs-success: var(--success);
   --bs-success-bg-subtle: var(--success-bg);
@@ -74,15 +76,32 @@
   --bs-warning: var(--accent-500);
   --bs-warning-bg-subtle: var(--accent-100);
 
-  --bs-body-color: var(--slate-900);
+  --bs-body-color: var(--slate-800);
   --bs-body-bg: var(--slate-50);
   --bs-border-color: var(--slate-200);
   --bs-border-radius: var(--radius);
-  --bs-border-radius-lg: 14px;
-  --bs-border-radius-sm: 6px;
+  --bs-border-radius-lg: var(--radius-lg);
+  --bs-border-radius-sm: 10px;
   --bs-body-font-family: var(--font-main);
   --bs-link-color: var(--primary-600);
   --bs-link-hover-color: var(--primary-700);
+}
+
+/* ---- Buttons: soft pill shape ---- */
+.btn {
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 0.55rem 1.35rem;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.btn-sm {
+  padding: 0.35rem 1rem;
+}
+
+.btn:active {
+  transform: translateY(1px);
 }
 
 .btn-primary {
@@ -93,7 +112,6 @@
   --bs-btn-active-bg: var(--primary-700);
   --bs-btn-active-border-color: var(--primary-700);
   --bs-btn-focus-shadow-rgb: var(--primary-rgb);
-  font-weight: 600;
 }
 
 .btn-outline-primary {
@@ -102,17 +120,42 @@
   --bs-btn-hover-bg: var(--primary-600);
   --bs-btn-hover-border-color: var(--primary-600);
   --bs-btn-active-bg: var(--primary-700);
-  font-weight: 600;
+}
+
+/* ---- Inputs ---- */
+.form-control,
+.form-select {
+  border-radius: 14px;
+  border-color: var(--slate-200);
+  background-color: var(--white);
 }
 
 .form-control:focus,
 .form-select:focus {
   border-color: var(--primary-500);
-  box-shadow: 0 0 0 0.2rem rgba(var(--primary-rgb), 0.18);
+  box-shadow: 0 0 0 0.2rem rgba(var(--primary-rgb), 0.12);
 }
 
+/* ---- Cards / badges ---- */
+.card {
+  border-color: var(--slate-100);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.badge {
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  padding: 0.4em 0.85em;
+}
+
+/* ---- Global base ---- */
 * {
   box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 html, body {
@@ -120,9 +163,22 @@ html, body {
   padding: 0;
   width: 100%;
   background: var(--slate-50);
+  color: var(--slate-800);
   font-family: var(--font-main);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-main);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--slate-800);
+}
+
+::selection {
+  background: var(--primary-600);
+  color: var(--slate-50);
 }
 
 #root {

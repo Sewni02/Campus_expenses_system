@@ -6,6 +6,62 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import './SuperAdminDashboard.css';
 
+// Sidebar icons: inline SVG (Lucide-style line icons). They take the colour of the
+// tab text automatically, so no image files are needed.
+const SIDEBAR_ICONS = {
+  'user-management': (
+    <>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </>
+  ),
+  constructions: (
+    <>
+      <path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5" />
+      <path d="M14 6a6 6 0 0 1 6 6v3" />
+      <path d="M4 15v-3a6 6 0 0 1 6-6" />
+      <rect x="2" y="15" width="20" height="4" rx="1" />
+    </>
+  ),
+  'office-expenses': (
+    <>
+      <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
+      <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" />
+      <path d="M12 17.5v-11" />
+    </>
+  ),
+  'section-c': (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+    </>
+  ),
+  'section-d': (
+    <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+  ),
+};
+
+function SidebarIcon({ name }) {
+  return (
+    <svg
+      className="sa-sidebar-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {SIDEBAR_ICONS[name]}
+    </svg>
+  );
+}
+
 // ---------- Shared input sanitizers & formatters ----------
 // Name fields: letters and spaces only (no digits, no special characters)
 const sanitizeNameInput = (value) => value.replace(/[^A-Za-z\s]/g, '');
@@ -205,18 +261,24 @@ function SuperAdminDashboard() {
   const [activeTab, setActiveTab] = useTabState('tab', 'A');
 
   const sidebarItems = [
-    { key: 'A', label: 'User Management' },
-    { key: 'B', label: 'Constructions' },
-    { key: 'E', label: 'Office Expenses' },
-    { key: 'C', label: 'Section C' },
-    { key: 'D', label: 'Section D' },
+    { key: 'A', label: 'User Management', icon: 'user-management' },
+    { key: 'B', label: 'Constructions', icon: 'constructions' },
+    { key: 'E', label: 'Office Expenses', icon: 'office-expenses' },
+    { key: 'C', label: 'Section C', icon: 'section-c' },
+    { key: 'D', label: 'Section D', icon: 'section-d' },
   ];
 
   return (
     <div className="sa-container">
       <div className="sa-sidebar">
         <div className="sa-sidebar-header">
-          <div className="sa-avatar" />
+          <div className="sa-avatar">
+            <img
+              src="/admin-avatar.jpg"
+              alt="Super Admin"
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+            />
+          </div>
           <p>Super Admin</p>
         </div>
         {sidebarItems.map((item) => (
@@ -225,7 +287,8 @@ function SuperAdminDashboard() {
             onClick={() => setActiveTab(item.key)}
             className={`sa-sidebar-item ${activeTab === item.key ? 'active' : ''}`}
           >
-            {item.label}
+            <SidebarIcon name={item.icon} />
+            <span>{item.label}</span>
           </div>
         ))}
       </div>
