@@ -207,6 +207,7 @@ function SuperAdminDashboard() {
   const sidebarItems = [
     { key: 'A', label: 'User Management' },
     { key: 'B', label: 'Constructions' },
+    { key: 'E', label: 'Office Expenses' },
     { key: 'C', label: 'Section C' },
     { key: 'D', label: 'Section D' },
   ];
@@ -236,6 +237,9 @@ function SuperAdminDashboard() {
         <div style={{ display: activeTab === 'B' ? 'block' : 'none' }}>
           <Constructions />
         </div>
+        <div style={{ display: activeTab === 'E' ? 'block' : 'none' }}>
+          <OfficeExpenses />
+        </div>
         {activeTab === 'C' && <ComingSoon label="Section C" />}
         {activeTab === 'D' && <ComingSoon label="Section D" />}
       </div>
@@ -248,6 +252,540 @@ function ComingSoon({ label }) {
     <div className="sa-coming-soon">
       <h2>{label}</h2>
       <p>This section will be built later.</p>
+    </div>
+  );
+}
+
+// ---------- Sub-section: Office Expenses ----------
+// Recurring office bills (electricity, water, telephone, system/Zoom
+// subscriptions, etc.), tracked per location. Each location keeps its own
+// independent list of bill types (seeded with 5 common ones, expandable
+// via "+ Add Bill Type"), so picking a location first narrows the bill
+// type dropdown to only what's relevant there.
+//
+// Same two-step flow as every other payment area in this app: a bill is
+// raised first (location + bill type + bill code + the uploaded bill
+// file, status 'pending' - no amount yet), then "Mark as Paid" attaches
+// the bank/payment details (bank, account no, reference no, date, amount)
+// and flips it to 'paid'.
+function OfficeExpenses() {
+  const [locations, setLocations] = useState([]);
+  const [expenses, setExpenses] = useState([]);
+  const [expenseTab, setExpenseTab] = useTabState('oe', 'pending'); // 'pending' | 'paid'
+
+  // The "+ Add New Bill" form: location -> bill type -> bill code + file
+  const [showBillForm, setShowBillForm] = useState(false);
+  const [selectedLocationId, setSelectedLocationId] = useState('');
+  const [selectedBillType, setSelectedBillType] = useState('');
+  const [billCode, setBillCode] = useState('');
+  const [billFile, setBillFile] = useState(null);
+  const [isBillSubmitting, setIsBillSubmitting] = useState(false);
+
+  // Inline "+ Add Location" / "+ Add Bill Type" mini-forms
+  const [showAddLocation, setShowAddLocation] = useState(false);
+  const [newLocationName, setNewLocationName] = useState('');
+  const [isAddingLocation, setIsAddingLocation] = useState(false);
+  const [showAddBillType, setShowAddBillType] = useState(false);
+  const [newBillTypeName, setNewBillTypeName] = useState('');
+  const [isAddingBillType, setIsAddingBillType] = useState(false);
+
+  // "Mark as Paid" form
+  const [payingExpense, setPayingExpense] = useState(null); // { id, label }
+  const [payBankName, setPayBankName] = useState('');
+  const [payAccountNumber, setPayAccountNumber] = useState('');
+  const [payReferenceNo, setPayReferenceNo] = useState('');
+  const [payDate, setPayDate] = useState('');
+  const [payAmount, setPayAmount] = useState('');
+  const [isPaySubmitting, setIsPaySubmitting] = useState(false);
+
+  useEffect(() => {
+    fetchLocations();
+    fetchExpenses();
+  }, []);
+
+  const fetchLocations = async () => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/api/office-expenses/locations`);
+      setLocations(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchExpenses = async () => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/api/office-expenses`);
+      setExpenses(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const selectedLocation = locations.find((loc) => loc._id === selectedLocationId) || null;
+  const billTypeOptions = selectedLocation?.billTypes || [];
+
+  const resetBillForm = () => {
+    setSelectedLocationId('');
+    setSelectedBillType('');
+    setBillCode('');
+    setBillFile(null);
+    setShowAddLocation(false);
+    setShowAddBillType(false);
+  };
+
+  const handleAddLocation = async () => {
+    if (!newLocationName.trim() || isAddingLocation) return;
+    setIsAddingLocation(true);
+    try {
+      const res = await axios.post(`${API_BASE_URL}/api/office-expenses/locations`, { name: newLocationName.trim() });
+      setNewLocationName('');
+      setShowAddLocation(false);
+      await fetchLocations();
+      setSelectedLocationId(res.data.location._id);
+      setSelectedBillType('');
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not add the location. Please try again.');
+    } finally {
+      setIsAddingLocation(false);
+    }
+  };
+
+  const handleAddBillType = async () => {
+    if (!newBillTypeName.trim() || isAddingBillType || !selectedLocationId) return;
+    setIsAddingBillType(true);
+    try {
+      await axios.post(`${API_BASE_URL}/api/office-expenses/locations/${selectedLocationId}/bill-types`, {
+        name: newBillTypeName.trim(),
+      });
+      const addedName = newBillTypeName.trim();
+      setNewBillTypeName('');
+      setShowAddBillType(false);
+      await fetchLocations();
+      setSelectedBillType(addedName);
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not add the bill type. Please try again.');
+    } finally {
+      setIsAddingBillType(false);
+    }
+  };
+
+  // STEP 1: raise the bill - location, bill type, bill code, the bill
+  // file. No amount/payment info yet - created as 'pending'.
+  const handleCreateBill = async (e) => {
+    e.preventDefault();
+    if (!selectedLocationId || !selectedBillType || isBillSubmitting) return;
+    setIsBillSubmitting(true);
+    try {
+      const data = new FormData();
+      data.append('location', selectedLocationId);
+      data.append('billType', selectedBillType);
+      data.append('billCode', billCode);
+      if (billFile) data.append('bill', billFile);
+
+      await axios.post(`${API_BASE_URL}/api/office-expenses`, data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      resetBillForm();
+      setShowBillForm(false);
+      setExpenseTab('pending');
+      fetchExpenses();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not add the bill. Please try again.');
+    } finally {
+      setIsBillSubmitting(false);
+    }
+  };
+
+  const resetPayForm = () => {
+    setPayingExpense(null);
+    setPayBankName('');
+    setPayAccountNumber('');
+    setPayReferenceNo('');
+    setPayDate('');
+    setPayAmount('');
+  };
+
+  const startPayingExpense = (expense) => {
+    resetPayForm();
+    setPayingExpense({ id: expense._id, label: `${expense.locationName} - ${expense.billType} (${expense.billCode})` });
+  };
+
+  // STEP 2: record the bank payment against a pending bill - amount is
+  // first entered here. Flips status to 'paid'.
+  const handlePayExpense = async (e) => {
+    e.preventDefault();
+    if (!payingExpense || isPaySubmitting) return;
+    setIsPaySubmitting(true);
+    try {
+      await axios.patch(`${API_BASE_URL}/api/office-expenses/${payingExpense.id}/pay`, {
+        bankName: payBankName,
+        accountNumber: payAccountNumber,
+        referenceNo: payReferenceNo,
+        date: payDate,
+        amount: payAmount,
+      });
+      resetPayForm();
+      setExpenseTab('paid');
+      fetchExpenses();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not mark this bill as paid. Please try again.');
+    } finally {
+      setIsPaySubmitting(false);
+    }
+  };
+
+  const handleDeleteExpense = async (id) => {
+    if (!window.confirm('Delete this bill? This cannot be undone.')) return;
+    try {
+      await axios.delete(`${API_BASE_URL}/api/office-expenses/${id}`);
+      setExpenses((prev) => prev.filter((exp) => exp._id !== id));
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not delete the bill. Please try again.');
+    }
+  };
+
+  const pendingExpenses = expenses.filter((exp) => exp.status !== 'paid');
+  const paidExpenses = expenses.filter((exp) => exp.status === 'paid');
+  const totalPaid = paidExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+
+  return (
+    <div className="sa-page">
+      <h1 className="sa-page-title">Office Expenses</h1>
+
+      <div className="ge-header">
+        <h3 className="hw-inline-heading">Bills</h3>
+        <div className="report-header-actions">
+          <ReportButton
+            title="Office Expenses Report"
+            subtitleText={`Pending: ${pendingExpenses.length} · Paid: ${paidExpenses.length}`}
+            columns={['Location', 'Bill Type', 'Bill Code', 'Amount (LKR)', 'Submitted On', 'Payment Date', 'Reference No.', 'Bank / Account', 'Status']}
+            entries={expenses}
+            getDate={(exp) => exp.status === 'paid' ? exp.date : exp.createdAt}
+            buildRow={(exp) => {
+              const paid = exp.status === 'paid';
+              return [
+                exp.locationName,
+                exp.billType,
+                exp.billCode,
+                paid ? formatLKR(exp.amount) : '-',
+                exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : '-',
+                paid && exp.date ? new Date(exp.date).toLocaleDateString() : '-',
+                paid ? exp.referenceNo : '-',
+                paid ? [exp.bankName, exp.accountNumber].filter(Boolean).join(' / ') : '-',
+                paid ? 'Paid' : 'Pending',
+              ];
+            }}
+            buildTotals={(filtered) => [
+              '', '', '',
+              formatLKR(filtered.filter((exp) => exp.status === 'paid').reduce((s, exp) => s + (exp.amount || 0), 0)),
+              '', '', '', '', '',
+            ]}
+            disabled={expenses.length === 0}
+          />
+          <button className="ge-add-btn" onClick={() => { setShowBillForm(!showBillForm); resetBillForm(); }}>
+            {showBillForm ? 'Cancel' : '+ Add New Bill'}
+          </button>
+        </div>
+      </div>
+
+      <div className="ge-summary">
+        <span>{expenses.length} bill(s)</span>
+        <span>Total Paid: {formatLKR(totalPaid)}</span>
+      </div>
+
+      {showBillForm && (
+        <form className="ge-form" onSubmit={handleCreateBill}>
+          <div className="ge-form-row">
+            <select
+              value={selectedLocationId}
+              onChange={(e) => {
+                setSelectedLocationId(e.target.value);
+                setSelectedBillType('');
+                setShowAddBillType(false);
+              }}
+              required
+            >
+              <option value="">Select location...</option>
+              {[...locations].sort((a, b) => a.name.localeCompare(b.name)).map((loc) => (
+                <option key={loc._id} value={loc._id}>{loc.name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="hw-finder-add-btn"
+              onClick={() => setShowAddLocation(!showAddLocation)}
+            >
+              {showAddLocation ? 'Cancel' : '+ Add Location'}
+            </button>
+          </div>
+
+          {showAddLocation && (
+            <div className="hw-item-form new-plan-inline-form">
+              <p className="sa-group-title plan-preview-title">New Location</p>
+              <div className="ge-form-row">
+                <input
+                  type="text"
+                  placeholder="Location name"
+                  value={newLocationName}
+                  onChange={(e) => setNewLocationName(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="ge-save-btn"
+                  disabled={isAddingLocation || !newLocationName.trim()}
+                  onClick={handleAddLocation}
+                >
+                  {isAddingLocation ? 'Saving...' : 'Save Location'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="ge-form-row">
+            <select
+              value={selectedBillType}
+              onChange={(e) => setSelectedBillType(e.target.value)}
+              required={!showAddBillType}
+              disabled={!selectedLocation}
+            >
+              <option value="">{selectedLocation ? 'Select bill type...' : 'Select a location first'}</option>
+              {billTypeOptions.map((bt) => (
+                <option key={bt._id || bt.name} value={bt.name}>{bt.name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="hw-finder-add-btn"
+              disabled={!selectedLocation}
+              onClick={() => setShowAddBillType(!showAddBillType)}
+            >
+              {showAddBillType ? 'Cancel' : '+ Add Bill Type'}
+            </button>
+          </div>
+
+          {showAddBillType && (
+            <div className="hw-item-form new-plan-inline-form">
+              <p className="sa-group-title plan-preview-title">New Bill Type - {selectedLocation?.name}</p>
+              <div className="ge-form-row">
+                <input
+                  type="text"
+                  placeholder="Bill type name"
+                  value={newBillTypeName}
+                  onChange={(e) => setNewBillTypeName(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="ge-save-btn"
+                  disabled={isAddingBillType || !newBillTypeName.trim()}
+                  onClick={handleAddBillType}
+                >
+                  {isAddingBillType ? 'Saving...' : 'Save Bill Type'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {selectedBillType && (
+            <>
+              <div className="ge-form-row">
+                <input
+                  type="text"
+                  placeholder="Bill code"
+                  value={billCode}
+                  onChange={(e) => setBillCode(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="ge-form-row upload-row">
+                <div className="upload-field">
+                  <label className="upload-field-label">Bill</label>
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.pdf"
+                    onChange={(e) => setBillFile(e.target.files[0])}
+                  />
+                </div>
+              </div>
+
+              <button type="submit" className="ge-save-btn" disabled={isBillSubmitting}>
+                {isBillSubmitting ? 'Saving...' : 'Add Bill'}
+              </button>
+            </>
+          )}
+        </form>
+      )}
+
+      {payingExpense && (
+        <form className="ge-form pay-invoice-form" onSubmit={handlePayExpense}>
+          <p className="sa-group-title plan-preview-title">
+            Mark as Paid - {payingExpense.label}
+          </p>
+          <div className="ge-form-row">
+            <BankNameField value={payBankName} onChange={setPayBankName} required />
+            <input
+              type="text"
+              placeholder="Account number"
+              value={payAccountNumber}
+              onChange={(e) => setPayAccountNumber(e.target.value)}
+              required
+            />
+          </div>
+          <div className="ge-form-row">
+            <input
+              type="text"
+              placeholder="Reference No."
+              value={payReferenceNo}
+              onChange={(e) => setPayReferenceNo(e.target.value)}
+              required
+            />
+            <input
+              type="date"
+              value={payDate}
+              onChange={(e) => setPayDate(e.target.value)}
+            />
+          </div>
+          <div className="ge-form-row">
+            <input
+              type="number"
+              placeholder="Amount (LKR)"
+              value={payAmount}
+              onChange={(e) => setPayAmount(sanitizeAmountInput(e.target.value))}
+              required
+            />
+          </div>
+          <div className="sa-panel-actions">
+            <button type="submit" className="ge-save-btn" disabled={isPaySubmitting}>
+              {isPaySubmitting ? 'Saving...' : 'Mark as Paid'}
+            </button>
+            <button type="button" className="sa-reject-btn" onClick={resetPayForm}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      <div className="hw-subtabs">
+        <button
+          type="button"
+          className={`hw-subtab-btn ${expenseTab === 'pending' ? 'active' : ''}`}
+          onClick={() => setExpenseTab('pending')}
+        >
+          Pending ({pendingExpenses.length})
+        </button>
+        <button
+          type="button"
+          className={`hw-subtab-btn ${expenseTab === 'paid' ? 'active' : ''}`}
+          onClick={() => setExpenseTab('paid')}
+        >
+          Paid ({paidExpenses.length})
+        </button>
+      </div>
+
+      {expenseTab === 'pending' ? (
+        <table className="sa-table hw-items-table">
+          <thead>
+            <tr>
+              <th>Location</th>
+              <th>Bill Type</th>
+              <th>Bill Code</th>
+              <th>Submitted On</th>
+              <th>Bill</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {pendingExpenses.length === 0 ? (
+              <tr>
+                <td colSpan="7" className="hw-empty-text">No pending bills</td>
+              </tr>
+            ) : (
+              pendingExpenses.map((exp) => (
+                <tr key={exp._id}>
+                  <td>{exp.locationName}</td>
+                  <td>{exp.billType}</td>
+                  <td>{exp.billCode}</td>
+                  <td>{exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : '-'}</td>
+                  <td>
+                    {exp.billFileUrl ? (
+                      <a href={exp.billFileUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a>
+                    ) : '-'}
+                  </td>
+                  <td><span className="sa-badge sa-badge-pending">Pending</span></td>
+                  <td>
+                    <div className="hw-supplier-actions">
+                      <button className="sa-manage-btn" onClick={() => startPayingExpense(exp)}>
+                        Mark as Paid
+                      </button>
+                      <button className="hw-delete-btn" onClick={() => handleDeleteExpense(exp._id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      ) : (
+        <table className="sa-table hw-items-table">
+          <thead>
+            <tr>
+              <th>Location</th>
+              <th>Bill Type</th>
+              <th>Bill Code</th>
+              <th>Amount (LKR)</th>
+              <th>Payment Date</th>
+              <th>Reference No.</th>
+              <th>Account No.</th>
+              <th>Bank</th>
+              <th>Bill</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {paidExpenses.length === 0 ? (
+              <tr>
+                <td colSpan="11" className="hw-empty-text">No paid bills yet</td>
+              </tr>
+            ) : (
+              paidExpenses.map((exp) => (
+                <tr key={exp._id}>
+                  <td>{exp.locationName}</td>
+                  <td>{exp.billType}</td>
+                  <td>{exp.billCode}</td>
+                  <td>{formatLKR(exp.amount)}</td>
+                  <td>{exp.date ? new Date(exp.date).toLocaleDateString() : '-'}</td>
+                  <td>{exp.referenceNo || '-'}</td>
+                  <td>{exp.accountNumber || '-'}</td>
+                  <td>{exp.bankName || '-'}</td>
+                  <td>
+                    {exp.billFileUrl ? (
+                      <a href={exp.billFileUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a>
+                    ) : '-'}
+                  </td>
+                  <td><span className="sa-badge sa-badge-approved">Paid</span></td>
+                  <td>
+                    <div className="hw-supplier-actions">
+                      <button className="hw-delete-btn" onClick={() => handleDeleteExpense(exp._id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
