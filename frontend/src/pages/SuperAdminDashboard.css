@@ -1417,3 +1417,50 @@
     display: none;
   }
 }
+
+/* Office expenses: View / Download links for the uploaded bill */
+.oe-bill-links {
+  display: inline-flex;
+  gap: 14px;
+  white-space: nowrap;
+}
+/* Download bill: a <button> that looks like the neighbouring View link */
+.oe-download-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* Office expenses: description text + date field inside the forms */
+.oe-desc-cell {
+  max-width: 220px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.upload-field input[type='date'] {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Office expenses: Summary tab */
+.oe-summary-note {
+  font-size: 13px;
+  color: #4A6288;
+  margin: 0 0 18px;
+}
+
+.oe-summary-total-row td {
+  font-weight: 700;
+  background: #F4F8FE;
+}
+
+.oe-summary-detail-title {
+  margin-top: 24px;
+}
+
+.oe-summary-filters .upload-field {
+  flex: 1 1 180px;
+}
