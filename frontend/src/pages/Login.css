@@ -100,17 +100,17 @@
   padding: 16px;
   border: none;
   border-radius: var(--radius-pill);
-  background: var(--primary-600);
+  background: var(--brand-grad);
   font-family: inherit;
   font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.01em;
-  color: var(--slate-50);
+  color: var(--white);
   cursor: pointer;
   transition: background 0.2s ease, transform 0.2s ease;
 }
 
-.auth-submit-btn:hover { background: var(--primary-700); transform: translateY(-1px); }
+.auth-submit-btn:hover { background: linear-gradient(135deg, var(--accent-600) 0%, var(--primary-600) 100%); transform: translateY(-1px); }
 
 .auth-message {
   margin: 20px 0 0;

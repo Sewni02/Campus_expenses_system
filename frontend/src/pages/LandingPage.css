@@ -57,11 +57,11 @@
   transition: all 0.2s ease;
 }
 
-.lp-btn-solid { background: var(--primary-600); border: 1px solid var(--primary-600); color: var(--slate-50); }
-.lp-btn-solid:hover { background: var(--primary-700); transform: translateY(-1px); }
-.lp-btn-outline { background: transparent; border: 1px solid rgba(30, 86, 194, 0.3); color: var(--primary-600); }
-.lp-btn-outline:hover { background: var(--primary-600); color: var(--slate-50); }
-.lp-btn-light { background: var(--slate-50); border: 1px solid var(--slate-50); color: var(--primary-700); }
+.lp-btn-solid { background: var(--brand-grad); border: 1px solid transparent; color: var(--white); }
+.lp-btn-solid:hover { background: linear-gradient(135deg, var(--accent-600) 0%, var(--primary-600) 100%); transform: translateY(-1px); }
+.lp-btn-outline { background: transparent; border: 1px solid rgba(31, 181, 164, 0.45); color: var(--accent-700); }
+.lp-btn-outline:hover { background: var(--brand-grad); border-color: transparent; color: var(--white); }
+.lp-btn-light { background: var(--slate-50); border: 1px solid var(--slate-50); color: var(--accent-700); }
 .lp-btn-light:hover { background: var(--white); transform: translateY(-1px); }
 .lp-btn-large { padding: 15px 36px; font-size: 16px; }
 
