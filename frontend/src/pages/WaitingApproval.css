@@ -1,82 +1,56 @@
 .wa-page {
-  --lp-bg: #0a0e1a;
-  --lp-ink: #ffffff;
-  --lp-ink-3: rgba(255, 255, 255, 0.5);
-  --lp-glass-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
-  --lp-glass-border: rgba(255, 255, 255, 0.1);
-  --lp-grad: linear-gradient(135deg, #6366f1, #ec4899);
-  --lp-font-heading: 'Space Grotesk', sans-serif;
-  --lp-font-body: 'DM Sans', sans-serif;
-
-  position: relative;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  max-width: 480px;
-  margin: 0 auto;
+  padding: 40px 24px;
   text-align: center;
-  font-family: var(--lp-font-body);
-  padding: 0 20px;
-  background: var(--lp-bg);
-  overflow: hidden;
-}
-
-.wa-page::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background:
-    radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.22) 0%, transparent 50%),
-    radial-gradient(circle at 80% 80%, rgba(236, 72, 153, 0.15) 0%, transparent 50%);
-  pointer-events: none;
-}
-
-.wa-icon,
-.wa-title,
-.wa-text,
-.wa-back-btn {
-  position: relative;
-  z-index: 1;
+  background: var(--slate-50);
+  font-family: var(--font-main);
 }
 
 .wa-icon {
-  font-size: 56px;
-  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 92px;
+  height: 92px;
+  margin-bottom: 30px;
+  border: 1px solid rgba(30, 86, 194, 0.15);
+  border-radius: 50%;
+  background: var(--white);
+  font-size: 38px;
+  box-shadow: var(--shadow-md);
 }
 
 .wa-title {
-  margin: 0 0 12px;
-  font-family: var(--lp-font-heading);
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--lp-ink);
+  margin: 0 0 14px;
+  font-size: 38px;
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  color: var(--slate-800);
 }
 
 .wa-text {
-  color: var(--lp-ink-3);
-  line-height: 1.6;
-  font-size: 14px;
-  margin: 0;
+  max-width: 480px;
+  margin: 0 0 34px;
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--slate-500);
 }
 
 .wa-back-btn {
-  margin-top: 28px;
-  padding: 11px 28px;
-  border-radius: 100px;
+  padding: 14px 36px;
   border: none;
-  background: var(--lp-grad);
-  color: var(--lp-ink);
-  font-family: var(--lp-font-body);
+  border-radius: var(--radius-pill);
+  background: var(--brand-grad);
+  font-family: inherit;
+  font-size: 15px;
   font-weight: 600;
-  font-size: 14px;
+  color: var(--white);
   cursor: pointer;
-  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.35);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: background 0.2s ease, transform 0.2s ease;
 }
 
-.wa-back-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 30px rgba(99, 102, 241, 0.5);
-}
+.wa-back-btn:hover { background: linear-gradient(135deg, var(--accent-600) 0%, var(--primary-600) 100%); transform: translateY(-1px); }
