@@ -6,6 +6,62 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import './SuperAdminDashboard.css';
 
+// Sidebar icons: inline SVG (Lucide-style line icons). They take the colour of the
+// tab text automatically, so no image files are needed.
+const SIDEBAR_ICONS = {
+  'user-management': (
+    <>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </>
+  ),
+  constructions: (
+    <>
+      <path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5" />
+      <path d="M14 6a6 6 0 0 1 6 6v3" />
+      <path d="M4 15v-3a6 6 0 0 1 6-6" />
+      <rect x="2" y="15" width="20" height="4" rx="1" />
+    </>
+  ),
+  'office-expenses': (
+    <>
+      <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
+      <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" />
+      <path d="M12 17.5v-11" />
+    </>
+  ),
+  'section-c': (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+    </>
+  ),
+  'section-d': (
+    <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+  ),
+};
+
+function SidebarIcon({ name }) {
+  return (
+    <svg
+      className="sa-sidebar-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {SIDEBAR_ICONS[name]}
+    </svg>
+  );
+}
+
 // ---------- Shared input sanitizers & formatters ----------
 // Name fields: letters and spaces only (no digits, no special characters)
 const sanitizeNameInput = (value) => value.replace(/[^A-Za-z\s]/g, '');
@@ -205,18 +261,23 @@ function SuperAdminDashboard() {
   const [activeTab, setActiveTab] = useTabState('tab', 'A');
 
   const sidebarItems = [
-    { key: 'A', label: 'User Management' },
-    { key: 'B', label: 'Constructions' },
-    { key: 'E', label: 'Office Expenses' },
-    { key: 'C', label: 'Section C' },
-    { key: 'D', label: 'Section D' },
+    { key: 'A', label: 'User Management', icon: 'user-management' },
+    { key: 'B', label: 'Constructions', icon: 'constructions' },
+    { key: 'E', label: 'Office Expenses', icon: 'office-expenses' },
+    { key: 'C', label: 'Section C', icon: 'section-c' },
+    { key: 'D', label: 'Section D', icon: 'section-d' },
   ];
 
   return (
     <div className="sa-container">
       <div className="sa-sidebar">
         <div className="sa-sidebar-header">
-          <div className="sa-avatar" />
+          <div className="sa-avatar" role="img" aria-label="Super Admin">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="8.5" r="3.6" />
+              <path d="M4.5 20c0-4.1 3.4-6.6 7.5-6.6s7.5 2.5 7.5 6.6" />
+            </svg>
+          </div>
           <p>Super Admin</p>
         </div>
         {sidebarItems.map((item) => (
@@ -225,7 +286,8 @@ function SuperAdminDashboard() {
             onClick={() => setActiveTab(item.key)}
             className={`sa-sidebar-item ${activeTab === item.key ? 'active' : ''}`}
           >
-            {item.label}
+            <SidebarIcon name={item.icon} />
+            <span>{item.label}</span>
           </div>
         ))}
       </div>
@@ -353,6 +415,24 @@ const OfficeFileLinks = ({ url, onDownload }) =>
 // date it was paid), optionally narrow to one location, and see the totals.
 // With "All locations" the breakdown is location-wise; with one location picked
 // it becomes bill-type-wise for that location.
+// The month a bill counts towards in the summary: its Bill Month when it has one. Bills
+// saved without one (older bills, or ones created before the field existed) are placed by
+// their bill date, else the date they were added, else their payment date - and flagged
+// as estimated so the month can be corrected by editing the bill.
+const getSummaryMonth = (exp) => {
+  if (/^\d{4}-\d{2}$/.test(exp.billMonth || '')) return { key: exp.billMonth, estimated: false };
+  const source = exp.billDate || exp.createdAt || exp.date;
+  const d = source ? new Date(source) : null;
+  if (!d || Number.isNaN(d.getTime())) return null;
+  return { key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, estimated: true };
+};
+
+const summaryMonthLabel = (exp) => {
+  if (exp.billMonth) return formatBillMonth(exp.billMonth);
+  const info = getSummaryMonth(exp);
+  return info ? `${formatBillMonth(info.key)} (est.)` : '-';
+};
+
 function OfficeExpenseSummary({ expenses, locations }) {
   const now = new Date();
   const [monthNumber, setMonthNumber] = useState(String(now.getMonth() + 1).padStart(2, '0')); // '' = whole year
@@ -362,16 +442,29 @@ function OfficeExpenseSummary({ expenses, locations }) {
   const yearValid = /^\d{4}$/.test(year);
   const inLocation = (exp) => !locationId || String(exp.location) === locationId;
 
+  // Live, all-time totals for the selected location (or every location) - NOT limited to
+  // the month/year below, so they always reflect what's actually pending/paid right now
+  // and update the instant a bill is added, paid, edited or deleted.
+  const liveScope = expenses.filter(inLocation);
+  const livePendingRows = liveScope
+    .filter((exp) => exp.status !== 'paid')
+    .sort(
+      (a, b) =>
+        (a.locationName || '').localeCompare(b.locationName || '', undefined, { sensitivity: 'base' }) ||
+        (getSummaryMonth(a)?.key || '').localeCompare(getSummaryMonth(b)?.key || '')
+    );
+  const liveTotalPaidAmount = liveScope.reduce((sum, exp) => (exp.status === 'paid' ? sum + (exp.amount || 0) : sum), 0);
+
   const rows = expenses.filter((exp) => {
-    if (!yearValid || !exp.billMonth || !inLocation(exp)) return false;
-    const [billYear, billMonth] = exp.billMonth.split('-');
+    if (!yearValid || !inLocation(exp)) return false;
+    const info = getSummaryMonth(exp);
+    if (!info) return false;
+    const [billYear, billMonth] = info.key.split('-');
     return billYear === year && (!monthNumber || billMonth === monthNumber);
   });
-  // Older bills saved before "Bill month" existed can't be placed in a month.
-  const withoutMonthCount = expenses.filter((exp) => !exp.billMonth && inLocation(exp)).length;
+  const estimatedCount = rows.filter((exp) => !exp.billMonth).length;
 
   const paidRows = rows.filter((exp) => exp.status === 'paid');
-  const pendingRows = rows.filter((exp) => exp.status !== 'paid');
   const totalPaid = paidRows.reduce((sum, exp) => sum + (exp.amount || 0), 0);
 
   const groupByLocation = !locationId;
@@ -404,27 +497,36 @@ function OfficeExpenseSummary({ expenses, locations }) {
     <div className="oe-summary">
       <div className="ge-form oe-summary-filters">
         <div className="ge-form-row upload-row">
-          <div className="upload-field">
-            <label className="upload-field-label">Month</label>
-            <select value={monthNumber} onChange={(e) => setMonthNumber(e.target.value)}>
-              <option value="">Whole year</option>
-              {BILL_MONTHS.map(([value, name]) => (
-                <option key={value} value={value}>{name}</option>
-              ))}
-            </select>
+          <div className="oe-period-group">
+            <span className="oe-period-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
+                <path d="M3 9.5h18M8 3v3M16 3v3" />
+              </svg>
+            </span>
+            <div className="upload-field">
+              <label className="upload-field-label">Month</label>
+              <select value={monthNumber} onChange={(e) => setMonthNumber(e.target.value)}>
+                <option value="">Whole year</option>
+                {BILL_MONTHS.map(([value, name]) => (
+                  <option key={value} value={value}>{name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="oe-period-divider" aria-hidden="true" />
+            <div className="upload-field">
+              <label className="upload-field-label">Year</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={4}
+                placeholder="e.g. 2026"
+                value={year}
+                onChange={(e) => setYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              />
+            </div>
           </div>
-          <div className="upload-field">
-            <label className="upload-field-label">Year</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              maxLength={4}
-              placeholder="e.g. 2026"
-              value={year}
-              onChange={(e) => setYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
-            />
-          </div>
-          <div className="upload-field">
+          <div className="upload-field oe-location-field">
             <label className="upload-field-label">Location</label>
             <select value={locationId} onChange={(e) => setLocationId(e.target.value)}>
               <option value="">All locations</option>
@@ -440,31 +542,42 @@ function OfficeExpenseSummary({ expenses, locations }) {
         <p className="hw-empty-text">Enter a 4-digit year (e.g. 2026) to see the summary.</p>
       ) : (
         <>
-          <p className="sa-group-title project-section-title">{periodLabel} - {locationLabel}</p>
-
+          <p className="sa-group-title project-section-title">Current status - {locationLabel}</p>
+          <p className="oe-summary-note">
+            Always live for {locationLabel} - not limited to the month/year below. Updates immediately when a bill is
+            added, marked as paid, edited or deleted.
+          </p>
           <div className="project-summary-totals">
-            <div className="sa-stat-card sa-stat-approved">
-              <p>Total Paid</p>
-              <h2>{formatLKR(totalPaid)}</h2>
-            </div>
-            <div className="sa-stat-card">
-              <p>Paid Bills</p>
-              <h2>{paidRows.length}</h2>
-            </div>
             <div className="sa-stat-card sa-stat-rejected">
               <p>Pending Bills</p>
-              <h2>{pendingRows.length}</h2>
+              <h2>{livePendingRows.length}</h2>
             </div>
             <div className="sa-stat-card sa-stat-total">
               <p>Total Bills</p>
-              <h2>{rows.length}</h2>
+              <h2>{liveScope.length}</h2>
+            </div>
+            <div className="sa-stat-card sa-stat-approved">
+              <p>Total Paid (All Time)</p>
+              <h2>{formatLKR(liveTotalPaidAmount)}</h2>
+            </div>
+          </div>
+
+          <p className="sa-group-title project-section-title oe-summary-period-title">{periodLabel} - {locationLabel}</p>
+          <div className="project-summary-totals">
+            <div className="sa-stat-card sa-stat-approved">
+              <p>Total Paid (This Period)</p>
+              <h2>{formatLKR(totalPaid)}</h2>
+            </div>
+            <div className="sa-stat-card">
+              <p>Paid Bills (This Period)</p>
+              <h2>{paidRows.length}</h2>
             </div>
           </div>
 
           <p className="oe-summary-note">
             The month is the month each bill is for (its Bill Month), not the date it was paid. Pending bills have no
             amount yet, so only paid bills count towards the total.
-            {withoutMonthCount > 0 && ` ${withoutMonthCount} older bill(s) have no bill month and are not included - edit them to add one.`}
+            {estimatedCount > 0 && ` ${estimatedCount} bill(s) below have no bill month yet, so they are placed by their bill date / date added (marked "est.") - edit them to set the correct month.`}
           </p>
 
           {rows.length === 0 ? (
@@ -496,7 +609,7 @@ function OfficeExpenseSummary({ expenses, locations }) {
                     <td>Total</td>
                     <td>{rows.length}</td>
                     <td>{paidRows.length}</td>
-                    <td>{pendingRows.length}</td>
+                    <td>{rows.length - paidRows.length}</td>
                     <td>{formatLKR(totalPaid)}</td>
                   </tr>
                 </tbody>
@@ -524,7 +637,7 @@ function OfficeExpenseSummary({ expenses, locations }) {
                         <td>{exp.locationName}</td>
                         <td>{exp.billType}</td>
                         <td>{exp.billCode}</td>
-                        <td>{formatBillMonth(exp.billMonth)}</td>
+                        <td>{summaryMonthLabel(exp)}</td>
                         <td>{exp.status === 'paid' ? formatLKR(exp.amount) : '-'}</td>
                         <td>{exp.status === 'paid' && exp.date ? new Date(exp.date).toLocaleDateString() : '-'}</td>
                         <td>
@@ -542,6 +655,46 @@ function OfficeExpenseSummary({ expenses, locations }) {
                 </table>
               </div>
             </>
+          )}
+
+          <p className="sa-group-title project-section-title oe-summary-detail-title">
+            Pending bills - {locationLabel} (behind the Pending Bills count above)
+          </p>
+          <p className="oe-summary-note">
+            Every bill that is still unpaid, whichever month it is for. Mark them as paid from the Pending tab and they
+            drop off this list and move into the totals above.
+          </p>
+          {livePendingRows.length === 0 ? (
+            <p className="hw-empty-text">No pending bills.</p>
+          ) : (
+            <div className="hw-table-scroll">
+              <table className="sa-table hw-items-table">
+                <thead>
+                  <tr>
+                    <th>Location</th>
+                    <th>Bill Type</th>
+                    <th>Bill Code</th>
+                    <th>Bill Month</th>
+                    <th>Description</th>
+                    <th>Bill Date</th>
+                    <th>Bill</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {livePendingRows.map((exp) => (
+                    <tr key={exp._id}>
+                      <td>{exp.locationName}</td>
+                      <td>{exp.billType}</td>
+                      <td>{exp.billCode}</td>
+                      <td>{summaryMonthLabel(exp)}</td>
+                      <td className="oe-desc-cell">{exp.description || '-'}</td>
+                      <td>{(exp.billDate || exp.createdAt) ? new Date(exp.billDate || exp.createdAt).toLocaleDateString() : '-'}</td>
+                      <td><OfficeFileLinks url={exp.billFileUrl} onDownload={() => downloadOfficeBill(exp)} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </>
       )}
@@ -929,7 +1082,7 @@ function OfficeExpenses() {
       </div>
 
       <div className="ge-summary">
-        <span>{expenses.length} bill(s)</span>
+        <span>{expenses.length} bill(s) ({pendingExpenses.length} pending, {paidExpenses.length} paid)</span>
         <span>Total Paid: {formatLKR(totalPaid)}</span>
       </div>
 
