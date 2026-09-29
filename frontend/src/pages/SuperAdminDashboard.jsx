@@ -851,14 +851,14 @@ function OfficeExpenses() {
       if (billDescription.trim()) data.append('description', billDescription.trim());
       if (billFile) data.append('bill', billFile);
 
-      const res = await axios.post(`${API_BASE_URL}/api/office-expenses`, data, {
+      await axios.post(`${API_BASE_URL}/api/office-expenses`, data, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      setExpenses((prev) => [res.data.expense, ...prev]);
       resetBillForm();
       setShowBillForm(false);
       setExpenseTab('pending');
+      fetchExpenses();
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || 'Could not add the bill. Please try again.');
@@ -898,12 +898,12 @@ function OfficeExpenses() {
       data.append('amount', payAmount);
       if (paySlipFile) data.append('slip', paySlipFile);
 
-      const res = await axios.patch(`${API_BASE_URL}/api/office-expenses/${payingExpense.id}/pay`, data, {
+      await axios.patch(`${API_BASE_URL}/api/office-expenses/${payingExpense.id}/pay`, data, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setExpenses((prev) => prev.map((exp) => (exp._id === res.data.expense._id ? res.data.expense : exp)));
       resetPayForm();
       setExpenseTab('paid');
+      fetchExpenses();
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || 'Could not mark this bill as paid. Please try again.');
@@ -1011,11 +1011,11 @@ function OfficeExpenses() {
         if (editDate) data.append('date', editDate);
         data.append('amount', editAmount);
       }
-      const res = await axios.put(`${API_BASE_URL}/api/office-expenses/${editingExpense.id}`, data, {
+      await axios.put(`${API_BASE_URL}/api/office-expenses/${editingExpense.id}`, data, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setExpenses((prev) => prev.map((exp) => (exp._id === res.data.expense._id ? res.data.expense : exp)));
       resetEditForm();
+      fetchExpenses();
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || 'Could not update the bill. Please try again.');
@@ -3230,15 +3230,15 @@ function ConstructionPayments() {
       data.append('description', invoiceForm.description);
       if (invoiceBillFile) data.append('bill', invoiceBillFile);
 
-      const res = await axios.post(`${API_BASE_URL}/api/construction-payments`, data, {
+      await axios.post(`${API_BASE_URL}/api/construction-payments`, data, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      setPayments((prev) => [res.data.payment, ...prev]);
       resetInvoiceForm();
       setShowInvoiceForm(false);
       setInvoiceTab('pending');
       refetchProjectNames();
+      fetchPayments();
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || 'Could not create the invoice. Please try again.');
@@ -3272,14 +3272,14 @@ function ConstructionPayments() {
       data.append('note', payNote);
       if (paySlipFile) data.append('slip', paySlipFile);
 
-      const res = await axios.put(
+      await axios.put(
         `${API_BASE_URL}/api/construction-payments/${payingInvoice.paymentId}/pay`,
         data,
       );
 
-      setPayments((prev) => prev.map((p) => (p._id === res.data.payment._id ? res.data.payment : p)));
       resetPayForm();
       setInvoiceTab('paid');
+      fetchPayments();
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || 'Could not record the payment. Please try again.');
@@ -3350,13 +3350,13 @@ function ConstructionPayments() {
         payload.paymentDate = editInvoiceForm.paymentDate;
         payload.paymentNote = editInvoiceForm.paymentNote;
       }
-      const res = await axios.put(
+      await axios.put(
         `${API_BASE_URL}/api/construction-payments/${editingInvoice.paymentId}`,
         payload
       );
-      setPayments((prev) => prev.map((p) => (p._id === res.data.payment._id ? res.data.payment : p)));
       closeEditInvoice();
       refetchProjectNames();
+      fetchPayments();
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || 'Could not update the invoice. Please try again.');
@@ -3909,14 +3909,14 @@ function ContractorPayments() {
       data.append('note', invoiceForm.note);
       if (invoiceBillFile) data.append('bill', invoiceBillFile);
 
-      const res = await axios.post(`${API_BASE_URL}/api/contractors/${invoiceForm.contractorId}/payments`, data, {
+      await axios.post(`${API_BASE_URL}/api/contractors/${invoiceForm.contractorId}/payments`, data, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      setContractors((prev) => prev.map((c) => (c._id === res.data.contractor._id ? res.data.contractor : c)));
       resetInvoiceForm();
       setShowInvoiceForm(false);
       setInvoiceTab('pending');
+      fetchContractors();
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || 'Could not create the invoice. Please try again.');
@@ -3961,14 +3961,14 @@ function ContractorPayments() {
       data.append('note', payNote);
       if (paySlipFile) data.append('slip', paySlipFile);
 
-      const res = await axios.put(
+      await axios.put(
         `${API_BASE_URL}/api/contractors/${payingInvoice.contractorId}/payments/${payingInvoice.paymentId}/pay`,
         data,
       );
 
-      setContractors((prev) => prev.map((c) => (c._id === res.data.contractor._id ? res.data.contractor : c)));
       resetPayForm();
       setInvoiceTab('paid');
+      fetchContractors();
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || 'Could not record the payment. Please try again.');
@@ -3980,8 +3980,8 @@ function ContractorPayments() {
   const handleDeletePayment = async (invoice) => {
     if (!window.confirm('Delete this invoice? This cannot be undone.')) return;
     try {
-      const res = await axios.delete(`${API_BASE_URL}/api/contractors/${invoice.contractorId}/payments/${invoice._id}`);
-      setContractors((prev) => prev.map((c) => (c._id === res.data.contractor._id ? res.data.contractor : c)));
+      await axios.delete(`${API_BASE_URL}/api/contractors/${invoice.contractorId}/payments/${invoice._id}`);
+      fetchContractors();
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || 'Could not delete the invoice. Please check the backend server is running and try again.');
@@ -4036,12 +4036,12 @@ function ContractorPayments() {
         payload.paymentDate = editInvoiceForm.paymentDate;
         payload.paymentNote = editInvoiceForm.paymentNote;
       }
-      const res = await axios.put(
+      await axios.put(
         `${API_BASE_URL}/api/contractors/${editingInvoice.contractorId}/payments/${editingInvoice.paymentId}`,
         payload
       );
-      setContractors((prev) => prev.map((c) => (c._id === res.data.contractor._id ? res.data.contractor : c)));
       closeEditInvoice();
+      fetchContractors();
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || 'Could not update the invoice. Please try again.');
@@ -4658,15 +4658,15 @@ function Hardware() {
       data.append('projectName', hwInvoiceProjectName);
       hwInvoiceBillFiles.forEach((file) => data.append('bills', file));
 
-      const res = await axios.post(
+      await axios.post(
         `${API_BASE_URL}/api/hardware/${hardwareId}/invoices`,
         data,
       );
 
-      setHardwareList((prev) => prev.map((hw) => (hw._id === res.data.hardware._id ? res.data.hardware : hw)));
       resetHwInvoiceForm();
       setShowHwInvoiceForm(false);
       setHwInvoiceTab('pending');
+      fetchHardware();
       refetchProjectNames();
     } catch (err) {
       console.error(err);
@@ -4702,14 +4702,14 @@ function Hardware() {
       data.append('note', hwPayNote);
       if (hwPaySlipFile) data.append('slip', hwPaySlipFile);
 
-      const res = await axios.put(
+      await axios.put(
         `${API_BASE_URL}/api/hardware/${payingHwInvoice.hardwareId}/invoices/${payingHwInvoice.invoiceId}/pay`,
         data,
       );
 
-      setHardwareList((prev) => prev.map((hw) => (hw._id === res.data.hardware._id ? res.data.hardware : hw)));
       resetHwPayForm();
       setHwInvoiceTab('paid');
+      fetchHardware();
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || 'Could not record the payment. Please try again.');
@@ -4780,12 +4780,12 @@ function Hardware() {
         payload.paymentDate = editHwInvoiceForm.paymentDate;
         payload.paymentNote = editHwInvoiceForm.paymentNote;
       }
-      const res = await axios.put(
+      await axios.put(
         `${API_BASE_URL}/api/hardware/${editingHwInvoice.hardwareId}/invoices/${editingHwInvoice.invoiceId}`,
         payload
       );
-      setHardwareList((prev) => prev.map((hw) => (hw._id === res.data.hardware._id ? res.data.hardware : hw)));
       closeEditHwInvoice();
+      fetchHardware();
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || 'Could not update the invoice. Please try again.');

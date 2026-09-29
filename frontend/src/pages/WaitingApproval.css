@@ -1,0 +1,56 @@
+.wa-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  text-align: center;
+  background: var(--slate-50);
+  font-family: var(--font-main);
+}
+
+.wa-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 92px;
+  height: 92px;
+  margin-bottom: 30px;
+  border: 1px solid rgba(30, 86, 194, 0.15);
+  border-radius: 50%;
+  background: var(--white);
+  font-size: 38px;
+  box-shadow: var(--shadow-md);
+}
+
+.wa-title {
+  margin: 0 0 14px;
+  font-size: 38px;
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  color: var(--slate-800);
+}
+
+.wa-text {
+  max-width: 480px;
+  margin: 0 0 34px;
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--slate-500);
+}
+
+.wa-back-btn {
+  padding: 14px 36px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--brand-grad);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--white);
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.wa-back-btn:hover { background: linear-gradient(135deg, var(--accent-600) 0%, var(--primary-600) 100%); transform: translateY(-1px); }
