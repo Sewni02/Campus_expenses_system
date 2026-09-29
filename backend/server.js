@@ -27,7 +27,6 @@ const officeExpenseRoutes = require('./routes/officeExpense.routes');
 
 const app = express();
 
-connectDB();
 
 // --- Security & core middleware ---
 app.use(helmet());
@@ -103,7 +102,11 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Connect to MongoDB first, and only start listening once that worked.
+// (connectDB exits the process with a clear message if the connection fails.)
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+connectDB().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
 });
