@@ -1,67 +1,24 @@
-const User = require('../models/user.model');
+const asyncHandler = require('../utils/asyncHandler');
+const adminService = require('../services/admin.service');
 
-const getAllUsers = async (req, res) => {
-  try {
-    const users = await User.find().select('-password');
-    res.json(users);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
+const getAllUsers = asyncHandler(async (req, res) => {
+  const users = await adminService.listUsers();
+  res.json(users);
+});
 
-const getUserStats = async (req, res) => {
-  try {
-    const total = await User.countDocuments();
-    const approved = await User.countDocuments({ status: 'approved' });
-    const rejected = await User.countDocuments({ status: 'rejected' });
-    res.json({ total, approved, rejected });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
+const getUserStats = asyncHandler(async (req, res) => {
+  const stats = await adminService.getUserStats();
+  res.json(stats);
+});
 
-const approveUser = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { permissions } = req.body;
+const approveUser = asyncHandler(async (req, res) => {
+  const result = await adminService.approveUser(req.params.id, req.body.permissions);
+  res.json(result);
+});
 
-    const user = await User.findByIdAndUpdate(
-      id,
-      { status: 'approved', permissions: permissions || [] },
-      { new: true }
-    ).select('-password');
-
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    res.json({ message: 'User permissions saved successfully', user });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
-
-const rejectUser = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const user = await User.findByIdAndUpdate(
-      id,
-      { status: 'rejected', permissions: [] },
-      { new: true }
-    ).select('-password');
-
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    res.json({ message: 'User rejected', user });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
+const rejectUser = asyncHandler(async (req, res) => {
+  const result = await adminService.rejectUser(req.params.id);
+  res.json(result);
+});
 
 module.exports = { getAllUsers, getUserStats, approveUser, rejectUser };
