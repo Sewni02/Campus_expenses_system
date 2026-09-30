@@ -2,6 +2,7 @@ const cloudinary = require('../config/cloudinary');
 const OfficeLocation = require('../models/officeLocation.model');
 const OfficeExpense = require('../models/officeExpense.model');
 const { ApiError, findOrFail } = require('../utils/ApiError');
+const { validateAmount } = require('../utils/validators');
 
 // Seeded onto every location the first time it's created (either the
 // built-in starter locations below, or a new one added via "+ Add
@@ -132,6 +133,7 @@ const createExpense = async ({ location, billType, billCode, billMonth, billDate
 const markAsPaid = async (id, { bankName, accountNumber, referenceNo, date, amount }, file) => {
   if (!amount) throw new ApiError(400, 'amount is required');
   if (!referenceNo || !referenceNo.trim()) throw new ApiError(400, 'referenceNo is required to mark this as paid');
+  const cleanAmount = validateAmount(amount);
 
   const expense = await findOrFail(OfficeExpense, id, 'Bill not found');
   if (expense.status === 'paid') {
@@ -139,7 +141,7 @@ const markAsPaid = async (id, { bankName, accountNumber, referenceNo, date, amou
   }
 
   expense.status = 'paid';
-  expense.amount = amount;
+  expense.amount = cleanAmount;
   expense.date = date || Date.now();
   expense.bankName = bankName;
   expense.accountNumber = accountNumber;
@@ -191,7 +193,7 @@ const updateExpense = async (id, { billCode, billMonth, billDate, description, b
     if (accountNumber !== undefined) expense.accountNumber = accountNumber;
     if (referenceNo !== undefined) expense.referenceNo = referenceNo;
     if (date) expense.date = date;
-    if (amount !== undefined && amount !== '') expense.amount = amount;
+    if (amount !== undefined && amount !== '') expense.amount = validateAmount(amount);
   }
 
   await expense.save({ validateModifiedOnly: true });
