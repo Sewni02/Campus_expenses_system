@@ -2,6 +2,7 @@ const Contractor = require('../models/contractor.model');
 const Hardware = require('../models/hardware.model');
 const ConstructionPayment = require('../models/constructionPayment.model');
 const { ApiError } = require('../utils/ApiError');
+const { exactRegex } = require('../utils/escapeRegex');
 
 // Every project name that exists anywhere in the system (an estimation
 // plan, a contractor payment, a hardware payment/invoice, or a general/other
@@ -58,8 +59,8 @@ const getProjectSummary = async (name) => {
 
   const contractors = await Contractor.find({
     $or: [
-      { 'estimationPlans.projectName': new RegExp(search, 'i') },
-      { 'payments.projectName': new RegExp(search, 'i') },
+      { 'estimationPlans.projectName': exactRegex(search) },
+      { 'payments.projectName': exactRegex(search) },
     ],
   });
 
@@ -95,13 +96,13 @@ const getProjectSummary = async (name) => {
 
   const hardwareList = await Hardware.find({
     $or: [
-      { 'payments.projectName': new RegExp(search, 'i') },
-      { 'invoices.projectName': new RegExp(search, 'i') },
+      { 'payments.projectName': exactRegex(search) },
+      { 'invoices.projectName': exactRegex(search) },
     ],
   });
 
   const otherPaymentsList = await ConstructionPayment.find({
-    projectName: new RegExp(search, 'i'),
+    projectName: exactRegex(search),
   })
     .sort({ date: -1 })
     .then((rows) => rows.filter((p) => p.projectName.trim().toLowerCase() === search));

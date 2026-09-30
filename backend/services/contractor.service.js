@@ -1,5 +1,7 @@
 const Contractor = require('../models/contractor.model');
 const { ApiError, findOrFail } = require('../utils/ApiError');
+const { validateAmount } = require('../utils/validators');
+const { containsRegex } = require('../utils/escapeRegex');
 
 // Generates a short, human-readable invoice number, e.g. INV-482913-57
 const generateInvoiceNo = () => {
@@ -9,7 +11,7 @@ const generateInvoiceNo = () => {
 };
 
 const getContractors = async ({ search }) => {
-  const filter = search ? { name: new RegExp(search, 'i') } : {};
+  const filter = search ? { name: containsRegex(search) } : {};
   return Contractor.find(filter).sort({ createdAt: -1 });
 };
 
@@ -53,13 +55,15 @@ const addEstimationPlan = async (id, { projectName, totalEstimate, note }, files
     throw new ApiError(400, 'projectName and totalEstimate are required');
   }
 
+  const cleanEstimate = validateAmount(totalEstimate, 'totalEstimate');
+
   const contractor = await findOrFail(Contractor, id, 'Contractor not found');
 
   const planFileUrl = files?.plan?.[0]?.path;
 
   contractor.estimationPlans.push({
     projectName,
-    totalEstimate,
+    totalEstimate: cleanEstimate,
     note,
     planFileUrl,
   });
@@ -77,7 +81,7 @@ const updateEstimationPlan = async (id, planId, { projectName, totalEstimate, no
   }
 
   if (projectName !== undefined) plan.projectName = projectName;
-  if (totalEstimate !== undefined && totalEstimate !== '') plan.totalEstimate = totalEstimate;
+  if (totalEstimate !== undefined && totalEstimate !== '') plan.totalEstimate = validateAmount(totalEstimate, 'totalEstimate');
   if (note !== undefined) plan.note = note;
 
   const planFileUrl = files?.plan?.[0]?.path;
@@ -117,6 +121,7 @@ const createInvoice = async (id, { amount, date, reason, note, planId }, files) 
   if (!reason || !reason.trim()) {
     throw new ApiError(400, 'reason is required');
   }
+  const cleanAmount = validateAmount(amount);
 
   const contractor = await findOrFail(Contractor, id, 'Contractor not found');
 
@@ -129,7 +134,7 @@ const createInvoice = async (id, { amount, date, reason, note, planId }, files) 
 
   contractor.payments.push({
     invoiceNo: generateInvoiceNo(),
-    amount,
+    amount: cleanAmount,
     invoiceDate: date || Date.now(),
     reason,
     note,
@@ -198,7 +203,7 @@ const updateInvoice = async (id, paymentId, body) => {
     throw new ApiError(404, 'Invoice not found');
   }
 
-  if (amount !== undefined && amount !== '') invoice.amount = amount;
+  if (amount !== undefined && amount !== '') invoice.amount = validateAmount(amount);
   if (reason !== undefined) invoice.reason = reason;
   if (date) invoice.invoiceDate = date;
   if (note !== undefined) invoice.note = note;

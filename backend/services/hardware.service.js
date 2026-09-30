@@ -1,5 +1,6 @@
 const Hardware = require('../models/hardware.model');
 const { ApiError, findOrFail } = require('../utils/ApiError');
+const { validateAmount, validateQuantity, MAX_QUANTITY } = require('../utils/validators');
 
 // Generates a short, human-readable invoice number, e.g. HINV-482913-57
 const generateInvoiceNo = () => {
@@ -43,9 +44,12 @@ const addItem = async (id, { name, unitPrice, quantity }) => {
     throw new ApiError(400, 'name, unitPrice, and quantity are required');
   }
 
+  const cleanUnitPrice = validateAmount(unitPrice, 'unitPrice');
+  const cleanQuantity = validateQuantity(quantity, 'quantity');
+
   const hardware = await findOrFail(Hardware, id, 'Hardware supplier not found');
 
-  hardware.items.push({ name, unitPrice, quantity });
+  hardware.items.push({ name, unitPrice: cleanUnitPrice, quantity: cleanQuantity });
   await hardware.save();
 
   return { message: 'Item added successfully', hardware };
@@ -59,8 +63,8 @@ const updateItem = async (id, itemId, { name, unitPrice, quantity }) => {
   if (!item) throw new ApiError(404, 'Item not found');
 
   if (name !== undefined) item.name = name;
-  if (unitPrice !== undefined) item.unitPrice = unitPrice;
-  if (quantity !== undefined) item.quantity = quantity;
+  if (unitPrice !== undefined) item.unitPrice = validateAmount(unitPrice, 'unitPrice');
+  if (quantity !== undefined) item.quantity = validateQuantity(quantity, 'quantity');
 
   await hardware.save();
 
@@ -93,8 +97,12 @@ const placeOrder = async (id, { items }) => {
     const item = hardware.items.id(orderedItem.itemId);
     if (!item) continue;
 
-    const qty = Number(orderedItem.quantity) || 0;
-    if (qty <= 0) continue;
+    // Blank / zero / negative / non-numeric lines are skipped (the order form
+    // sends every item, most with nothing typed in), but an absurdly large
+    // number is an error instead of silently ruining the stock count.
+    const qty = Number(orderedItem.quantity);
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    if (qty > MAX_QUANTITY) throw new ApiError(400, 'quantity is too large');
 
     item.quantity += qty;
     const lineTotal = item.unitPrice * qty;
@@ -126,6 +134,7 @@ const addPayment = async (id, { projectName, amount, date, referenceNo, accountN
   if (!projectName || !amount) {
     throw new ApiError(400, 'projectName and amount are required');
   }
+  const cleanAmount = validateAmount(amount);
   const hardware = await findOrFail(Hardware, id, 'Hardware supplier not found');
 
   const billFiles = files?.bills || files?.bill || [];
@@ -135,7 +144,7 @@ const addPayment = async (id, { projectName, amount, date, referenceNo, accountN
 
   hardware.payments.push({
     projectName,
-    amount,
+    amount: cleanAmount,
     date: date || Date.now(),
     bills,
     billUrl,
@@ -223,7 +232,7 @@ const updatePayment = async (id, paymentId, { projectName, amount, date, referen
   if (!payment) throw new ApiError(404, 'Payment not found');
 
   if (projectName !== undefined) payment.projectName = projectName;
-  if (amount !== undefined && amount !== '') payment.amount = amount;
+  if (amount !== undefined && amount !== '') payment.amount = validateAmount(amount);
   if (date) payment.date = date;
   if (referenceNo !== undefined) payment.referenceNo = referenceNo;
   if (accountNumber !== undefined) payment.accountNumber = accountNumber;
@@ -282,6 +291,7 @@ const createInvoice = async (id, { amount, date, reason, note, projectName }, fi
   if (!amount) throw new ApiError(400, 'amount is required');
   if (!projectName || !projectName.trim()) throw new ApiError(400, 'projectName is required');
   if (!reason || !reason.trim()) throw new ApiError(400, 'reason is required');
+  const cleanAmount = validateAmount(amount);
 
   const hardware = await findOrFail(Hardware, id, 'Hardware supplier not found');
 
@@ -291,7 +301,7 @@ const createInvoice = async (id, { amount, date, reason, note, projectName }, fi
 
   hardware.invoices.push({
     invoiceNo: generateInvoiceNo(),
-    amount,
+    amount: cleanAmount,
     invoiceDate: date || Date.now(),
     reason,
     note,
@@ -356,7 +366,7 @@ const updateInvoice = async (id, invoiceId, body, files) => {
   const invoice = hardware.invoices.id(invoiceId);
   if (!invoice) throw new ApiError(404, 'Invoice not found');
 
-  if (amount !== undefined && amount !== '') invoice.amount = amount;
+  if (amount !== undefined && amount !== '') invoice.amount = validateAmount(amount);
   if (reason !== undefined) invoice.reason = reason;
   if (date) invoice.invoiceDate = date;
   if (note !== undefined) invoice.note = note;
