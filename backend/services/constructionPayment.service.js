@@ -1,5 +1,6 @@
 const ConstructionPayment = require('../models/constructionPayment.model');
 const { ApiError, findOrFail } = require('../utils/ApiError');
+const { validateAmount } = require('../utils/validators');
 
 // Generates a short, human-readable invoice number, e.g. CINV-482913-57
 const generateInvoiceNo = () => {
@@ -25,12 +26,14 @@ const createInvoice = async ({ title, amount, paidTo, description, date, project
     throw new ApiError(400, 'projectName is required');
   }
 
+  const cleanAmount = validateAmount(amount);
+
   const billUrl = file ? file.path : undefined;
 
   const payment = await ConstructionPayment.create({
     invoiceNo: generateInvoiceNo(),
     title,
-    amount,
+    amount: cleanAmount,
     paidTo,
     description,
     date: date || Date.now(),
@@ -89,7 +92,7 @@ const updateInvoice = async (id, body) => {
   const payment = await findOrFail(ConstructionPayment, id, 'Payment not found');
 
   if (title !== undefined && title !== '') payment.title = title;
-  if (amount !== undefined && amount !== '') payment.amount = amount;
+  if (amount !== undefined && amount !== '') payment.amount = validateAmount(amount);
   if (paidTo !== undefined) payment.paidTo = paidTo;
   if (description !== undefined) payment.description = description;
   if (date) payment.date = date;
