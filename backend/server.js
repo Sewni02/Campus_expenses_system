@@ -24,6 +24,7 @@ const constructionPaymentRoutes = require('./routes/constructionPayment.routes')
 const hardwareRoutes = require('./routes/hardware.routes');
 const projectRoutes = require('./routes/Project.routes');
 const officeExpenseRoutes = require('./routes/officeExpense.routes');
+const pettyCashRoutes = require('./routes/pettyCash.routes');
 
 const app = express();
 
@@ -58,6 +59,7 @@ app.use('/api/construction-payments', constructionPaymentRoutes);
 app.use('/api/hardware', hardwareRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/office-expenses', officeExpenseRoutes);
+app.use('/api/petty-cash', pettyCashRoutes);
 
 app.get('/', (req, res) => {
   res.send('Campus Expense System API is running!');
