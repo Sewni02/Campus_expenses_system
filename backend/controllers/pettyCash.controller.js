@@ -1,4 +1,7 @@
+const { Readable } = require('stream');
+const { pipeline } = require('stream/promises');
 const asyncHandler = require('../utils/asyncHandler');
+const { removeUploadedFiles } = require('../utils/cleanupUploads');
 const pettyCashService = require('../services/pettyCash.service');
 
 // ----- Accountant (own data only) -----
@@ -28,16 +31,51 @@ const createExpense = asyncHandler(async (req, res) => {
   res.status(201).json(result);
 });
 
+// POST /api/petty-cash/me/allocations/:id/receive  (accountant confirms a fund reached them)
+const receiveAllocation = asyncHandler(async (req, res) => {
+  res.json(await pettyCashService.receiveAllocation(req.user, req.params.id));
+});
+
+// GET /api/petty-cash/me/allocations/pending  (funds waiting for the accountant to accept)
+const getMyPendingAllocations = asyncHandler(async (req, res) => {
+  res.json(await pettyCashService.getMyPendingAllocations(req.user));
+});
+
+// GET /api/petty-cash/me/allocations/:id/slip     (accountant, own funds only)
+// GET /api/petty-cash/admin/allocations/:id/slip  (super admin)
+// Streams the uploaded bank slip back to the browser.
+const streamSlip = (asAdmin) =>
+  asyncHandler(async (req, res) => {
+    const { upstream, fileName } = await pettyCashService.resolveSlipDownload(req.user, req.params.id, asAdmin);
+    const asciiName = fileName.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+
+    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+    const length = upstream.headers.get('content-length');
+    if (length) res.setHeader('Content-Length', length);
+
+    await pipeline(Readable.fromWeb(upstream.body), res);
+  });
+const getMySlip = streamSlip(false);
+const getAdminSlip = streamSlip(true);
+
 // ----- Super admin -----
 // GET /api/petty-cash/admin/accountants
 const getAccountants = asyncHandler(async (req, res) => {
   res.json(await pettyCashService.getAccountants());
 });
 
-// POST /api/petty-cash/admin/allocations  { accountant, month, amount, note }
+// POST /api/petty-cash/admin/allocations  (multipart)
+//   { accountant, month, fundDate, amount, method, paymentRef, note, slip(file) }
 const createAllocation = asyncHandler(async (req, res) => {
-  const result = await pettyCashService.createAllocation(req.user, req.body);
-  res.status(201).json(result);
+  try {
+    const result = await pettyCashService.createAllocation(req.user, req.body, req.file);
+    res.status(201).json(result);
+  } catch (err) {
+    // The slip is already in Cloudinary - delete it if the fund was not saved.
+    await removeUploadedFiles(req);
+    throw err;
+  }
 });
 
 // GET /api/petty-cash/admin/allocations?month=&accountant=
@@ -64,6 +102,10 @@ module.exports = {
   getCategories,
   getMySummary,
   getMyAllocations,
+  receiveAllocation,
+  getMyPendingAllocations,
+  getMySlip,
+  getAdminSlip,
   getMyExpenses,
   createExpense,
   getAccountants,

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const cloudinary = require('../config/cloudinary');
 const User = require('../models/user.model');
 const Counter = require('../models/counter.model');
 const PettyCashAllocation = require('../models/pettyCashAllocation.model');
@@ -7,6 +8,12 @@ const { ApiError } = require('../utils/ApiError');
 const { requireString, optionalString, validateAmount } = require('../utils/validators');
 
 const PERMISSION = 'petty_cash_manage';
+const ALLOCATION_METHODS = ['cash', 'bank_transfer', 'bank_deposit', 'cheque'];
+// For these the super admin MUST attach the bank slip.
+const SLIP_REQUIRED_METHODS = ['bank_transfer', 'bank_deposit'];
+// Funds only count toward a balance once the accountant has confirmed receipt.
+// (Old records without a status count as received.)
+const RECEIVED_ONLY = { status: { $ne: 'pending' } };
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -114,7 +121,7 @@ const buildFigures = (allocRow, spentRow) => {
 const getFigures = async (accountantId, month) => {
   const match = { accountant: toObjectId(accountantId) };
   const [allocRows, spentRows] = await Promise.all([
-    sumsByAccountant(PettyCashAllocation, 'month', month, match),
+    sumsByAccountant(PettyCashAllocation, 'month', month, { ...match, ...RECEIVED_ONLY }),
     sumsByAccountant(PettyCashExpense, 'month', month, match),
   ]);
   return buildFigures(allocRows[0], spentRows[0]);
@@ -134,11 +141,18 @@ const getAccountants = async () => {
   return users;
 };
 
-const createAllocation = async (adminUser, body) => {
+const createAllocation = async (adminUser, body, file) => {
   const accountantId = requireString(body.accountant, 'accountant', { max: 40 });
   const month = validateMonth(body.month || undefined);
   const amount = validateAmount(body.amount, 'amount');
   const note = optionalString(body.note, 'note', { max: 300 });
+  const method = body.method || 'cash';
+  if (!ALLOCATION_METHODS.includes(method)) throw new ApiError(400, 'method is not valid');
+  const paymentRef = optionalString(body.paymentRef, 'reference', { max: 60 });
+  if (SLIP_REQUIRED_METHODS.includes(method) && !file) {
+    throw new ApiError(400, 'Please upload the bank slip for a bank transfer / bank deposit');
+  }
+  const fundDate = validateDate(body.fundDate || todayString()).date;
 
   if (!mongoose.isValidObjectId(accountantId)) throw new ApiError(404, 'Accountant not found');
   const accountant = await User.findById(accountantId).select('name status permissions role');
@@ -148,17 +162,29 @@ const createAllocation = async (adminUser, body) => {
 
   const admin = await User.findById(adminUser.id).select('name');
 
+  const referenceNo = await nextAllocationNo(new Date().getUTCFullYear());
+
   const allocation = await PettyCashAllocation.create({
     accountant: accountant._id,
     accountantName: accountant.name,
     month,
     amount,
     note,
+    referenceNo,
+    method,
+    paymentRef,
+    fundDate,
+    slipUrl: file?.path,
+    slipFileName: file?.originalname,
+    status: 'pending',
     allocatedBy: adminUser.id,
     allocatedByName: admin?.name,
   });
 
-  return { message: 'Petty cash allocated successfully', allocation };
+  return {
+    message: `Fund ${referenceNo} issued. It will be added to the balance once the accountant confirms receipt`,
+    allocation,
+  };
 };
 
 const buildAllocationFilter = ({ month, accountant }) => {
@@ -176,16 +202,127 @@ const buildAllocationFilter = ({ month, accountant }) => {
 const listAllocations = async (query) =>
   PettyCashAllocation.find(buildAllocationFilter(query)).sort({ month: -1, createdAt: -1 }).limit(500);
 
+// Only a fund the accountant has not confirmed yet can be cancelled; once it
+// is received it stays on record.
 const deleteAllocation = async (id) => {
   if (!mongoose.isValidObjectId(id)) throw new ApiError(404, 'Allocation not found');
-  const allocation = await PettyCashAllocation.findByIdAndDelete(id);
+  const allocation = await PettyCashAllocation.findById(id);
   if (!allocation) throw new ApiError(404, 'Allocation not found');
-  return { message: 'Allocation removed' };
+  if (allocation.status !== 'pending') {
+    throw new ApiError(400, 'This fund has already been received by the accountant and cannot be removed');
+  }
+  await allocation.deleteOne();
+  await removeSlipFromStorage(allocation.slipUrl);
+  return { message: 'Allocation cancelled' };
+};
+
+// The accountant confirms the money / cheque / transfer actually reached them.
+const receiveAllocation = async (user, id) => {
+  if (!mongoose.isValidObjectId(id)) throw new ApiError(404, 'Allocation not found');
+  const allocation = await PettyCashAllocation.findOne({ _id: id, accountant: user.id });
+  if (!allocation) throw new ApiError(404, 'Allocation not found');
+  if (allocation.status !== 'pending') throw new ApiError(400, 'This fund is already confirmed');
+  allocation.status = 'received';
+  allocation.receivedAt = new Date();
+  await allocation.save();
+  return {
+    message: `Fund ${allocation.referenceNo || ''} accepted and added to the ${allocation.month} petty cash balance`.replace('  ', ' '),
+    allocation,
+  };
+};
+
+// Every fund still waiting for this accountant's confirmation, whatever month it is for.
+const getMyPendingAllocations = async (user) =>
+  PettyCashAllocation.find({ accountant: user.id, status: 'pending' }).sort({ createdAt: -1 }).limit(100);
+
+// ---------------------------------------------------------------------------
+// Bank slips (stored in Cloudinary, streamed back through the API)
+// ---------------------------------------------------------------------------
+// Splits a stored Cloudinary URL into the pieces Cloudinary's signed API needs.
+const parseCloudinaryUrl = (url) => {
+  const match = /\/(image|video|raw)\/(upload|authenticated|private)\/(?:v\d+\/)?([^?#]+)/.exec(url || '');
+  if (!match) return null;
+  const [, resourceType, type, rawPath] = match;
+  const path = decodeURIComponent(rawPath);
+  if (resourceType === 'raw') return { resourceType, type, publicId: path, format: '' };
+  const dot = path.lastIndexOf('.');
+  if (dot === -1) return { resourceType, type, publicId: path, format: '' };
+  return { resourceType, type, publicId: path.slice(0, dot), format: path.slice(dot + 1) };
+};
+
+// Best effort - never throws (a cancelled fund should still cancel if Cloudinary hiccups).
+const removeSlipFromStorage = async (slipUrl) => {
+  const parsed = parseCloudinaryUrl(slipUrl);
+  if (!parsed) return;
+  try {
+    await cloudinary.uploader.destroy(parsed.publicId, { resource_type: parsed.resourceType, type: parsed.type });
+  } catch (err) {
+    console.error('Could not remove slip from storage:', err.message);
+  }
+};
+
+// Finds the slip of one allocation and fetches its bytes. An accountant can only
+// open slips of funds issued to them; the super admin can open any.
+const resolveSlipDownload = async (user, id, asAdmin) => {
+  if (!mongoose.isValidObjectId(id)) throw new ApiError(404, 'Allocation not found');
+  const allocation = await PettyCashAllocation.findOne(asAdmin ? { _id: id } : { _id: id, accountant: user.id });
+  if (!allocation) throw new ApiError(404, 'Allocation not found');
+  if (!allocation.slipUrl) throw new ApiError(404, 'No slip was uploaded for this fund');
+
+  const candidates = [];
+  const parsed = parseCloudinaryUrl(allocation.slipUrl);
+  if (parsed) {
+    try {
+      candidates.push(
+        cloudinary.utils.private_download_url(parsed.publicId, parsed.format, {
+          resource_type: parsed.resourceType,
+          type: parsed.type,
+          attachment: true,
+          expires_at: Math.floor(Date.now() / 1000) + 300,
+        })
+      );
+    } catch (err) {
+      console.error('Could not build signed Cloudinary URL:', err.message);
+    }
+  }
+  candidates.push(allocation.slipUrl);
+
+  let upstream = null;
+  let lastStatus = null;
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url);
+      if (response.ok && response.body) {
+        upstream = response;
+        break;
+      }
+      lastStatus = response.status;
+    } catch (err) {
+      console.error('Slip download: could not reach storage:', err.message);
+    }
+  }
+  if (!upstream) {
+    throw new ApiError(502, `Could not fetch the slip from storage${lastStatus ? ` (status ${lastStatus})` : ''}. Please try again.`);
+  }
+
+  const urlExt = (allocation.slipUrl.split('?')[0].match(/\.([A-Za-z0-9]{2,5})$/) || [])[1];
+  let fileName = (allocation.slipFileName || '').trim() || `${allocation.referenceNo || 'fund'}-slip`;
+  if (!/\.[A-Za-z0-9]{2,5}$/.test(fileName) && urlExt) fileName += `.${urlExt}`;
+  return { upstream, fileName };
 };
 
 // ---------------------------------------------------------------------------
 // Accountant: expenses (vouchers)
 // ---------------------------------------------------------------------------
+const nextAllocationNo = async (year) => {
+  const counter = await Counter.findOneAndUpdate(
+    { key: `pcf-${year}` },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true }
+  );
+  return `FA-${year}-${String(counter.seq).padStart(4, '0')}`;
+};
+
 const nextVoucherNo = async (year) => {
   const counter = await Counter.findOneAndUpdate(
     { key: `pcv-${year}` },
@@ -290,7 +427,7 @@ const getAdminSummary = async (query) => {
 
   const [allocRows, spentRows, categories, topExpenses, overdrawnVouchers, prevSpent, accountants] =
     await Promise.all([
-      sumsByAccountant(PettyCashAllocation, 'month', month),
+      sumsByAccountant(PettyCashAllocation, 'month', month, RECEIVED_ONLY),
       sumsByAccountant(PettyCashExpense, 'month', month),
       PettyCashExpense.aggregate([
         { $match: { month } },
@@ -368,6 +505,9 @@ module.exports = {
   createAllocation,
   listAllocations,
   deleteAllocation,
+  receiveAllocation,
+  getMyPendingAllocations,
+  resolveSlipDownload,
   createExpense,
   listExpenses,
   getMySummary,
