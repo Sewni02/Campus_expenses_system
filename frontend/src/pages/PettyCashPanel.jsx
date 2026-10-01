@@ -33,18 +33,14 @@ function PettyCashPanel() {
   const [message, setMessage] = useState(null); // { type, text, expense? }
 
   const load = useCallback(() => {
-    const params = { month };
-    return Promise.all([
-      axios.get('/api/petty-cash/me/summary', { params }),
-      axios.get('/api/petty-cash/me/allocations', { params }),
-      axios.get('/api/petty-cash/me/expenses', { params }),
-      axios.get('/api/petty-cash/me/allocations/pending'),
-    ])
-      .then(([s, a, e, p]) => {
-        setSummary(s.data);
-        setAllocations(a.data.filter(isReceived));
-        setExpenses(e.data);
-        setPending(p.data);
+    // One request returns everything the page shows (faster than 4 separate calls).
+    return axios
+      .get('/api/petty-cash/me/dashboard', { params: { month } })
+      .then((res) => {
+        setSummary(res.data.summary);
+        setAllocations(res.data.allocations.filter(isReceived));
+        setExpenses(res.data.expenses);
+        setPending(res.data.pending);
       })
       .catch((err) => {
         setMessage({ type: 'err', text: err.response?.data?.message || 'Could not load petty cash data' });

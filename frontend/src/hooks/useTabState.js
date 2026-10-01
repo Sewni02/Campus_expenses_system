@@ -4,7 +4,9 @@ import { useSearchParams } from 'react-router-dom';
 //
 // Because the value lives in the query string, a page refresh (F5), a copied
 // link, or the browser back/forward buttons all land the user on exactly the
-// same tab they were on.
+// same tab they were on. Every tab switch is a new history entry, so Back /
+// Forward (and the arrow buttons in the sidebar) step through the tabs the
+// user opened, in order.
 //
 // Usage (drop-in replacement for useState):
 //   const [activeTab, setActiveTab] = useTabState('tab', 'A');
@@ -19,6 +21,7 @@ export default function useTabState(key, defaultValue) {
   const value = searchParams.get(key) || defaultValue;
 
   const setValue = (next) => {
+    if (next === value) return; // clicking the tab you are already on adds nothing to the history
     const params = new URLSearchParams(searchParams);
 
     if (next === defaultValue) {
@@ -27,10 +30,10 @@ export default function useTabState(key, defaultValue) {
       params.set(key, next);
     }
 
-    // replace: true -> switching tabs does not pile up history entries.
-    // Change to { replace: false } if you want the back button to step
-    // through previously opened tabs.
-    setSearchParams(params, { replace: true });
+    // replace: false -> each tab switch is a history entry, so the back button
+    // steps through previously opened tabs. (Use { replace: true } for a state
+    // that should NOT be a separate "page" in the history.)
+    setSearchParams(params, { replace: false });
   };
 
   return [value, setValue];

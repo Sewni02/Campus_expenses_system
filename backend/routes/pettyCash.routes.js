@@ -10,6 +10,7 @@ router.use(protect, requireApproved);
 // ----- Accountant: needs the "Petty Cash" permission, sees ONLY their own data -----
 const accountantOnly = requirePermission('petty_cash_manage');
 router.get('/categories', accountantOnly, c.getCategories);
+router.get('/me/dashboard', accountantOnly, c.getMyDashboard);
 router.get('/me/summary', accountantOnly, c.getMySummary);
 router.get('/me/allocations', accountantOnly, c.getMyAllocations);
 router.get('/me/allocations/pending', accountantOnly, c.getMyPendingAllocations);

@@ -10,6 +10,11 @@ const getCategories = asyncHandler(async (req, res) => {
   res.json(pettyCashService.CATEGORIES);
 });
 
+// GET /api/petty-cash/me/dashboard?month=2026-10  (summary + funds + vouchers + pending, one request)
+const getMyDashboard = asyncHandler(async (req, res) => {
+  res.json(await pettyCashService.getMyDashboard(req.user, req.query));
+});
+
 // GET /api/petty-cash/me/summary?month=2026-10
 const getMySummary = asyncHandler(async (req, res) => {
   res.json(await pettyCashService.getMySummary(req.user, req.query));
@@ -101,6 +106,7 @@ const getAdminSummary = asyncHandler(async (req, res) => {
 module.exports = {
   getCategories,
   getMySummary,
+  getMyDashboard,
   getMyAllocations,
   receiveAllocation,
   getMyPendingAllocations,

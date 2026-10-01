@@ -412,6 +412,25 @@ const getMySummary = async (user, query) => {
   return { month, isCurrentMonth: month === currentMonth(), ...figures };
 };
 
+// Everything the accountant's page needs in ONE call (instead of 4 separate
+// requests that each re-check the login against the database). All the queries
+// run in parallel, so the page waits for the slowest one, not the sum of them.
+const getMyDashboard = async (user, query) => {
+  const month = validateMonth(query.month);
+  const [figures, allocations, expenses, pending] = await Promise.all([
+    getFigures(user.id, month),
+    listAllocations({ month, accountant: user.id }),
+    listExpenses({ month }, user.id),
+    getMyPendingAllocations(user),
+  ]);
+  return {
+    summary: { month, isCurrentMonth: month === currentMonth(), ...figures },
+    allocations,
+    expenses,
+    pending,
+  };
+};
+
 const previousMonthOf = (month) => {
   const [y, m] = month.split('-').map(Number);
   const d = new Date(Date.UTC(y, m - 2, 1));
@@ -511,5 +530,6 @@ module.exports = {
   createExpense,
   listExpenses,
   getMySummary,
+  getMyDashboard,
   getAdminSummary,
 };
