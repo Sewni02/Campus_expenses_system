@@ -4,6 +4,7 @@ import axios from 'axios';
 import { API_BASE_URL } from '../config/api';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import PettyCashAdmin from './PettyCashAdmin';
 import './SuperAdminDashboard.css';
 
 // Sidebar icons: inline SVG (Lucide-style line icons). They take the colour of the
@@ -30,6 +31,13 @@ const SIDEBAR_ICONS = {
       <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
       <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" />
       <path d="M12 17.5v-11" />
+    </>
+  ),
+  'petty-cash': (
+    <>
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <circle cx="12" cy="12" r="2.5" />
+      <path d="M6 12h.01M18 12h.01" />
     </>
   ),
   'section-c': (
@@ -250,6 +258,12 @@ const PERMISSION_GROUPS = [
     ],
   },
   {
+    category: 'Petty Cash',
+    options: [
+      { key: 'petty_cash_manage', label: 'Manage Petty Cash (Accountant)' },
+    ],
+  },
+  {
     category: 'Academic / Non-Academic Staff',
     options: [
       { key: 'staff_view_salary_receipts', label: 'View Salary Receipts' },
@@ -264,6 +278,7 @@ function SuperAdminDashboard() {
     { key: 'A', label: 'User Management', icon: 'user-management' },
     { key: 'B', label: 'Constructions', icon: 'constructions' },
     { key: 'E', label: 'Office Expenses', icon: 'office-expenses' },
+    { key: 'P', label: 'Petty Cash', icon: 'petty-cash' },
     { key: 'C', label: 'Section C', icon: 'section-c' },
     { key: 'D', label: 'Section D', icon: 'section-d' },
   ];
@@ -302,6 +317,7 @@ function SuperAdminDashboard() {
         <div style={{ display: activeTab === 'E' ? 'block' : 'none' }}>
           <OfficeExpenses />
         </div>
+        {activeTab === 'P' && <PettyCashAdmin />}
         {activeTab === 'C' && <ComingSoon label="Section C" />}
         {activeTab === 'D' && <ComingSoon label="Section D" />}
       </div>

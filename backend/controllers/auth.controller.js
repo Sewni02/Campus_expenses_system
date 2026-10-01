@@ -24,4 +24,18 @@ const resetPassword = asyncHandler(async (req, res) => {
   res.json(result);
 });
 
-module.exports = { signup, login, forgotPassword, resetPassword };
+const User = require('../models/user.model');
+
+const me = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user.id).select('name email role status permissions');
+  res.json({
+    id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    status: user.status,
+    permissions: user.permissions,
+  });
+});
+
+module.exports = { signup, login, forgotPassword, resetPassword, me };
