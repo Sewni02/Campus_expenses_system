@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import useTabState from '../hooks/useTabState';
 import {
@@ -8,6 +8,13 @@ import {
   currentMonthString,
   STATUS_LABELS,
   downloadVoucherPdf,
+  downloadAllocationPdf,
+  viewAllocationSlip,
+  METHOD_LABELS,
+  isReceived,
+  needsSlip,
+  fundDateOf,
+  todayString,
 } from '../utils/pettyCash';
 import './PettyCash.css';
 
@@ -15,7 +22,7 @@ const apiError = (err, fallback) => err.response?.data?.message || fallback;
 
 // Super admin side of Petty Cash:
 //   Overview  - month-end analysis (balances, overspending, where money went)
-//   Allocate  - give an accountant a fund for a month
+//   Allocate  - issue a fund to an accountant (they confirm receipt before it counts)
 //   Expenses  - every voucher the accountants have issued
 function PettyCashAdmin() {
   const [tab, setTab] = useTabState('pc', 'overview');
@@ -47,7 +54,7 @@ function PettyCashAdmin() {
       </div>
 
       {tab === 'overview' && <Overview month={month} refreshKey={refreshKey} />}
-      {tab === 'allocate' && <Allocate month={month} accountants={accountants} onChanged={refresh} refreshKey={refreshKey} />}
+      {tab === 'allocate' && <Allocate month={month} onMonthChange={setMonth} accountants={accountants} onChanged={refresh} refreshKey={refreshKey} />}
       {tab === 'expenses' && <Expenses month={month} accountants={accountants} />}
     </div>
   );
@@ -182,8 +189,18 @@ function Overview({ month, refreshKey }) {
   );
 }
 
-function Allocate({ month, accountants, onChanged, refreshKey }) {
-  const [form, setForm] = useState({ accountant: '', amount: '', note: '' });
+function Allocate({ month, onMonthChange, accountants, onChanged, refreshKey }) {
+  const emptyForm = (keep = {}) => ({
+    accountant: keep.accountant || '',
+    amount: '',
+    method: keep.method || 'cash',
+    fundDate: todayString(),
+    paymentRef: '',
+    note: '',
+  });
+  const [form, setForm] = useState(emptyForm());
+  const [slip, setSlip] = useState(null);
+  const fileInput = useRef(null);
   const [allocations, setAllocations] = useState([]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
@@ -197,14 +214,51 @@ function Allocate({ month, accountants, onChanged, refreshKey }) {
 
   useEffect(() => { load(); }, [load, refreshKey]);
 
+  const setField = (key) => (e) => setForm((prev) => ({ ...prev, [key]: e.target.value }));
+
+  const pickSlip = (e) => {
+    const file = e.target.files?.[0] || null;
+    if (file) {
+      if (!['image/jpeg', 'image/png', 'application/pdf'].includes(file.type)) {
+        setMessage({ type: 'err', text: 'The slip must be a JPG, PNG or PDF file' });
+        e.target.value = '';
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        setMessage({ type: 'err', text: 'The slip must be smaller than 5 MB' });
+        e.target.value = '';
+        return;
+      }
+    }
+    setMessage(null);
+    setSlip(file);
+  };
+
   const submit = async (e) => {
     e.preventDefault();
-    setSaving(true);
     setMessage(null);
+    if (needsSlip(form.method) && !slip) {
+      setMessage({ type: 'err', text: 'Please upload the bank slip for a bank transfer / bank deposit' });
+      return;
+    }
+
+    const data = new FormData();
+    data.append('accountant', form.accountant);
+    data.append('month', month);
+    data.append('fundDate', form.fundDate);
+    data.append('amount', form.amount);
+    data.append('method', form.method);
+    data.append('paymentRef', form.paymentRef);
+    data.append('note', form.note);
+    if (slip) data.append('slip', slip);
+
+    setSaving(true);
     try {
-      await axios.post('/api/petty-cash/admin/allocations', { ...form, month });
-      setMessage({ type: 'ok', text: `Fund allocated for ${monthLabel(month)}` });
-      setForm({ accountant: form.accountant, amount: '', note: '' });
+      const res = await axios.post('/api/petty-cash/admin/allocations', data);
+      setMessage({ type: 'ok', text: `${res.data.message} (${monthLabel(month)})` });
+      setForm(emptyForm(form));
+      setSlip(null);
+      if (fileInput.current) fileInput.current.value = '';
       onChanged();
     } catch (err) {
       setMessage({ type: 'err', text: apiError(err, 'Could not allocate the fund') });
@@ -214,7 +268,7 @@ function Allocate({ month, accountants, onChanged, refreshKey }) {
   };
 
   const remove = async (id) => {
-    if (!window.confirm('Remove this allocation? The accountant\'s balance will go down by this amount.')) return;
+    if (!window.confirm('Cancel this fund? The accountant has not confirmed receipt yet.')) return;
     try {
       await axios.delete(`/api/petty-cash/admin/allocations/${id}`);
       onChanged();
@@ -228,24 +282,63 @@ function Allocate({ month, accountants, onChanged, refreshKey }) {
       {message && <div className={`pc-alert ${message.type}`}>{message.text}</div>}
 
       <div className="pc-panel">
-        <h3>Allocate petty cash for {monthLabel(month)}</h3>
+        <h3>Issue petty cash fund</h3>
         <form className="pc-form" onSubmit={submit}>
           <label className="pc-field">
             Accountant
-            <select required value={form.accountant} onChange={(e) => setForm({ ...form, accountant: e.target.value })}>
+            <select required value={form.accountant} onChange={setField('accountant')}>
               <option value="">Select…</option>
               {accountants.map((a) => <option key={a._id} value={a._id}>{a.name}</option>)}
             </select>
           </label>
           <label className="pc-field">
-            Amount (Rs.)
-            <input type="number" required min="0.01" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+            Fund for month
+            <input type="month" required value={month} onChange={(e) => e.target.value && onMonthChange(e.target.value)} />
           </label>
           <label className="pc-field">
-            Note (optional)
-            <input type="text" maxLength={300} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+            Fund date
+            <input type="date" required max={todayString()} value={form.fundDate} onChange={setField('fundDate')} />
           </label>
-          <div><button className="pc-btn" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Allocate'}</button></div>
+          <label className="pc-field">
+            Amount (Rs.)
+            <input type="number" required min="0.01" step="0.01" value={form.amount} onChange={setField('amount')} />
+          </label>
+          <label className="pc-field">
+            Method
+            <select value={form.method} onChange={setField('method')}>
+              {Object.entries(METHOD_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select>
+          </label>
+          {form.method !== 'cash' && (
+            <label className="pc-field">
+              {form.method === 'cheque' ? 'Cheque no.' : 'Transaction ref.'} (optional)
+              <input type="text" maxLength={60} value={form.paymentRef} onChange={setField('paymentRef')} />
+            </label>
+          )}
+          {(needsSlip(form.method) || form.method === 'cheque') && (
+            <label className="pc-field">
+              {needsSlip(form.method) ? 'Bank slip (JPG / PNG / PDF)' : 'Cheque copy (optional)'}
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+                required={needsSlip(form.method)}
+                onChange={pickSlip}
+              />
+            </label>
+          )}
+          <label className="pc-field wide">
+            Note (optional)
+            <input type="text" maxLength={300} value={form.note} onChange={setField('note')} />
+          </label>
+          <div className="wide">
+            <button className="pc-btn" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Issue fund'}</button>
+            {form.method === 'cash' && (
+              <small style={{ marginLeft: 12, color: '#4A6288' }}>
+                For cash, a fund allocation voucher (PDF) is generated for the accountant to sign.
+              </small>
+            )}
+          </div>
         </form>
         {accountants.length === 0 && (
           <p style={{ color: '#B7791F', marginBottom: 0 }}>
@@ -254,22 +347,39 @@ function Allocate({ month, accountants, onChanged, refreshKey }) {
         )}
       </div>
 
-      <h3>Allocations for {monthLabel(month)}</h3>
+      <h3>Funds for {monthLabel(month)}</h3>
       <div className="pc-table-wrap">
         <table className="pc-table">
-          <thead><tr><th>Date</th><th>Accountant</th><th>Note</th><th className="num">Amount</th><th></th></tr></thead>
+          <thead>
+            <tr>
+              <th>Ref. no</th><th>Fund date</th><th>For month</th><th>Accountant</th><th>Method</th>
+              <th className="num">Amount</th><th>Status</th><th>Proof</th><th></th>
+            </tr>
+          </thead>
           <tbody>
-            {allocations.length === 0 && <tr><td colSpan="5" className="pc-empty">Nothing allocated for this month</td></tr>}
+            {allocations.length === 0 && <tr><td colSpan="9" className="pc-empty">Nothing allocated for this month</td></tr>}
             {allocations.map((a) => (
               <tr key={a._id}>
-                <td>{formatDate(a.createdAt)}</td><td>{a.accountantName}</td><td>{a.note || '-'}</td>
+                <td>{a.referenceNo || '-'}</td>
+                <td>{formatDate(fundDateOf(a))}</td>
+                <td>{monthLabel(a.month)}</td>
+                <td>{a.accountantName}{a.note && <><br /><small>{a.note}</small></>}</td>
+                <td>{METHOD_LABELS[a.method] || 'Cash'}{a.paymentRef && <><br /><small>{a.paymentRef}</small></>}</td>
                 <td className="num">{formatMoney(a.amount)}</td>
-                <td><button className="pc-btn-sm pc-btn-danger" onClick={() => remove(a._id)}>Remove</button></td>
+                <td>
+                  <span className={`pc-badge ${isReceived(a) ? 'ok' : 'low'}`}>{isReceived(a) ? 'Received' : 'Pending'}</span>
+                  {isReceived(a) && a.receivedAt && <><br /><small>{formatDate(a.receivedAt)}</small></>}
+                </td>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  {a.slipUrl && <button className="pc-btn-sm" onClick={() => viewAllocationSlip(a, 'admin')}>View slip</button>}{' '}
+                  <button className="pc-btn-sm" onClick={() => downloadAllocationPdf(a)}>Voucher</button>
+                </td>
+                <td>{!isReceived(a) && <button className="pc-btn-sm pc-btn-danger" onClick={() => remove(a._id)}>Cancel</button>}</td>
               </tr>
             ))}
           </tbody>
           {allocations.length > 0 && (
-            <tfoot><tr><td colSpan="3">Total</td><td className="num">{formatMoney(allocations.reduce((t, a) => t + a.amount, 0))}</td><td></td></tr></tfoot>
+            <tfoot><tr><td colSpan="5">Total</td><td className="num">{formatMoney(allocations.reduce((t, a) => t + a.amount, 0))}</td><td colSpan="3"></td></tr></tfoot>
           )}
         </table>
       </div>

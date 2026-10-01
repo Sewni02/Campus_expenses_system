@@ -8,6 +8,11 @@ import {
   currentMonthString,
   STATUS_LABELS,
   downloadVoucherPdf,
+  downloadAllocationPdf,
+  viewAllocationSlip,
+  METHOD_LABELS,
+  isReceived,
+  fundDateOf,
 } from '../utils/pettyCash';
 import './PettyCash.css';
 
@@ -20,6 +25,7 @@ function PettyCashPanel() {
   const [month, setMonth] = useState(currentMonthString());
   const [summary, setSummary] = useState(null);
   const [allocations, setAllocations] = useState([]);
+  const [pending, setPending] = useState([]); // funds waiting for this accountant to accept
   const [expenses, setExpenses] = useState([]);
   const [categories, setCategories] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -32,11 +38,13 @@ function PettyCashPanel() {
       axios.get('/api/petty-cash/me/summary', { params }),
       axios.get('/api/petty-cash/me/allocations', { params }),
       axios.get('/api/petty-cash/me/expenses', { params }),
+      axios.get('/api/petty-cash/me/allocations/pending'),
     ])
-      .then(([s, a, e]) => {
+      .then(([s, a, e, p]) => {
         setSummary(s.data);
-        setAllocations(a.data);
+        setAllocations(a.data.filter(isReceived));
         setExpenses(e.data);
+        setPending(p.data);
       })
       .catch((err) => {
         setMessage({ type: 'err', text: err.response?.data?.message || 'Could not load petty cash data' });
@@ -50,6 +58,23 @@ function PettyCashPanel() {
   useEffect(() => {
     axios.get('/api/petty-cash/categories').then((res) => setCategories(res.data)).catch(() => {});
   }, []);
+
+  const confirmReceipt = async (allocation) => {
+    const ok = window.confirm(
+      `Accept ${formatMoney(allocation.amount)} (${allocation.referenceNo || 'fund'}) for ${monthLabel(allocation.month)}? ` +
+      'It will be added to your petty cash balance for that month.'
+    );
+    if (!ok) return;
+    try {
+      const res = await axios.post(`/api/petty-cash/me/allocations/${allocation._id}/receive`);
+      setMessage({ type: 'ok', text: res.data.message });
+      // Jump to the month the fund is for, so the new amount is right there on the dashboard.
+      if (allocation.month !== month && allocation.month <= currentMonthString()) setMonth(allocation.month);
+      else load();
+    } catch (err) {
+      setMessage({ type: 'err', text: err.response?.data?.message || 'Could not confirm receipt' });
+    }
+  };
 
   const setField = (key) => (e) => setForm((prev) => ({ ...prev, [key]: e.target.value }));
 
@@ -106,6 +131,41 @@ function PettyCashPanel() {
                 Download voucher
               </button>
             )}
+          </div>
+        )}
+
+        {pending.length > 0 && (
+          <div className="pc-panel" style={{ borderColor: '#F1D79A', background: '#FFFBF0' }}>
+            <h3>Funds waiting for your confirmation ({pending.length})</h3>
+            <p style={{ marginTop: 0, color: '#8A5A0F', fontSize: 14 }}>
+              Check the slip / voucher, then accept. The amount is added to your petty cash balance for the month it is meant for.
+            </p>
+            <div className="pc-table-wrap">
+              <table className="pc-table">
+                <thead>
+                  <tr><th>Ref. no</th><th>Fund date</th><th>For month</th><th>Method</th><th className="num">Amount</th><th>Proof</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {pending.map((a) => (
+                    <tr key={a._id}>
+                      <td>{a.referenceNo || '-'}</td>
+                      <td>{formatDate(fundDateOf(a))}</td>
+                      <td>{monthLabel(a.month)}</td>
+                      <td>
+                        {METHOD_LABELS[a.method] || 'Cash'}{a.paymentRef ? ` · ${a.paymentRef}` : ''}
+                        {a.note && <><br /><small>{a.note}</small></>}
+                      </td>
+                      <td className="num">{formatMoney(a.amount)}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {a.slipUrl && <button className="pc-btn-sm" onClick={() => viewAllocationSlip(a, 'me')}>View slip</button>}{' '}
+                        <button className="pc-btn-sm" onClick={() => downloadAllocationPdf(a)}>Voucher</button>
+                      </td>
+                      <td><button className="pc-btn" onClick={() => confirmReceipt(a)}>Accept fund</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -179,15 +239,23 @@ function PettyCashPanel() {
             <div className="pc-table-wrap">
               <table className="pc-table">
                 <thead>
-                  <tr><th>Received on</th><th>Note</th><th className="num">Amount</th></tr>
+                  <tr><th>Ref. no</th><th>Fund date</th><th>Method / note</th><th className="num">Amount</th><th></th></tr>
                 </thead>
                 <tbody>
-                  {allocations.length === 0 && <tr><td colSpan="3" className="pc-empty">No funds allocated for this month</td></tr>}
+                  {allocations.length === 0 && <tr><td colSpan="5" className="pc-empty">No funds received for this month</td></tr>}
                   {allocations.map((a) => (
                     <tr key={a._id}>
-                      <td>{formatDate(a.createdAt)}</td>
-                      <td>{a.note || '-'}</td>
+                      <td>{a.referenceNo || '-'}</td>
+                      <td>{formatDate(fundDateOf(a))}</td>
+                      <td>
+                        {METHOD_LABELS[a.method] || 'Cash'}{a.paymentRef ? ` · ${a.paymentRef}` : ''}
+                        <br /><small>{a.note || '-'}</small>
+                      </td>
                       <td className="num">{formatMoney(a.amount)}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {a.slipUrl && <button className="pc-btn-sm" onClick={() => viewAllocationSlip(a, 'me')}>View slip</button>}{' '}
+                        <button className="pc-btn-sm" onClick={() => downloadAllocationPdf(a)}>Voucher</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
