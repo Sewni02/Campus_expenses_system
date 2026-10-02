@@ -518,6 +518,168 @@ const getAdminSummary = async (query) => {
   };
 };
 
+// ---------------------------------------------------------------------------
+// Reports: any date range, for ALL accountants (overall) or ONE accountant
+// ---------------------------------------------------------------------------
+// Vouchers are placed in a period by their voucher date; funds by the day the
+// money was handed over (fundDate - older records fall back to the day they
+// were created). Only funds the accountant has CONFIRMED count in the money
+// figures; unconfirmed ones are listed and shown as "pending".
+const REPORT_ROW_LIMIT = 5000;
+const FUND_DATE = { $ifNull: ['$fundDate', '$createdAt'] };
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const parseReportRange = ({ from, to }) => {
+  const parse = (value, field) => {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value !== 'string' || !DATE_PATTERN.test(value)) {
+      throw new ApiError(400, `${field} must look like 2026-10-31`);
+    }
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+      throw new ApiError(400, `${field} is not a valid date`);
+    }
+    return parsed;
+  };
+  const start = parse(from, 'from');
+  const lastDay = parse(to, 'to');
+  if (start && lastDay && start > lastDay) throw new ApiError(400, 'from cannot be after to');
+  // `end` is exclusive (the day after the last day of the range).
+  return { start, end: lastDay ? new Date(lastDay.getTime() + DAY_MS) : null, from: from || null, to: to || null };
+};
+
+// Like sumsByAccountant, but for an arbitrary [start, end) range instead of one month.
+const sumsByAccountantInRange = (Model, dateExpr, start, end, match = {}) => {
+  const before = start ? { $lt: [dateExpr, start] } : { $literal: false };
+  const inRange = {
+    $and: [
+      { $literal: true },
+      ...(start ? [{ $gte: [dateExpr, start] }] : []),
+      ...(end ? [{ $lt: [dateExpr, end] }] : []),
+    ],
+  };
+  return Model.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: '$accountant',
+        before: { $sum: { $cond: [before, '$amount', 0] } },
+        during: { $sum: { $cond: [inRange, '$amount', 0] } },
+        count: { $sum: { $cond: [inRange, 1, 0] } },
+        overdrawnCount: { $sum: { $cond: [{ $and: [inRange, { $eq: ['$overdrawn', true] }] }, 1, 0] } },
+      },
+    },
+  ]);
+};
+
+const getReport = async (query, forcedAccountantId) => {
+  const { start, end, from, to } = parseReportRange(query);
+
+  let accountantId = null;
+  if (forcedAccountantId) {
+    accountantId = String(forcedAccountantId); // accountants only ever see their own
+  } else if (query.accountant) {
+    if (typeof query.accountant !== 'string' || !mongoose.isValidObjectId(query.accountant)) {
+      throw new ApiError(400, 'accountant is not valid');
+    }
+    accountantId = query.accountant;
+  }
+  const match = accountantId ? { accountant: toObjectId(accountantId) } : {};
+
+  const expenseFilter = { ...match };
+  if (start || end) {
+    expenseFilter.date = {};
+    if (start) expenseFilter.date.$gte = start;
+    if (end) expenseFilter.date.$lt = end;
+  }
+  const fundConds = [];
+  if (start) fundConds.push({ $gte: [FUND_DATE, start] });
+  if (end) fundConds.push({ $lt: [FUND_DATE, end] });
+  const allocationFilter = { ...match, ...(fundConds.length ? { $expr: { $and: fundConds } } : {}) };
+
+  const [expenses, allocations, allocRows, spentRows, categoryRows, approvedAccountants] = await Promise.all([
+    PettyCashExpense.find(expenseFilter).sort({ date: 1, createdAt: 1 }).limit(REPORT_ROW_LIMIT),
+    PettyCashAllocation.find(allocationFilter).limit(REPORT_ROW_LIMIT),
+    sumsByAccountantInRange(PettyCashAllocation, FUND_DATE, start, end, { ...match, ...RECEIVED_ONLY }),
+    sumsByAccountantInRange(PettyCashExpense, '$date', start, end, match),
+    PettyCashExpense.aggregate([
+      { $match: expenseFilter },
+      { $group: { _id: '$category', total: { $sum: '$amount' }, count: { $sum: 1 } } },
+      { $sort: { total: -1 } },
+    ]),
+    accountantId ? Promise.resolve([]) : getAccountants(),
+  ]);
+
+  allocations.sort(
+    (a, b) => new Date(a.fundDate || a.createdAt) - new Date(b.fundDate || b.createdAt)
+  );
+
+  // Who appears in the report: the one accountant asked for, or every accountant
+  // (plus anyone with money on record whose permission was removed later).
+  const people = new Map(approvedAccountants.map((a) => [String(a._id), { name: a.name, email: a.email }]));
+  if (accountantId) people.set(accountantId, null);
+  const missing = [...people.keys(), ...[...allocRows, ...spentRows].map((r) => String(r._id))].filter(
+    (id, i, all) => !people.get(id) && all.indexOf(id) === i
+  );
+  if (missing.length) {
+    const users = await User.find({ _id: { $in: missing } }).select('name email');
+    users.forEach((u) => people.set(String(u._id), { name: u.name, email: u.email }));
+  }
+  if (accountantId && !people.get(accountantId)) throw new ApiError(404, 'Accountant not found');
+
+  const allRows = [...people.entries()]
+    .filter(([, info]) => info)
+    .map(([id, info]) => ({
+      accountantId: id,
+      name: info.name,
+      email: info.email,
+      ...buildFigures(
+        allocRows.find((r) => String(r._id) === id),
+        spentRows.find((r) => String(r._id) === id)
+      ),
+    }));
+  // In the overall report leave out accountants with nothing at all in this range.
+  const rows = accountantId
+    ? allRows
+    : allRows.filter((r) => r.opening || r.allocated || r.spent || r.voucherCount);
+  rows.sort((a, b) => a.name.localeCompare(b.name));
+
+  const sum = (key) => round2(rows.reduce((total, r) => total + r[key], 0));
+  const totals = {
+    opening: sum('opening'),
+    allocated: sum('allocated'),
+    available: sum('available'),
+    spent: sum('spent'),
+    closing: sum('closing'),
+    voucherCount: rows.reduce((t, r) => t + r.voucherCount, 0),
+    overdrawnCount: rows.reduce((t, r) => t + r.overdrawnCount, 0),
+  };
+  totals.usedPercent =
+    totals.available > 0 ? round2((totals.spent / totals.available) * 100) : totals.spent > 0 ? 100 : 0;
+
+  const pending = allocations.filter((a) => a.status === 'pending');
+
+  return {
+    range: { from, to },
+    scope: accountantId ? 'accountant' : 'overall',
+    accountant: accountantId ? { id: accountantId, ...people.get(accountantId) } : null,
+    totals,
+    pendingFunds: { count: pending.length, amount: round2(pending.reduce((t, a) => t + a.amount, 0)) },
+    accountants: rows,
+    categories: categoryRows.map((c) => ({
+      category: c._id,
+      total: round2(c.total),
+      count: c.count,
+      percent: totals.spent > 0 ? round2((c.total / totals.spent) * 100) : 0,
+    })),
+    expenses,
+    allocations,
+    truncated: expenses.length >= REPORT_ROW_LIMIT || allocations.length >= REPORT_ROW_LIMIT,
+  };
+};
+
+const getMyReport = (user, query) => getReport(query, user.id);
+
 module.exports = {
   CATEGORIES,
   getAccountants,
@@ -532,4 +694,6 @@ module.exports = {
   getMySummary,
   getMyDashboard,
   getAdminSummary,
+  getReport,
+  getMyReport,
 };

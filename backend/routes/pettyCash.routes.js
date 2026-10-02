@@ -12,6 +12,7 @@ const accountantOnly = requirePermission('petty_cash_manage');
 router.get('/categories', accountantOnly, c.getCategories);
 router.get('/me/dashboard', accountantOnly, c.getMyDashboard);
 router.get('/me/summary', accountantOnly, c.getMySummary);
+router.get('/me/report', accountantOnly, c.getMyReport);
 router.get('/me/allocations', accountantOnly, c.getMyAllocations);
 router.get('/me/allocations/pending', accountantOnly, c.getMyPendingAllocations);
 router.get('/me/allocations/:id/slip', accountantOnly, c.getMySlip);
@@ -28,5 +29,6 @@ router.get('/admin/allocations/:id/slip', superAdminOnly, c.getAdminSlip);
 router.delete('/admin/allocations/:id', superAdminOnly, c.deleteAllocation);
 router.get('/admin/expenses', superAdminOnly, c.getAllExpenses);
 router.get('/admin/summary', superAdminOnly, c.getAdminSummary);
+router.get('/admin/report', superAdminOnly, c.getAdminReport);
 
 module.exports = router;

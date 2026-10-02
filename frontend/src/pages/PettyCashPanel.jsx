@@ -14,6 +14,7 @@ import {
   isReceived,
   fundDateOf,
 } from '../utils/pettyCash';
+import PettyCashReports from './PettyCashReports';
 import './PettyCash.css';
 
 const EMPTY_FORM = { date: todayString(), payee: '', category: '', description: '', amount: '' };
@@ -31,6 +32,7 @@ function PettyCashPanel() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null); // { type, text, expense? }
+  const [showReport, setShowReport] = useState(false);
 
   const load = useCallback(() => {
     // One request returns everything the page shows (faster than 4 separate calls).
@@ -113,11 +115,20 @@ function PettyCashPanel() {
       <div>
         <div className="pc-toolbar">
           <h1 className="sa-page-title" style={{ margin: 0 }}>Petty Cash — {monthLabel(month)}</h1>
-          <label className="pc-field">
-            Month
-            <input type="month" value={month} max={currentMonthString()} onChange={(e) => e.target.value && setMonth(e.target.value)} />
-          </label>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+            <button className="pc-btn-sm" style={{ padding: '10px 16px' }} onClick={() => setShowReport((v) => !v)}>
+              {showReport ? 'Back to petty cash' : '📄 My reports'}
+            </button>
+            {!showReport && (
+              <label className="pc-field">
+                Month
+                <input type="month" value={month} max={currentMonthString()} onChange={(e) => e.target.value && setMonth(e.target.value)} />
+              </label>
+            )}
+          </div>
         </div>
+
+        {showReport ? <PettyCashReports mode="me" /> : (<>
 
         {message && (
           <div className={`pc-alert ${message.type}`}>
@@ -281,6 +292,7 @@ function PettyCashPanel() {
             </div>
           </div>
         </div>
+        </>)}
       </div>
     </div>
   );

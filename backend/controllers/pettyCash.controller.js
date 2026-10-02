@@ -103,6 +103,17 @@ const getAdminSummary = asyncHandler(async (req, res) => {
   res.json(await pettyCashService.getAdminSummary(req.query));
 });
 
+// GET /api/petty-cash/admin/report?from=2026-10-01&to=2026-10-31&accountant=<id>
+//   No accountant = overall report (everyone). No from/to = all time.
+const getAdminReport = asyncHandler(async (req, res) => {
+  res.json(await pettyCashService.getReport(req.query));
+});
+
+// GET /api/petty-cash/me/report?from=&to=  (accountant's own report)
+const getMyReport = asyncHandler(async (req, res) => {
+  res.json(await pettyCashService.getMyReport(req.user, req.query));
+});
+
 module.exports = {
   getCategories,
   getMySummary,
@@ -120,4 +131,6 @@ module.exports = {
   deleteAllocation,
   getAllExpenses,
   getAdminSummary,
+  getAdminReport,
+  getMyReport,
 };
