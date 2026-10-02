@@ -206,6 +206,7 @@ export function downloadVoucherPdf(expense) {
 // Reports (overall / one accountant, weekly / monthly / yearly / all time)
 // ---------------------------------------------------------------------------
 export const REPORT_PERIODS = [
+  { value: 'daily', label: 'Daily' },
   { value: 'weekly', label: 'Weekly' },
   { value: 'monthly', label: 'Monthly' },
   { value: 'yearly', label: 'Yearly' },
@@ -223,8 +224,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // [from, to] as 'YYYY-MM-DD' (both inclusive) for the chosen period, or null if the
 // inputs are not usable yet. Plain string / UTC maths so the date never shifts a day.
 // 'all' returns empty strings = no limits.
-export const periodRange = (period, { weekDate, year, month }) => {
+export const periodRange = (period, { dayDate, weekDate, year, month }) => {
   if (period === 'all') return { from: '', to: '' };
+  if (period === 'daily') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dayDate || '') || Number.isNaN(new Date(`${dayDate}T00:00:00.000Z`).getTime())) return null;
+    return { from: dayDate, to: dayDate };
+  }
   if (period === 'weekly') {
     const ref = new Date(`${weekDate}T00:00:00.000Z`);
     if (Number.isNaN(ref.getTime())) return null;
@@ -245,6 +250,7 @@ export const periodRange = (period, { weekDate, year, month }) => {
 // e.g. "Week of 07/09/2026 – 13/09/2026", "September 2026", "2026", "All time"
 export const describePeriod = (period, range, { year, month }) => {
   if (period === 'all' || !range) return 'All time';
+  if (period === 'daily') return `Daily - ${formatDate(range.from)}`;
   if (period === 'weekly') return `Week of ${formatDate(range.from)} – ${formatDate(range.to)}`;
   if (period === 'monthly') return `${MONTH_NAMES[month - 1]} ${year}`;
   return String(year);
