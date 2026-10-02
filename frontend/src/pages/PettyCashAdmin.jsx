@@ -16,6 +16,7 @@ import {
   fundDateOf,
   todayString,
 } from '../utils/pettyCash';
+import PettyCashReports from './PettyCashReports';
 import './PettyCash.css';
 
 const apiError = (err, fallback) => err.response?.data?.message || fallback;
@@ -24,6 +25,7 @@ const apiError = (err, fallback) => err.response?.data?.message || fallback;
 //   Overview  - month-end analysis (balances, overspending, where money went)
 //   Allocate  - issue a fund to an accountant (they confirm receipt before it counts)
 //   Expenses  - every voucher the accountants have issued
+//   Reports   - overall or one-accountant reports (weekly / monthly / yearly / all time), PDF download
 function PettyCashAdmin() {
   const [tab, setTab] = useTabState('pc', 'overview');
   const [month, setMonth] = useState(currentMonthString());
@@ -39,14 +41,16 @@ function PettyCashAdmin() {
     <div className="sa-page pc-page">
       <div className="pc-toolbar">
         <h1 className="sa-page-title" style={{ margin: 0 }}>Petty Cash</h1>
-        <label className="pc-field">
-          Month
-          <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
-        </label>
+        {tab !== 'reports' && (
+          <label className="pc-field">
+            Month
+            <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
+          </label>
+        )}
       </div>
 
       <div className="pc-tabs">
-        {[['overview', 'Month-end Overview'], ['allocate', 'Allocate Funds'], ['expenses', 'Expenses']].map(([key, label]) => (
+        {[['overview', 'Month-end Overview'], ['allocate', 'Allocate Funds'], ['expenses', 'Expenses'], ['reports', 'Reports']].map(([key, label]) => (
           <button key={key} className={`pc-tab ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>
             {label}
           </button>
@@ -56,6 +60,7 @@ function PettyCashAdmin() {
       {tab === 'overview' && <Overview month={month} refreshKey={refreshKey} />}
       {tab === 'allocate' && <Allocate month={month} onMonthChange={setMonth} accountants={accountants} onChanged={refresh} refreshKey={refreshKey} />}
       {tab === 'expenses' && <Expenses month={month} accountants={accountants} />}
+      {tab === 'reports' && <PettyCashReports mode="admin" accountants={accountants} />}
     </div>
   );
 }
