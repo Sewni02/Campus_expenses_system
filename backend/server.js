@@ -16,6 +16,7 @@ if (missingEnvVars.length > 0) {
 }
 
 const connectDB = require('./config/db');
+const { removeUploadedFiles } = require('./utils/cleanupUploads');
 const authRoutes = require('./routes/auth.routes');
 const adminRoutes = require('./routes/admin.routes');
 const expenseRoutes = require('./routes/expense.routes');
@@ -25,8 +26,19 @@ const hardwareRoutes = require('./routes/hardware.routes');
 const projectRoutes = require('./routes/Project.routes');
 const officeExpenseRoutes = require('./routes/officeExpense.routes');
 const pettyCashRoutes = require('./routes/pettyCash.routes');
+const lecturerSalaryRoutes = require('./routes/lecturerSalary.routes');
 
 const app = express();
+
+// Behind a reverse proxy (cPanel/Passenger, nginx, Render, ...) every request
+// appears to come from the proxy's IP, so the rate limiter would treat ALL users
+// as one person. TRUST_PROXY = number of proxies in front of the app (usually 1).
+// Leave it unset on localhost. Do NOT use `true` - clients could then fake their
+// IP with an X-Forwarded-For header and bypass the limiter.
+const trustProxyHops = Number(process.env.TRUST_PROXY);
+if (Number.isInteger(trustProxyHops) && trustProxyHops > 0) {
+  app.set('trust proxy', trustProxyHops);
+}
 
 
 // --- Security & core middleware ---
@@ -38,9 +50,10 @@ if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
 
-// Slow down brute-force attempts against login/signup specifically.
-// 20 requests per 15 minutes per IP is plenty for a real user, but blocks
-// automated password guessing.
+// Slow down brute-force attempts, but ONLY on the endpoints an attacker would
+// hammer. /api/auth/me is called on every dashboard load by logged-in users,
+// so it must NOT share this limit (shared campus WiFi = one IP for many users).
+// 20 requests per 15 minutes per IP is plenty for a real user.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -48,7 +61,21 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-app.use('/api/auth', authLimiter);
+
+// Forgot-password sends an email every time, so it gets a stricter limit
+// (stops someone spamming a user's inbox / burning the Gmail sending quota).
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { message: 'Too many reset requests. Please try again in a few minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/signup', authLimiter);
+app.use('/api/auth/reset-password', authLimiter);
+app.use('/api/auth/forgot-password', forgotPasswordLimiter);
 
 // --- Routes ---
 app.use('/api/auth', authRoutes);
@@ -60,6 +87,7 @@ app.use('/api/hardware', hardwareRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/office-expenses', officeExpenseRoutes);
 app.use('/api/petty-cash', pettyCashRoutes);
+app.use('/api/lecturer-salary', lecturerSalaryRoutes);
 
 app.get('/', (req, res) => {
   res.send('Campus Expense System API is running!');
@@ -75,8 +103,13 @@ app.use((req, res) => {
 // forwards any thrown error here via next(err) instead of each controller
 // handling its own try/catch. Controllers throw ApiError(statusCode, message)
 // for expected cases (400/404/etc); anything else falls through as a 500.
-app.use((err, req, res, next) => {
+app.use(async (err, req, res, next) => {
   console.error(err);
+
+  // If the request failed, delete any files it already uploaded to Cloudinary
+  // so no orphan files are left behind without a database record.
+  // (removeUploadedFiles never throws.)
+  await removeUploadedFiles(req);
 
   if (err.name === 'MulterError') {
     return res.status(400).json({ message: `File upload error: ${err.message}` });

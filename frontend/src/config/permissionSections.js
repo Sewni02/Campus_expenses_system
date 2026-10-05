@@ -11,6 +11,13 @@
 //      anything else renders the demo card until you build the real screen.
 export const PERMISSION_SECTIONS = [
   {
+    key: 'lecturer-salary',
+    label: 'Lecturer Salary',
+    kind: 'lecturer-salary',
+    description: 'Add lecturers and bank details, enter attendance and submit salaries for verification.',
+    permissions: [{ key: 'lecturer_salary_manage', label: 'Manage Lecturer Salary (Accountant)' }],
+  },
+  {
     key: 'petty-cash',
     label: 'Petty Cash',
     kind: 'petty-cash',

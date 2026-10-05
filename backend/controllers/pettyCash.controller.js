@@ -1,7 +1,6 @@
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
 const asyncHandler = require('../utils/asyncHandler');
-const { removeUploadedFiles } = require('../utils/cleanupUploads');
 const pettyCashService = require('../services/pettyCash.service');
 
 // ----- Accountant (own data only) -----
@@ -73,14 +72,9 @@ const getAccountants = asyncHandler(async (req, res) => {
 // POST /api/petty-cash/admin/allocations  (multipart)
 //   { accountant, month, fundDate, amount, method, paymentRef, note, slip(file) }
 const createAllocation = asyncHandler(async (req, res) => {
-  try {
-    const result = await pettyCashService.createAllocation(req.user, req.body, req.file);
-    res.status(201).json(result);
-  } catch (err) {
-    // The slip is already in Cloudinary - delete it if the fund was not saved.
-    await removeUploadedFiles(req);
-    throw err;
-  }
+  // If this throws, the central error handler (server.js) deletes the uploaded slip.
+  const result = await pettyCashService.createAllocation(req.user, req.body, req.file);
+  res.status(201).json(result);
 });
 
 // GET /api/petty-cash/admin/allocations?month=&accountant=

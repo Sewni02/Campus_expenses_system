@@ -5,6 +5,7 @@ import { API_BASE_URL } from '../config/api';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import PettyCashAdmin from './PettyCashAdmin';
+import LecturerSalary from './LecturerSalary';
 import './SuperAdminDashboard.css';
 
 // Sidebar icons: inline SVG (Lucide-style line icons). They take the colour of the
@@ -38,6 +39,12 @@ const SIDEBAR_ICONS = {
       <rect x="2" y="6" width="20" height="12" rx="2" />
       <circle cx="12" cy="12" r="2.5" />
       <path d="M6 12h.01M18 12h.01" />
+    </>
+  ),
+  'lecturer-salary': (
+    <>
+      <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+      <path d="M6 12v5c3 3 9 3 12 0v-5" />
     </>
   ),
   'section-c': (
@@ -264,6 +271,12 @@ const PERMISSION_GROUPS = [
     ],
   },
   {
+    category: 'Lecturer Salary',
+    options: [
+      { key: 'lecturer_salary_manage', label: 'Manage Lecturer Salary (Accountant)' },
+    ],
+  },
+  {
     category: 'Academic / Non-Academic Staff',
     options: [
       { key: 'staff_view_salary_receipts', label: 'View Salary Receipts' },
@@ -279,6 +292,7 @@ function SuperAdminDashboard() {
     { key: 'B', label: 'Constructions', icon: 'constructions' },
     { key: 'E', label: 'Office Expenses', icon: 'office-expenses' },
     { key: 'P', label: 'Petty Cash', icon: 'petty-cash' },
+    { key: 'L', label: 'Lecturer Salary', icon: 'lecturer-salary' },
     { key: 'C', label: 'Section C', icon: 'section-c' },
     { key: 'D', label: 'Section D', icon: 'section-d' },
   ];
@@ -318,6 +332,7 @@ function SuperAdminDashboard() {
           <OfficeExpenses />
         </div>
         {activeTab === 'P' && <PettyCashAdmin />}
+        {activeTab === 'L' && <LecturerSalary />}
         {activeTab === 'C' && <ComingSoon label="Section C" />}
         {activeTab === 'D' && <ComingSoon label="Section D" />}
       </div>
