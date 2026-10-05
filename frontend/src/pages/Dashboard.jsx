@@ -4,6 +4,7 @@ import axios from 'axios';
 import useTabState from '../hooks/useTabState';
 import { sectionsForUser } from '../config/permissionSections';
 import PettyCashPanel from './PettyCashPanel';
+import LecturerSalary from './LecturerSalary';
 import './SuperAdminDashboard.css';
 import './UserDashboard.css';
 
@@ -71,6 +72,7 @@ function Dashboard() {
       <div className="sa-content">
         {tab === 'overview' && <Overview user={user} sections={sections} onOpen={setActiveTab} />}
         {active?.kind === 'petty-cash' && <PettyCashPanel />}
+        {active?.kind === 'lecturer-salary' && <LecturerSalary isAdmin={false} />}
         {active?.kind === 'demo' && <DemoSection section={active} user={user} />}
       </div>
     </div>

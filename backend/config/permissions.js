@@ -21,6 +21,9 @@ const ALLOWED_PERMISSIONS = [
   'staff_view_salary_receipts',
   // Petty Cash (accountant: records petty cash spending + issues vouchers)
   'petty_cash_manage',
+  // Lecturer Salary (accountant: adds lecturers + bank details, enters attendance, submits for
+  // verification. Only the super admin verifies and marks salaries as paid.)
+  'lecturer_salary_manage',
 ];
 
 module.exports = { ALLOWED_PERMISSIONS };
