@@ -10,7 +10,9 @@
 //   numbers    12   2500   0.5
 //   operators  +  -  *  /  ( )     (x and × also mean multiply, ÷ means divide)
 //   percent    a number or name followed by %  means "divided by 100"   (5% = 0.05)
-//   functions  min(a, b, ...)   max(a, b, ...)   round(a)
+//              BUT right after + or - it means "that % of the left side":
+//              attendance * subFee * percentage% - 5%   takes 5% off the salary
+//   functions  min(a, b, ...)   max(a, b, ...)   round(a)   floor(a)
 //
 // The same logic is copied in frontend/src/utils/lecturerFormula.js for the live preview.
 // The server always re-calculates, so what is saved is what the server worked out.
@@ -21,6 +23,7 @@ const FUNCTIONS = {
   min: { fn: Math.min, minArgs: 2 },
   max: { fn: Math.max, minArgs: 2 },
   round: { fn: Math.round, minArgs: 1, maxArgs: 1 },
+  floor: { fn: Math.floor, minArgs: 1, maxArgs: 1 }, // drops the cents: floor(1923.75) = 1923
 };
 const MAX_LENGTH = 200;
 
@@ -105,7 +108,7 @@ function parseFormula(source) {
       const lower = tok.value.toLowerCase();
       if (isOp('(')) {
         const spec = FUNCTIONS[lower];
-        if (!spec) throw new FormulaError(`Unknown function "${tok.value}". You can use: min, max, round`);
+        if (!spec) throw new FormulaError(`Unknown function "${tok.value}". You can use: min, max, round, floor`);
         take();
         const args = [];
         if (!isOp(')')) {
@@ -149,7 +152,9 @@ function run(node, values) {
     case 'call': return FUNCTIONS[node.fn].fn(...node.args.map((a) => run(a, values)));
     default: {
       const l = run(node.l, values);
-      const r = run(node.r, values);
+      let r = run(node.r, values);
+      // Calculator style: "1000 - 5%" means 5% OF 1000 is taken off (950), not 0.05 taken off.
+      if ((node.op === '+' || node.op === '-') && node.r.t === 'pct') r = l * r;
       if (node.op === '+') return l + r;
       if (node.op === '-') return l - r;
       if (node.op === '*') return l * r;

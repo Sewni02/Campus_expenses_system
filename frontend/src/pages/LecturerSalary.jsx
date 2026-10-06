@@ -496,7 +496,7 @@ function LecturersPanel({ batch, formulas = [], onBatchChange }) {
           <label className="pc-field">
             How is this lecturer paid?
             <select value={form.payType} onChange={setField('payType')}>
-              <option value="formula">By formula (attendance × sub fee × %)</option>
+              <option value="formula">By formula</option>
               <option value="fixed">Fixed salary (outside the formula)</option>
             </select>
           </label>
@@ -715,12 +715,13 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
     setLecturerId(editing.lecturer);
     setMonth(editing.month);
     setType(editing.type || 'formula');
-    setFormulaId(editing.formula || '');
+    const lec = batch.lecturers.find((l) => l._id === editing.lecturer);
+    setFormulaId(lec?.formula || batch.formula || '');
     setAttendance(editing.type === 'fixed' || editing.attendance === undefined ? '' : String(editing.attendance));
     setFixedAmount(editing.type === 'fixed' ? String(editing.amount) : '');
     setNote(editing.note || '');
     setMessage(null);
-  }, [editing]);
+  }, [editing, batch]);
 
   const lecturer = batch.lecturers.find((l) => l._id === lecturerId) || null;
 
@@ -766,7 +767,8 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
     setMessage(null);
     setSaving(true);
     try {
-      const body = { type, note, ...(type === 'formula' ? { attendance, formulaId: formula?._id } : { fixedAmount }) };
+      // No formulaId is sent: the server uses the lecturer's formula, else the batch's formula.
+      const body = { type, note, ...(type === 'formula' ? { attendance } : { fixedAmount }) };
       const res = editing
         ? await axios.put(`/api/lecturer-salary/salaries/${editing._id}`, body)
         : await axios.post('/api/lecturer-salary/salaries', { ...body, batchId, lecturerId, month });
@@ -832,19 +834,10 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
             <label className="pc-field">
               Salary type
               <select value={type} onChange={(e) => setType(e.target.value)}>
-                <option value="formula">By formula (attendance)</option>
+                <option value="formula">By formula</option>
                 <option value="fixed">Fixed amount</option>
               </select>
             </label>
-
-            {type === 'formula' && (
-              <label className="pc-field">
-                Formula
-                <select value={formula?._id || ''} onChange={(e) => setFormulaId(e.target.value)}>
-                  {formulas.map((f) => <option key={f._id} value={f._id}>{f.name}</option>)}
-                </select>
-              </label>
-            )}
 
             {type === 'formula' ? (
               <label className="pc-field">
@@ -1207,7 +1200,7 @@ function FormulasSection({ formulas, onChanged }) {
             ))}
             <br />
             Use <code>+ − * /</code> and brackets <code>( )</code>. <code>%</code> after a number or name divides it by 100 (<code>5%</code> = 0.05,{' '}
-            <code>percentage%</code> = the lecturer's percentage as a fraction). Also <code>min(a, b)</code>, <code>max(a, b)</code>, <code>round(a)</code>.
+            <code>percentage%</code> = the lecturer's percentage as a fraction). Also <code>min(a, b)</code>, <code>max(a, b)</code>, <code>round(a)</code>, <code>floor(a)</code> (drops the cents).
             <br />
             Examples:{' '}
             {FORMULA_EXAMPLES.map(([label, expression]) => (

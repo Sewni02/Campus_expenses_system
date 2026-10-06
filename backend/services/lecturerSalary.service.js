@@ -408,12 +408,9 @@ const updateSalary = async (user, salaryId, body) => {
   const lecturer = batch.lecturers.id(salary.lecturer);
   if (!lecturer) throw new ApiError(404, 'Lecturer not found in this batch');
 
-  // No formula picked in the edit = keep the one this entry already had (if it still exists).
-  let formulaId = body.formulaId;
-  if (isBlank(formulaId) && salary.formula && (await LecturerFormula.exists({ _id: salary.formula }))) {
-    formulaId = salary.formula;
-  }
-  const values = await buildSalaryValues(batch, lecturer, { type: salary.type, ...body, formulaId });
+  // No formula sent = use the lecturer's formula, else the batch's formula, else Standard
+  // (so a draft always follows the formula saved on the batch).
+  const values = await buildSalaryValues(batch, lecturer, { type: salary.type, ...body });
   salary.set({ ...values, calculatedBy: user.id });
   await salary.save();
   return { message: 'Salary updated', salary };
