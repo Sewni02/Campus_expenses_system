@@ -140,7 +140,22 @@ app.use(async (err, req, res, next) => {
 // Connect to MongoDB first, and only start listening once that worked.
 // (connectDB exits the process with a clear message if the connection fails.)
 const PORT = process.env.PORT || 5000;
-connectDB().then(() => {
+connectDB().then(async () => {
+  // An older version of the lecturer salary page made "one salary per lecturer per month" a
+  // database rule (a unique index). That rule is gone from the code but stays inside MongoDB,
+  // and it is what gives "batch already in use" when a 2nd entry is saved. Drop it (safe to repeat).
+  try {
+    const LecturerSalary = require('./models/lecturerSalary.model');
+    const indexes = await LecturerSalary.collection.indexes();
+    for (const idx of indexes) {
+      if (idx.unique && idx.name !== '_id_') {
+        await LecturerSalary.collection.dropIndex(idx.name);
+        console.log(`Dropped old unique index "${idx.name}" on lecturer salaries`);
+      }
+    }
+  } catch (err) {
+    if (err.codeName !== 'NamespaceNotFound') console.warn('Could not check lecturer salary indexes:', err.message);
+  }
   app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
