@@ -1624,6 +1624,11 @@ function FormulasSection({ formulas, courses = [], onChanged }) {
   const setField = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
   const reset = () => { setForm(blankFormulaForm()); setEditingId(''); };
   const setTier = (i, key, value) => setForm((f) => ({ ...f, tiers: f.tiers.map((t, idx) => (idx === i ? { ...t, [key]: value } : t)) }));
+  // Typing a percentage on a range means "sub fee × percentage", so the Pays choice follows automatically.
+  const setTierPercentage = (i, value) => setForm((f) => ({
+    ...f,
+    tiers: f.tiers.map((t, idx) => (idx === i ? { ...t, percentage: value, ...(value !== '' ? { payBy: 'rate' } : {}) } : t)),
+  }));
   const addTier = () => setForm((f) => {
     const last = f.tiers[f.tiers.length - 1];
     const next = last && last.to !== '' && Number(last.to) >= 0 ? String(Math.floor(Number(last.to)) + 1) : '';
@@ -1824,9 +1829,16 @@ function FormulasSection({ formulas, courses = [], onChanged }) {
                         </td>
                         <td><input type="number" min="0.01" step="0.01" required placeholder={t.payBy === 'rate' ? 'sub fee' : ''} value={t.amount} onChange={(e) => setTier(i, 'amount', e.target.value)} style={{ width: 130 }} /></td>
                         <td>
-                          {t.payBy === 'rate'
-                            ? <input type="number" min="0.01" max="100" step="0.01" placeholder="lecturer's %" value={t.percentage} onChange={(e) => setTier(i, 'percentage', e.target.value)} style={{ width: 120 }} />
-                            : <small style={{ color: '#8FA3C0' }}>—</small>}
+                          <input
+                            type="number"
+                            min="0.01"
+                            max="100"
+                            step="0.01"
+                            placeholder={t.payBy === 'rate' ? "lecturer's %" : 'e.g. 50'}
+                            value={t.percentage}
+                            onChange={(e) => setTierPercentage(i, e.target.value)}
+                            style={{ width: 120 }}
+                          />
                         </td>
                         <td><button type="button" className="pc-btn-sm pc-btn-danger" disabled={form.tiers.length === 1} onClick={() => removeTier(i)}>Remove</button></td>
                       </tr>
@@ -1836,8 +1848,8 @@ function FormulasSection({ formulas, courses = [], onChanged }) {
               </div>
               <button type="button" className="pc-btn-sm" style={{ marginTop: 8 }} onClick={addTier}>+ Add a range</button>
               <p style={{ margin: '8px 0 0', fontSize: 13, color: '#4A6288' }}>
-                Each range has its own “Pays” choice. “Attendance × (sub fee × percentage)”: the Amount is the sub fee for that range, and the salary =
-                attendance × sub fee × percentage ÷ 100 — leave the percentage empty to use each lecturer's own percentage (typed when entering the salary).
+                Each range has its own “Pays” choice. Type a <strong>Percentage</strong> on a range to get “{byHours ? 'Hours' : 'Attendance'} × (sub fee × percentage)”: the Amount is the sub fee for that
+                range, and the salary = {byHours ? 'hours' : 'attendance'} × sub fee × percentage ÷ 100. Leave the percentage empty (with that Pays choice) to use each lecturer's own percentage, typed when entering the salary.
                 Other examples: 1 to 10 = 500 in total, 11 to 50 = 400 in total, 101 and above (leave “to” empty) = 25 × attendance.
                 If two ranges share a number (like 10), the lower range is used. Make a separate formula for every batch that has different ranges
                 (e.g. “Art 2025 ranges”, “Art 2024 ranges”), then choose it on that batch.
