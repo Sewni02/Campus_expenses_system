@@ -10,6 +10,7 @@ const { requireString, optionalString } = require('../utils/validators');
 
 const PAY_TYPES = ['formula', 'fixed'];
 const MODES = ['online', 'physical', 'recording'];
+const MEDIUMS = ['english', 'sinhala', 'both'];
 
 const isAdmin = (user) => user.role === 'super_admin';
 const isBlank = (v) => v === undefined || v === null || v === '';
@@ -97,6 +98,11 @@ const validateYear = (value) => {
   return year;
 };
 
+const validateMedium = (value) => {
+  if (!MEDIUMS.includes(value)) throw new ApiError(400, 'Choose the medium: English, Sinhala or Both');
+  return value;
+};
+
 const validateMode = (value) => {
   if (!MODES.includes(value)) throw new ApiError(400, 'Choose the part of the batch: online, physical or recording');
   return value;
@@ -124,6 +130,17 @@ const validateFixedAmount = (value) => {
     throw new ApiError(400, 'Fixed salary must be a number greater than 0');
   }
   return round2(amount);
+};
+
+const validateRate = (value, label) => {
+  const n = toNumber(value);
+  if (!Number.isFinite(n) || n <= 0 || n > 1_000_000_000) throw new ApiError(400, `${label} must be a number greater than 0`);
+  return round2(n);
+};
+const validateHours = (value) => {
+  const n = toNumber(value);
+  if (!Number.isFinite(n) || n <= 0 || n > 100_000) throw new ApiError(400, 'Hours must be a number greater than 0');
+  return round2(n);
 };
 
 const validateAttendance = (value) => {
@@ -177,15 +194,89 @@ const guardFormula = (fn) => {
 // Checks that a formula is written correctly by trying it with sample numbers.
 const validateExpression = (value) => {
   const expression = requireString(value, 'Formula', { max: 200 });
-  guardFormula(() => evaluateFormula(expression, { attendance: 20, subFee: 5000, percentage: 60 }, { allowNegative: true }));
+  guardFormula(() => evaluateFormula(expression, { attendance: 20, subFee: 5000, percentage: 60, hours: 10, hourRate: 500 }, { allowNegative: true }));
   return expression;
 };
 
-const formulaFields = (body) => ({
-  name: requireString(body.name, 'Formula name', { max: 60 }),
-  expression: validateExpression(body.expression),
-  description: optionalString(body.description, 'Description', { max: 200 }),
-});
+// ---- Attendance-range formulas: e.g. 1-10 = Rs. 500, 11-50 = Rs. 400 ----
+const fmtMoney = (n) => `Rs. ${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const validateTiers = (value, rangeBy) => {
+  if (!Array.isArray(value) || value.length === 0) throw new ApiError(400, 'Add at least one range');
+  if (value.length > 30) throw new ApiError(400, 'A formula can have at most 30 ranges');
+  const whole = rangeBy !== 'hours'; // attendance = whole numbers, hours may have decimals
+  const label = rangeBy === 'hours' ? 'hours' : 'attendance';
+  const tiers = value.map((t, i) => {
+    const from = toNumber(t.from);
+    const open = isBlank(t.to); // no "to" = and above
+    const to = open ? null : toNumber(t.to);
+    const amount = toNumber(t.amount);
+    const okNumber = (n) => Number.isFinite(n) && n >= 0 && n <= 1_000_000 && (!whole || Number.isInteger(n));
+    if (!okNumber(from) || (!open && (!okNumber(to) || to < from))) {
+      throw new ApiError(400, `Range ${i + 1}: "from" and "to" must be ${whole ? 'whole numbers' : 'numbers'} for ${label}, and "to" cannot be less than "from" (leave "to" empty for "and above")`);
+    }
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000) {
+      throw new ApiError(400, `Range ${i + 1}: the amount must be greater than 0`);
+    }
+    const payBy = ['total', 'unit', 'rate'].includes(t.payBy) ? t.payBy : t.perUnit === true || t.perUnit === 'true' ? 'unit' : 'total';
+    // "rate": attendance x (amount x percentage%). The percentage may be set on the range; empty = the lecturer's percentage.
+    const percentage = payBy === 'rate' && !isBlank(t.percentage) ? validatePercentage(t.percentage) : undefined;
+    return { from, to, amount: round2(amount), payBy, perUnit: payBy === 'unit', percentage };
+  });
+  tiers.sort((a, b) => a.from - b.from || (a.to ?? Infinity) - (b.to ?? Infinity));
+  const open = tiers.filter((t) => t.to === null);
+  if (open.length > 1 || (open.length === 1 && tiers[tiers.length - 1].to !== null)) {
+    throw new ApiError(400, 'Only the last range (the highest "from") can be left open with no "to"');
+  }
+  return tiers;
+};
+
+// The first range that contains the value (a number shared by two ranges, e.g. 10, uses the lower range).
+const findTier = (tiers, value) => tiers.find((t) => value >= t.from && (t.to === null || t.to === undefined || value <= t.to));
+
+// Older range formulas had a single "per attendance" switch for every range.
+// How a range pays: 'total' | 'unit' (amount x attendance) | 'rate' (attendance x (amount x percentage%)). Older formulas only had the unit/total switch.
+const tierPay = (formula, tier) => tier.payBy || (tier.perUnit === true || formula.rangeBasis === 'perAttendance' ? 'unit' : 'total');
+
+const tierLabel = (t) => (t.to === null || t.to === undefined ? `${t.from}+` : `${t.from}-${t.to}`);
+
+const describeTiers = (tiers, rangeBy) =>
+  `${rangeBy === 'hours' ? 'By hours' : 'By attendance'}: ` +
+  tiers
+    .map((t) => {
+      const unit = rangeBy === 'hours' ? 'hour' : 'attendance';
+      if (t.payBy === 'rate') return `${tierLabel(t)} = ${unit} x (${fmtMoney(t.amount)} x ${t.percentage ? `${t.percentage}%` : 'lecturer %'})`;
+      return `${tierLabel(t)} = ${fmtMoney(t.amount)}${t.payBy === 'unit' ? ` per ${unit}` : ''}`;
+    })
+    .join(' | ');
+
+const formulaFields = (body) => {
+  const kind = body.kind === 'range' ? 'range' : 'expression';
+  const base = {
+    name: requireString(body.name, 'Formula name', { max: 60 }),
+    description: optionalString(body.description, 'Description', { max: 200 }),
+    degree: optionalString(body.degree, 'Degree', { max: 60 }) || undefined,
+    kind,
+  };
+  if (kind === 'range') {
+    const rangeBy = body.rangeBy === 'hours' ? 'hours' : 'attendance';
+    const tiers = validateTiers(body.tiers, rangeBy);
+    return { ...base, tiers, rangeBy, rangeBasis: 'fixed', expression: describeTiers(tiers, rangeBy) };
+  }
+  return { ...base, tiers: [], rangeBy: 'attendance', rangeBasis: 'fixed', expression: validateExpression(body.expression) };
+};
+
+// Which of the lecturer's rates a formula needs (so the lecturer form only asks for those).
+const formulaNeeds = (formula) => {
+  if (formula && formula.kind === 'range') {
+    // Only a range paid as "attendance x (sub fee x percentage)" without its own percentage needs the lecturer's percentage.
+    const needsPct = (formula.tiers || []).some((t) => tierPay(formula, t) === 'rate' && (t.percentage === null || t.percentage === undefined));
+    return { subFee: false, percentage: needsPct, hourRate: false };
+  }
+  if (!formula) return { subFee: false, percentage: false, hourRate: false };
+  const { variables } = guardFormula(() => parseFormula(formula.expression));
+  return { subFee: variables.includes('subFee'), percentage: variables.includes('percentage'), hourRate: variables.includes('hourRate') };
+};
 
 const listFormulas = async () => {
   await ensureDefaultFormula();
@@ -225,9 +316,12 @@ const deleteFormula = async (id) => {
 };
 
 // Blank = "none chosen". Otherwise the formula must exist.
-const validateFormulaRef = async (value) => {
+const validateFormulaRef = async (value, faculty) => {
   if (isBlank(value)) return undefined;
   const formula = await findOrFail(LecturerFormula, value, 'Formula not found');
+  if (faculty && formula.degree && formula.degree.toLowerCase() !== String(faculty).toLowerCase()) {
+    throw new ApiError(400, `The formula "${formula.name}" is only for the ${formula.degree} degree`);
+  }
   return formula._id;
 };
 
@@ -260,24 +354,29 @@ const bankFields = (body) => {
 
 // A "formula" lecturer needs sub fee + percentage. A "fixed" lecturer needs a fixed salary
 // (sub fee / percentage are then optional - kept only if typed in).
-const lecturerFields = (body) => {
+// "needs" = which rates the lecturer's formula uses; only those are required (the rest are optional).
+const lecturerFields = (body, needs = { subFee: true, percentage: true, hourRate: false }) => {
   const payType = validatePayType(body.payType);
   const fields = {
     name: requireString(body.name, 'Lecturer name', { max: 100 }),
     phone: optionalString(body.phone, 'Phone', { max: 20 }),
     subject: requireString(body.subject, 'Subject', { max: 100 }),
+    medium: validateMedium(body.medium),
     payType,
     ...bankFields(body),
   };
 
+  const optional = (value, check) => (isBlank(value) ? undefined : check(value));
   if (payType === 'formula') {
-    fields.subFee = validateSubFee(body.subFee);
-    fields.percentage = validatePercentage(body.percentage);
+    fields.subFee = needs.subFee ? validateSubFee(body.subFee) : optional(body.subFee, validateSubFee);
+    fields.percentage = needs.percentage ? validatePercentage(body.percentage) : optional(body.percentage, validatePercentage);
+    fields.hourRate = needs.hourRate ? validateRate(body.hourRate, 'Hourly rate') : optional(body.hourRate, (v) => validateRate(v, 'Hourly rate'));
     fields.fixedSalary = undefined;
   } else {
     fields.fixedSalary = validateFixedAmount(body.fixedSalary);
-    fields.subFee = isBlank(body.subFee) ? undefined : validateSubFee(body.subFee);
-    fields.percentage = isBlank(body.percentage) ? undefined : validatePercentage(body.percentage);
+    fields.subFee = optional(body.subFee, validateSubFee);
+    fields.percentage = optional(body.percentage, validatePercentage);
+    fields.hourRate = optional(body.hourRate, (v) => validateRate(v, 'Hourly rate'));
   }
   return fields;
 };
@@ -312,7 +411,7 @@ const createBatch = async (user, body) => {
   if (await LecturerBatch.exists({ faculty, year })) {
     throw new ApiError(409, `The ${year} batch already exists in this faculty`);
   }
-  const formula = await validateFormulaRef(body.formulaId);
+  const formula = await validateFormulaRef(body.formulaId, faculty);
   const batch = await LecturerBatch.create({ faculty, year, formula, createdBy: user.id });
   return { message: `${year} batch added`, batch };
 };
@@ -322,7 +421,7 @@ const createBatch = async (user, body) => {
 // pick up the new formula the next time they are edited and saved.
 const updateBatchSettings = async (id, body) => {
   const batch = await findOrFail(LecturerBatch, id, 'Batch not found');
-  batch.formula = await validateFormulaRef(body.formulaId);
+  batch.formula = await validateFormulaRef(body.formulaId, batch.faculty);
   batch.deductionPercent = 0; // the old deduction % setting is replaced by the formula
   await batch.save();
   return { message: 'Batch formula updated', batch };
@@ -342,8 +441,10 @@ const getBatch = (id) => findOrFail(LecturerBatch, id, 'Batch not found');
 // ---------- Lecturers (inside a batch) - accountant or super admin ----------
 const addLecturer = async (user, batchId, body) => {
   const batch = await findOrFail(LecturerBatch, batchId, 'Batch not found');
-  const fields = lecturerFields(body);
-  fields.formula = fields.payType === 'formula' ? await validateFormulaRef(body.formulaId) : undefined;
+  const formulaRef = await validateFormulaRef(body.formulaId, batch.faculty);
+  const needs = formulaNeeds(await resolveFormula(batch, { formula: formulaRef }, undefined));
+  const fields = lecturerFields(body, needs);
+  fields.formula = fields.payType === 'formula' ? formulaRef : undefined;
   if (fields.bankName) {
     fields.bankUpdatedAt = new Date();
     fields.bankUpdatedByName = await actorName(user);
@@ -358,8 +459,10 @@ const updateLecturer = async (user, batchId, lecturerId, body) => {
   const lecturer = batch.lecturers.id(lecturerId);
   if (!lecturer) throw new ApiError(404, 'Lecturer not found');
 
-  const fields = lecturerFields(body);
-  fields.formula = fields.payType === 'formula' ? await validateFormulaRef(body.formulaId) : undefined;
+  const formulaRef = await validateFormulaRef(body.formulaId, batch.faculty);
+  const needs = formulaNeeds(await resolveFormula(batch, { formula: formulaRef }, undefined));
+  const fields = lecturerFields(body, needs);
+  fields.formula = fields.payType === 'formula' ? formulaRef : undefined;
   if (bankChanged(lecturer, fields)) {
     fields.bankUpdatedAt = new Date();
     fields.bankUpdatedByName = await actorName(user);
@@ -397,9 +500,57 @@ const buildSalaryValues = async (batch, lecturer, input) => {
   };
 
   if (type === 'formula') {
-    const attendance = validateAttendance(input.attendance);
     const formula = await resolveFormula(batch, lecturer, input.formulaId);
+
+    // Range formula: the attendance (or the hours) picks the range, the range gives the amount.
+    if (formula.kind === 'range') {
+      const byHours = formula.rangeBy === 'hours';
+      const attendance = byHours ? undefined : validateAttendance(input.attendance);
+      const hours = byHours ? validateHours(input.hours) : undefined;
+      const value = byHours ? hours : attendance;
+      const word = byHours ? 'Hours' : 'Attendance';
+      const tier = findTier(formula.tiers, value);
+      if (!tier) {
+        throw new ApiError(400, `No range in "${formula.name}" covers ${word.toLowerCase()} ${value}. Add a range for it in the Formulas tab.`);
+      }
+      const payBy = tierPay(formula, tier);
+      let percentage;
+      if (payBy === 'rate') {
+        percentage = tier.percentage ? tier.percentage : isBlank(input.percentage) ? lecturer.percentage : validatePercentage(input.percentage);
+        if (!percentage) throw new ApiError(400, 'This range needs the lecturer\'s percentage. Type it in, or add it in the lecturer details.');
+      }
+      const amount = round2(payBy === 'rate' ? value * tier.amount * (percentage / 100) : payBy === 'unit' ? tier.amount * value : tier.amount);
+      return {
+        ...values,
+        formula: formula._id,
+        formulaName: formula.name,
+        expression: formula.expression,
+        attendance,
+        hours,
+        subFee: payBy === 'rate' ? tier.amount : undefined,
+        percentage,
+        hourRate: undefined,
+        calcText:
+          payBy === 'rate'
+            ? `${word} ${value} falls in ${tierLabel(tier)}: ${value} x (${fmtMoney(tier.amount)} x ${percentage}%)`
+            : payBy === 'unit'
+              ? `${word} ${value} falls in ${tierLabel(tier)}: ${value} x ${fmtMoney(tier.amount)}`
+              : `${word} ${value} falls in ${tierLabel(tier)}: ${fmtMoney(tier.amount)}`,
+        grossAmount: amount,
+        deductionPercent: 0,
+        amount,
+      };
+    }
+
     const { variables } = guardFormula(() => parseFormula(formula.expression));
+    const attendance = variables.includes('attendance') ? validateAttendance(input.attendance) : undefined;
+    const hours = variables.includes('hours') ? validateHours(input.hours) : undefined;
+    let hourRate;
+    if (variables.includes('hourRate')) {
+      const raw = isBlank(input.hourRate) ? lecturer.hourRate : input.hourRate;
+      if (isBlank(raw)) throw new ApiError(400, 'This formula needs the hourly rate. Type it in, or add it in the lecturer details.');
+      hourRate = validateRate(raw, 'Hourly rate');
+    }
     // Online / physical / recording can have different rates, so the entry may carry its own
     // sub fee and percentage (blank = the lecturer's normal ones).
     const subFee = isBlank(input.subFee) ? lecturer.subFee : validateSubFee(input.subFee);
@@ -411,7 +562,7 @@ const buildSalaryValues = async (batch, lecturer, input) => {
       throw new ApiError(400, 'This formula needs the lecturer\'s percentage. Add it in the lecturer details, or use a fixed salary.');
     }
     const amount = guardFormula(() =>
-      evaluateFormula(formula.expression, { attendance, subFee: subFee || 0, percentage: percentage || 0 })
+      evaluateFormula(formula.expression, { attendance: attendance || 0, subFee: subFee || 0, percentage: percentage || 0, hours: hours || 0, hourRate: hourRate || 0 })
     );
     return {
       ...values,
@@ -419,8 +570,11 @@ const buildSalaryValues = async (batch, lecturer, input) => {
       formulaName: formula.name,
       expression: formula.expression,
       attendance,
-      subFee,
-      percentage,
+      subFee: variables.includes('subFee') ? subFee : undefined,
+      percentage: variables.includes('percentage') ? percentage : undefined,
+      hours,
+      hourRate,
+      calcText: undefined,
       grossAmount: amount,
       deductionPercent: 0,
       amount,
@@ -436,6 +590,9 @@ const buildSalaryValues = async (batch, lecturer, input) => {
     attendance: undefined,
     subFee: undefined,
     percentage: undefined,
+    hours: undefined,
+    hourRate: undefined,
+    calcText: undefined,
     grossAmount: amount,
     deductionPercent: 0,
     amount,
@@ -608,7 +765,7 @@ const listPeople = async () => {
       const key = personKey(l);
       const prev = people.get(key);
       if (!prev) {
-        people.set(key, { key, name: l.name, phone: l.phone, subject: l.subject, bankName: l.bankName, bankBranch: l.bankBranch, accountNumber: l.accountNumber, accountHolder: l.accountHolder, batches: 1 });
+        people.set(key, { key, name: l.name, phone: l.phone, subject: l.subject, medium: l.medium, bankName: l.bankName, bankBranch: l.bankBranch, accountNumber: l.accountNumber, accountHolder: l.accountHolder, batches: 1 });
       } else {
         prev.batches += 1;
         if (!prev.accountNumber && l.accountNumber) Object.assign(prev, { bankName: l.bankName, bankBranch: l.bankBranch, accountNumber: l.accountNumber, accountHolder: l.accountHolder });
