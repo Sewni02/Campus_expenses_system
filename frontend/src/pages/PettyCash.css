@@ -62,3 +62,14 @@
 .pc-bar-val { text-align: right; color: #4A6288; white-space: nowrap; }
 .pc-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 @media (max-width: 900px) { .pc-two-col { grid-template-columns: 1fr; } .pc-bar-row { grid-template-columns: 110px 1fr 110px; } }
+/* "+ Add degree" box that sits next to the degree tabs */
+.pc-add-degree { display: flex; align-items: center; gap: 8px; margin-left: 4px; }
+.pc-add-degree input {
+  width: 190px; padding: 8px 12px; border: 1px solid #D3DCEB; border-radius: 6px; font-size: 14px;
+  font-family: inherit; background: #fff; color: #0A1F44; transition: border-color .15s, box-shadow .15s;
+}
+.pc-add-degree input::placeholder { color: #8FA3C0; }
+.pc-add-degree input:focus { outline: none; border-color: #0F7A6F; box-shadow: 0 0 0 3px rgba(15, 122, 111, .15); }
+.pc-add-degree .pc-btn-sm { padding: 8px 16px; font-size: 13px; }
+.pc-tab.pc-tab-add { border-style: dashed; color: #0F7A6F; }
+.pc-tab.pc-tab-add:hover { background: #F1F8F7; }

@@ -7,11 +7,65 @@ import './PettyCash.css'; // re-uses the same cards / tables / buttons as Petty 
 
 const apiError = (err, fallback) => err.response?.data?.message || fallback;
 
-const FACULTIES = [
-  ['management', 'Management'],
-  ['art', 'Art'],
+// The 3 parts of every batch. One lecturer can be paid in all three.
+const MODES = [
+  ['online', 'Online'],
+  ['physical', 'Physical'],
+  ['recording', 'Recording'],
 ];
-const FACULTY_LABELS = Object.fromEntries(FACULTIES);
+const modeLabel = (m) => (MODES.find(([key]) => key === m) || [null, '—'])[1];
+
+// The degree tab to show: the one in the URL if it still exists, else the first degree.
+const pickCourse = (courses, wanted) => (courses.find((c) => c.name === wanted) || courses[0] || {}).name || '';
+
+// Degree tabs (Management | Art | B.Com ...)
+// The Super Admin also gets a "+ Add degree" tab at the end: type a name and a new tab appears.
+function CourseTabs({ courses, value, onChange, canAdd = false, onChanged }) {
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const add = async (e) => {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    try {
+      const res = await axios.post('/api/lecturer-salary/courses', { name });
+      setName('');
+      setAdding(false);
+      if (onChanged) await onChanged();
+      onChange(res.data.course.name);
+    } catch (err) {
+      setError(apiError(err, 'Could not add the degree'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="pc-tabs" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+        {courses.map((c) => (
+          <button key={c._id} className={`pc-tab ${value === c.name ? 'active' : ''}`} onClick={() => onChange(c.name)}>
+            {c.name}
+          </button>
+        ))}
+        {canAdd && !adding && (
+          <button className="pc-tab pc-tab-add" onClick={() => setAdding(true)}>+ Add degree</button>
+        )}
+        {canAdd && adding && (
+          <form onSubmit={add} className="pc-add-degree">
+            <input type="text" required autoFocus maxLength={60} placeholder="e.g. B.Com" value={name} onChange={(e) => setName(e.target.value)} />
+            <button className="pc-btn-sm" type="submit" disabled={busy}>Add</button>
+            <button className="pc-btn-sm" type="button" onClick={() => { setAdding(false); setName(''); setError(''); }}>Cancel</button>
+          </form>
+        )}
+      </div>
+      {error && <div className="pc-alert err">{error}</div>}
+    </>
+  );
+}
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
@@ -135,7 +189,7 @@ function MonthYearPicker({ value, onChange, disabled = false }) {
   );
 }
 
-const batchLabel = (b) => `${FACULTY_LABELS[b.faculty]} — ${b.year} Batch`;
+const batchLabel = (b) => `${b.faculty} — ${b.year} Batch`;
 const payTypeLabel = (t) => (t === 'fixed' ? 'Fixed salary' : 'Formula');
 
 // ---------------------------------------------------------------------------
@@ -146,7 +200,7 @@ const payTypeLabel = (t) => (t === 'fixed' ? 'Fixed salary' : 'Formula');
 //                       lecturers + bank details, enters salaries, submits them
 //
 //   Tab "Salaries"             -> the salary FORM (pick batch, month, year, lecturer) + that month's entries
-//   Tab "Batches & Lecturers"  -> Management | Art -> batches -> lecturers (pay type, bank details)
+//   Tab "Batches & Lecturers"  -> degrees (super admin adds them) -> batches -> lecturers (pay type, bank details)
 //   Tab "Formulas" (super admin) -> write your own salary formulas
 // The selected tab ("ls"), faculty ("lf") and opened batch ("lb") live in the URL, so a
 // refresh or the browser back button keeps you where you were.
@@ -154,10 +208,15 @@ const payTypeLabel = (t) => (t === 'fixed' ? 'Fixed salary' : 'Formula');
 function LecturerSalary({ isAdmin = true }) {
   const [section, setSection] = useTabState('ls', 'salaries');
   const [formulas, setFormulas] = useState([]);
+  const [courses, setCourses] = useState(null); // the degrees
 
   const loadFormulas = () =>
     axios.get('/api/lecturer-salary/formulas').then((res) => setFormulas(res.data)).catch(() => {});
   useEffect(() => { loadFormulas(); }, []);
+
+  const loadCourses = () =>
+    axios.get('/api/lecturer-salary/courses').then((res) => setCourses(res.data)).catch(() => setCourses([]));
+  useEffect(() => { loadCourses(); }, []);
 
   return (
     <div className="sa-page pc-page">
@@ -165,38 +224,92 @@ function LecturerSalary({ isAdmin = true }) {
         <h1 className="sa-page-title" style={{ margin: 0 }}>Lecturer Salary</h1>
       </div>
       <div className="pc-tabs">
-        {[['salaries', 'Salaries'], ['batches', 'Batches & Lecturers'], ...(isAdmin ? [['formulas', 'Formulas']] : [])].map(([key, label]) => (
+        {[['salaries', 'Salaries'], ['payments', 'Payments'], ['batches', 'Batches & Lecturers'], ...(isAdmin ? [['formulas', 'Formulas']] : [])].map(([key, label]) => (
           <button key={key} className={`pc-tab ${section === key ? 'active' : ''}`} onClick={() => setSection(key)}>
             {label}
           </button>
         ))}
       </div>
 
-      {section === 'salaries' && <SalariesSection isAdmin={isAdmin} formulas={formulas} />}
-      {section === 'batches' && <BatchesSection isAdmin={isAdmin} formulas={formulas} />}
+      {section === 'salaries' && <SalariesSection isAdmin={isAdmin} formulas={formulas} courses={courses} onCoursesChanged={loadCourses} />}
+      {section === 'payments' && <PaymentsSection isAdmin={isAdmin} courses={courses || []} />}
+      {section === 'batches' && <BatchesSection isAdmin={isAdmin} formulas={formulas} courses={courses} onCoursesChanged={loadCourses} />}
       {section === 'formulas' && isAdmin && <FormulasSection formulas={formulas} onChanged={loadFormulas} />}
     </div>
   );
 }
 
 // ---------- Batches & lecturers ----------
-function BatchesSection({ isAdmin, formulas }) {
-  const [faculty, setFaculty] = useTabState('lf', 'management');
+function BatchesSection({ isAdmin, formulas, courses, onCoursesChanged }) {
+  const [faculty, setFaculty] = useTabState('lf', '');
   const [batchId, setBatchId] = useTabState('lb', '');
 
   if (batchId) return <BatchDetail batchId={batchId} isAdmin={isAdmin} formulas={formulas} onBack={() => setBatchId('')} />;
+  if (courses === null) return <p>Loading…</p>;
+  const active = pickCourse(courses, faculty);
 
   return (
     <>
-      <div className="pc-tabs">
-        {FACULTIES.map(([key, label]) => (
-          <button key={key} className={`pc-tab ${faculty === key ? 'active' : ''}`} onClick={() => setFaculty(key)}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <BatchList faculty={faculty} isAdmin={isAdmin} formulas={formulas} onOpen={setBatchId} />
+      <CourseTabs courses={courses} value={active} onChange={setFaculty} canAdd={isAdmin} onChanged={onCoursesChanged} />
+      {courses.length === 0 ? (
+        <p className="pc-empty">
+          {isAdmin ? 'No degrees yet — click “+ Add degree” above (for example Management, Art, B.Com), then add its batches.' : 'No degrees yet. The Super Admin needs to add a degree first.'}
+        </p>
+      ) : (
+        <>
+          {isAdmin && <CoursesPanel courses={courses} active={active} onSelect={setFaculty} onChanged={onCoursesChanged} />}
+          <BatchList faculty={active} isAdmin={isAdmin} formulas={formulas} onOpen={setBatchId} />
+        </>
+      )}
     </>
+  );
+}
+
+// Super admin: add / rename / delete degrees (Management, Art, B.Com ...).
+function CoursesPanel({ courses, active, onSelect, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(null);
+  const current = courses.find((c) => c.name === active);
+
+  const run = async (fn) => {
+    setMessage(null);
+    setBusy(true);
+    try {
+      const res = await fn();
+      setMessage({ type: 'ok', text: res.data.message });
+      onChanged();
+      return res;
+    } catch (err) {
+      setMessage({ type: 'err', text: apiError(err, 'Could not update the course') });
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rename = async () => {
+    const next = window.prompt(`New name for "${current.name}"?`, current.name);
+    if (next === null || !next.trim() || next.trim() === current.name) return;
+    const res = await run(() => axios.put(`/api/lecturer-salary/courses/${current._id}`, { name: next.trim() }));
+    if (res) onSelect(res.data.course.name);
+  };
+
+  const remove = async () => {
+    if (!window.confirm(`Delete the degree "${current.name}"? This only works if it has no batches.`)) return;
+    await run(() => axios.delete(`/api/lecturer-salary/courses/${current._id}`));
+  };
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      {message && <div className={`pc-alert ${message.type}`}>{message.text}</div>}
+      {current && (
+        <div>
+          <small style={{ color: '#4A6288' }}>Selected degree: <strong>{current.name}</strong> ({current.batchCount} batch{current.batchCount === 1 ? '' : 'es'}) </small>{' '}
+          <button className="pc-btn-sm" disabled={busy} onClick={rename}>Rename</button>{' '}
+          <button className="pc-btn-sm pc-btn-danger" disabled={busy || current.batchCount > 0} title={current.batchCount > 0 ? 'Delete its batches first' : ''} onClick={remove}>Delete</button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -254,7 +367,7 @@ function BatchList({ faculty, isAdmin, formulas = [], onOpen, readOnly = false }
 
       {canManage && (
         <div className="pc-panel">
-          <h3>Add a new {FACULTY_LABELS[faculty]} batch</h3>
+          <h3>Add a new {faculty} batch</h3>
           <form className="pc-form" onSubmit={addBatch}>
             <label className="pc-field">
               Batch year
@@ -273,7 +386,7 @@ function BatchList({ faculty, isAdmin, formulas = [], onOpen, readOnly = false }
         </div>
       )}
 
-      <h3>{FACULTY_LABELS[faculty]} batches</h3>
+      <h3>{faculty} batches</h3>
       {batches === null && <p>Loading…</p>}
       {batches && batches.length === 0 && (
         <p className="pc-empty">
@@ -296,7 +409,7 @@ function BatchList({ faculty, isAdmin, formulas = [], onOpen, readOnly = false }
               onClick={() => onOpen(b._id)}
               onKeyDown={(e) => e.key === 'Enter' && onOpen(b._id)}
             >
-              <p>{FACULTY_LABELS[faculty]}</p>
+              <p>{faculty}</p>
               <h2>{b.year} Batch</h2>
               <small>{b.lecturerCount} lecturer(s) · {b.formulaName || defaultFormula?.name || 'Standard'}</small>
               {b.legacyDeduction > 0 && <><br /><small style={{ color: '#B7791F' }}>Old −{b.legacyDeduction}% deduction no longer used — choose a formula</small></>}
@@ -418,6 +531,7 @@ const emptyForm = {
 
 function LecturersPanel({ batch, formulas = [], onBatchChange }) {
   const [form, setForm] = useState(emptyForm);
+  const [people, setPeople] = useState([]); // lecturers already added in any batch
   const [editingId, setEditingId] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
@@ -431,6 +545,32 @@ function LecturersPanel({ batch, formulas = [], onBatchChange }) {
   };
 
   const reset = () => { setForm(emptyForm); setEditingId(''); };
+
+  useEffect(() => {
+    axios.get('/api/lecturer-salary/people').then((res) => setPeople(res.data)).catch(() => {});
+  }, [batch]);
+
+  // The same person teaching in another batch: picking their name fills in their details, so they are
+  // recognised as ONE lecturer and can be paid in one payment.
+  const nameChanged = (e) => {
+    const value = e.target.value;
+    const match = !editingId && people.find((p) => p.name.toLowerCase() === value.trim().toLowerCase());
+    setForm((f) => ({
+      ...f,
+      name: value,
+      ...(match
+        ? {
+            phone: f.phone || match.phone || '',
+            subject: f.subject || match.subject || '',
+            bankName: f.bankName || match.bankName || '',
+            bankBranch: f.bankBranch || match.bankBranch || '',
+            accountNumber: f.accountNumber || match.accountNumber || '',
+            accountHolder: f.accountHolder || match.accountHolder || '',
+          }
+        : {}),
+    }));
+  };
+
 
   const submit = async (e) => {
     e.preventDefault();
@@ -483,7 +623,10 @@ function LecturersPanel({ batch, formulas = [], onBatchChange }) {
         <form className="pc-form" onSubmit={submit}>
           <label className="pc-field">
             Lecturer name
-            <input type="text" required maxLength={100} value={form.name} onChange={setField('name')} />
+            <input type="text" required maxLength={100} list="lecturer-people" value={form.name} onChange={nameChanged} />
+            <datalist id="lecturer-people">
+              {people.map((p) => <option key={p.key} value={p.name}>{p.subject}{p.phone ? ` · ${p.phone}` : ''}</option>)}
+            </datalist>
           </label>
           <label className="pc-field">
             Phone (optional)
@@ -600,23 +743,27 @@ function LecturersPanel({ batch, formulas = [], onBatchChange }) {
 }
 
 // ---------- Salaries: Management | Art -> batch cards -> the batch's salary page ----------
-function SalariesSection({ isAdmin, formulas }) {
-  const [faculty, setFaculty] = useTabState('sf', 'management');
+function SalariesSection({ isAdmin, formulas, courses, onCoursesChanged }) {
+  const [faculty, setFaculty] = useTabState('sf', '');
   const [batchId, setBatchId] = useTabState('sb', '');
 
   if (batchId) return <BatchSalaries batchId={batchId} isAdmin={isAdmin} formulas={formulas} onBack={() => setBatchId('')} />;
+  if (courses === null) return <p>Loading…</p>;
+  const active = pickCourse(courses, faculty);
+  if (courses.length === 0) {
+    return (
+      <>
+        <CourseTabs courses={courses} value="" onChange={setFaculty} canAdd={isAdmin} onChanged={onCoursesChanged} />
+        <p className="pc-empty">{isAdmin ? 'No degrees yet — click “+ Add degree” above.' : 'No degrees yet. The Super Admin needs to add a degree first.'}</p>
+      </>
+    );
+  }
 
   return (
     <>
       <p style={{ margin: '0 0 14px', color: '#4A6288', fontSize: 13 }}>Choose a batch to enter its salaries.</p>
-      <div className="pc-tabs">
-        {FACULTIES.map(([key, label]) => (
-          <button key={key} className={`pc-tab ${faculty === key ? 'active' : ''}`} onClick={() => setFaculty(key)}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <BatchList faculty={faculty} isAdmin={isAdmin} formulas={formulas} readOnly onOpen={setBatchId} />
+      <CourseTabs courses={courses} value={active} onChange={setFaculty} canAdd={isAdmin} onChanged={onCoursesChanged} />
+      <BatchList faculty={active} isAdmin={isAdmin} formulas={formulas} readOnly onOpen={setBatchId} />
     </>
   );
 }
@@ -626,6 +773,7 @@ function BatchSalaries({ batchId, isAdmin, formulas, onBack }) {
   const [batch, setBatch] = useState(null);
   const [error, setError] = useState('');
   const [month, setMonth] = useState(currentMonthString());
+  const [mode, setMode] = useTabState('sm', 'online'); // the 3 parts of a batch
   const [editing, setEditing] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -661,8 +809,17 @@ function BatchSalaries({ batchId, isAdmin, formulas, onBack }) {
         <button className="pc-btn-sm" onClick={onBack}>← Back to batches</button>
       </div>
 
+      <div className="pc-tabs">
+        {MODES.map(([key, label]) => (
+          <button key={key} className={`pc-tab ${mode === key ? 'active' : ''}`} onClick={() => { setMode(key); setEditing(null); }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
       <SalaryForm
         batch={batch}
+        mode={mode}
         formulas={formulas}
         editing={editing}
         defaultMonth={month}
@@ -671,6 +828,7 @@ function BatchSalaries({ batchId, isAdmin, formulas, onBack }) {
       />
       <SalaryList
         batchId={batch._id}
+        mode={mode}
         month={month}
         setMonth={setMonth}
         refreshKey={refreshKey}
@@ -684,12 +842,14 @@ function BatchSalaries({ batchId, isAdmin, formulas, onBack }) {
 
 // The salary FORM of one batch. Pick the month + year and the lecturer: the lecturer's details
 // fill in by themselves. Then either the formula (attendance) or a fixed salary.
-function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit, onSaved }) {
+function SalaryForm({ batch, mode, formulas = [], editing, defaultMonth, onCancelEdit, onSaved }) {
   const batchId = batch._id;
   const defaultFormula = formulas.find((f) => f.isDefault);
   const [lecturerId, setLecturerId] = useState('');
   const [month, setMonth] = useState(defaultMonth);
   const [type, setType] = useState('formula');
+  const [subFeeInput, setSubFeeInput] = useState('');
+  const [percentageInput, setPercentageInput] = useState('');
   const [formulaId, setFormulaId] = useState('');
   const [attendance, setAttendance] = useState('');
   const [fixedAmount, setFixedAmount] = useState('');
@@ -715,6 +875,8 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
     setLecturerId(editing.lecturer);
     setMonth(editing.month);
     setType(editing.type || 'formula');
+    setSubFeeInput(editing.subFee ? String(editing.subFee) : '');
+    setPercentageInput(editing.percentage ? String(editing.percentage) : '');
     const lec = batch.lecturers.find((l) => l._id === editing.lecturer);
     setFormulaId(lec?.formula || batch.formula || '');
     setAttendance(editing.type === 'fixed' || editing.attendance === undefined ? '' : String(editing.attendance));
@@ -735,6 +897,8 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
       setType(l.payType || 'formula');
       setFormulaId(l.formula || batch.formula || '');
       setFixedAmount(l.fixedSalary ? String(l.fixedSalary) : '');
+      setSubFeeInput(l.subFee ? String(l.subFee) : '');
+      setPercentageInput(l.percentage ? String(l.percentage) : '');
     }
   };
 
@@ -744,6 +908,8 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
     setFixedAmount('');
     setNote('');
     setType('formula');
+    setSubFeeInput('');
+    setPercentageInput('');
   };
 
   // Live preview of the amount (the server works it out again when saving).
@@ -753,12 +919,14 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
   const fixedNum = Number(fixedAmount);
   const validFixed = fixedAmount !== '' && fixedNum > 0;
   const used = formula ? formulaVariables(formula.expression) : [];
+  const subFeeNum = Number(subFeeInput) > 0 ? Number(subFeeInput) : 0;
+  const percentageNum = Number(percentageInput) > 0 ? Number(percentageInput) : 0;
   const missing = lecturer
-    ? [used.includes('subFee') && !lecturer.subFee && 'sub fee', used.includes('percentage') && !lecturer.percentage && 'percentage'].filter(Boolean)
+    ? [used.includes('subFee') && !subFeeNum && 'sub fee', used.includes('percentage') && !percentageNum && 'percentage'].filter(Boolean)
     : [];
   const calc =
     type === 'formula' && lecturer && formula && validAtt && missing.length === 0
-      ? tryFormula(formula.expression, { attendance: attNum, subFee: lecturer.subFee || 0, percentage: lecturer.percentage || 0 })
+      ? tryFormula(formula.expression, { attendance: attNum, subFee: subFeeNum, percentage: percentageNum })
       : null;
   const amount = type === 'fixed' ? (validFixed ? round2(fixedNum) : null) : calc && calc.amount !== undefined ? calc.amount : null;
 
@@ -768,7 +936,7 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
     setSaving(true);
     try {
       // No formulaId is sent: the server uses the lecturer's formula, else the batch's formula.
-      const body = { type, note, ...(type === 'formula' ? { attendance } : { fixedAmount }) };
+      const body = { type, mode, note, ...(type === 'formula' ? { attendance, subFee: subFeeInput, percentage: percentageInput } : { fixedAmount }) };
       const res = editing
         ? await axios.put(`/api/lecturer-salary/salaries/${editing._id}`, body)
         : await axios.post('/api/lecturer-salary/salaries', { ...body, batchId, lecturerId, month });
@@ -784,7 +952,7 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
 
   return (
     <div className="pc-panel">
-      <h3>{editing ? `Edit salary — ${editing.lecturerName}` : 'Add a salary'}</h3>
+      <h3>{editing ? `Edit salary — ${editing.lecturerName}` : 'Add a salary'} · {modeLabel(mode)}</h3>
       {message && <div className={`pc-alert ${message.type}`}>{message.text}</div>}
 
       <form className="pc-form" onSubmit={submit}>
@@ -822,7 +990,7 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
                 <br />
                 <span style={{ color: '#1E56C2' }}>
                   Already has {existing.length} salary entr{existing.length === 1 ? 'y' : 'ies'} in {monthLabel(month)}
-                  {' '}({existing.map((r) => formatMoney(r.amount)).join(', ')}). You can still add another one.
+                  {' '}({existing.map((r) => `${modeLabel(r.mode)} ${formatMoney(r.amount)}`).join(', ')}). You can still add another one.
                 </span>
               </>
             )}
@@ -851,6 +1019,19 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
               </label>
             )}
 
+            {type === 'formula' && used.includes('subFee') && (
+              <label className="pc-field">
+                Sub fee (Rs.)
+                <input type="number" required min="0.01" step="0.01" value={subFeeInput} onChange={(e) => setSubFeeInput(e.target.value)} />
+              </label>
+            )}
+            {type === 'formula' && used.includes('percentage') && (
+              <label className="pc-field">
+                Percentage (%)
+                <input type="number" required min="0.01" max="100" step="0.01" value={percentageInput} onChange={(e) => setPercentageInput(e.target.value)} />
+              </label>
+            )}
+
             <label className="pc-field">
               Note (optional)
               <input type="text" maxLength={200} placeholder="e.g. Part 2, Extra classes" value={note} onChange={(e) => setNote(e.target.value)} />
@@ -858,7 +1039,7 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
 
             {type === 'formula' && missing.length > 0 && (
               <p className="wide" style={{ margin: 0, color: '#B3382C' }}>
-                This formula needs the lecturer's {missing.join(' and ')}. Add {missing.length > 1 ? 'them' : 'it'} in the lecturer details, or choose “Fixed amount”.
+                This formula needs the {missing.join(' and ')}. Type {missing.length > 1 ? 'them' : 'it'} above, or choose “Fixed amount”.
               </p>
             )}
             {calc?.error && <p className="wide" style={{ margin: 0, color: '#B3382C' }}>{calc.error}</p>}
@@ -870,8 +1051,8 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
                   {validAtt && lecturer && (
                     <><br />
                       attendance = {attNum}
-                      {used.includes('subFee') && `, subFee = ${formatMoney(lecturer.subFee || 0)}`}
-                      {used.includes('percentage') && `, percentage = ${lecturer.percentage || 0}`}
+                      {used.includes('subFee') && `, subFee = ${formatMoney(subFeeNum)}`}
+                      {used.includes('percentage') && `, percentage = ${percentageNum}`}
                     </>
                   )}
                 </div>
@@ -897,7 +1078,7 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
 }
 
 // The entries of one batch for one month, with the submit -> verify -> pay steps.
-function SalaryList({ batchId, month, setMonth, refreshKey, reload, isAdmin, onEdit }) {
+function SalaryList({ batchId, mode, month, setMonth, refreshKey, reload, isAdmin, onEdit }) {
   const [records, setRecords] = useState(null);
   const [message, setMessage] = useState(null);
   const [busyId, setBusyId] = useState('');
@@ -968,7 +1149,8 @@ function SalaryList({ batchId, month, setMonth, refreshKey, reload, isAdmin, onE
     }
   };
 
-  const list = records || [];
+  // Only this part (Online / Physical / Recording). Older entries saved before the 3 parts existed show under Online.
+  const list = (records || []).filter((r) => r.mode === mode || (!r.mode && mode === 'online'));
   const sum = (items) => items.reduce((t, s) => t + s.amount, 0);
   const total = sum(list);
   const paid = sum(list.filter((s) => s.status === 'paid'));
@@ -979,14 +1161,14 @@ function SalaryList({ batchId, month, setMonth, refreshKey, reload, isAdmin, onE
   return (
     <>
       <div className="pc-toolbar" style={{ marginTop: 24 }}>
-        <h3 style={{ margin: 0 }}>Salaries — {monthLabel(month)}</h3>
+        <h3 style={{ margin: 0 }}>{modeLabel(mode)} salaries — {monthLabel(month)}</h3>
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <MonthYearPicker value={month} onChange={(v) => { setMonth(v); setMessage(null); }} />
         </div>
       </div>
 
       <p style={{ margin: '0 0 14px', color: '#4A6288', fontSize: 13 }}>
-        Steps: add the salary above (draft) → Submit → Super Admin verifies → Mark paid.
+        Steps: add the salary above (draft) → Submit → Super Admin verifies → paid from the “Payments” tab (one payment per lecturer, all their batches together).
       </p>
 
       {message && <div className={`pc-alert ${message.type}`}>{message.text}</div>}
@@ -1072,11 +1254,11 @@ function SalaryList({ batchId, month, setMonth, refreshKey, reload, isAdmin, onE
                       {rec.status === 'submitted' && !isAdmin && <small>Waiting for Super Admin</small>}
                       {rec.status === 'verified' && isAdmin && (
                         <>
-                          <button className="pc-btn-sm" disabled={busy} onClick={() => act(rec, 'pay')}>Mark paid</button>{' '}
                           <button className="pc-btn-sm pc-btn-danger" disabled={busy} onClick={() => sendBack(rec)}>Send back</button>
                         </>
                       )}
                       {rec.status === 'verified' && !isAdmin && <small>Verified — waiting for payment</small>}
+                      {rec.status === 'verified' && isAdmin && <small style={{ display: 'block', marginTop: 4 }}>Pay it in the Payments tab</small>}
                       {rec.status === 'paid' && isAdmin && (
                         <button className="pc-btn-sm pc-btn-danger" disabled={busy} onClick={() => undoPaid(rec)}>Undo paid</button>
                       )}
@@ -1093,6 +1275,169 @@ function SalaryList({ batchId, month, setMonth, refreshKey, reload, isAdmin, onE
           </table>
         </div>
       )}
+    </>
+  );
+}
+
+// ---------- Payments: one payment per lecturer per month, ALL their batches added together ----------
+function PaymentsSection({ isAdmin, courses }) {
+  const [month, setMonth] = useState(currentMonthString());
+  const [degree, setDegree] = useState(''); // '' = every degree
+  const [search, setSearch] = useState('');
+  const [people, setPeople] = useState(null);
+  const [message, setMessage] = useState(null);
+  const [busyKey, setBusyKey] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPeople(null);
+    axios
+      .get('/api/lecturer-salary/payments', { params: { month } })
+      .then((res) => { if (!cancelled) setPeople(res.data); })
+      .catch((err) => { if (!cancelled) { setPeople([]); setMessage({ type: 'err', text: apiError(err, 'Could not load the payments') }); } });
+    return () => { cancelled = true; };
+  }, [month, refreshKey]);
+
+  const act = async (person, action) => {
+    const text = action === 'pay'
+      ? `Pay ${person.name} ${formatMoney(person.readyTotal)} now, for all their verified entries this month?`
+      : `Undo the payment of ${person.name}? Their entries go back to “Verified”.`;
+    if (!window.confirm(text)) return;
+    setMessage(null);
+    setBusyKey(person.key);
+    try {
+      const res = await axios.post('/api/lecturer-salary/payments', { month, personKey: person.key, action });
+      setMessage({ type: 'ok', text: res.data.message });
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      setMessage({ type: 'err', text: apiError(err, 'Could not update this payment') });
+    } finally {
+      setBusyKey('');
+    }
+  };
+
+  // One tab per degree. Only lecturers who have entries in that degree are listed.
+  const active = pickCourse(courses, degree);
+  const rows = (people || [])
+    .map((p) => {
+      const here = p.items.filter((i) => i.faculty === active);
+      return { ...p, here, others: p.items.filter((i) => i.faculty !== active) };
+    })
+    .filter((p) => p.here.length > 0)
+    .filter((p) => !search.trim() || p.name.toLowerCase().includes(search.trim().toLowerCase()));
+  const totalOf = (items, status) => round2(items.filter((i) => !status || i.status === status).reduce((t, i) => t + i.amount, 0));
+  const sumHere = (status) => round2(rows.reduce((t, p) => t + totalOf(p.here, status), 0));
+  const notVerifiedHere = round2(rows.reduce((t, p) => t + totalOf(p.here.filter((i) => i.status !== 'verified' && i.status !== 'paid')), 0));
+  const shown = rows;
+
+  return (
+    <>
+      <div className="pc-toolbar">
+        <h3 style={{ margin: 0 }}>Payments — {monthLabel(month)}</h3>
+        <MonthYearPicker value={month} onChange={(v) => { setMonth(v); setMessage(null); }} />
+      </div>
+      <p style={{ margin: '0 0 14px', color: '#4A6288', fontSize: 13 }}>
+        Salaries are listed degree by degree. A lecturer who teaches in more than one degree is still paid <strong>once</strong>:
+        the Pay button adds up all their verified salaries (every batch, degree and online / physical / recording part).
+        People are matched by phone number (or by name when there is no phone number).
+      </p>
+
+      {message && <div className={`pc-alert ${message.type}`}>{message.text}</div>}
+
+      <div className="pc-cards">
+        <div className="pc-card"><p>{active} — total salaries</p><h2>{formatMoney(sumHere())}</h2><small>{rows.length} lecturer{rows.length === 1 ? '' : 's'}</small></div>
+        <div className="pc-card"><p>Ready to pay (verified)</p><h2>{formatMoney(sumHere('verified'))}</h2></div>
+        <div className="pc-card balance"><p>Paid</p><h2>{formatMoney(sumHere('paid'))}</h2></div>
+        <div className="pc-card spent"><p>Not verified yet</p><h2>{formatMoney(notVerifiedHere)}</h2></div>
+      </div>
+
+      <CourseTabs courses={courses} value={active} onChange={setDegree} />
+
+      <div className="pc-form" style={{ marginBottom: 14 }}>
+        <label className="pc-field">
+          Lecturer
+          <input type="text" placeholder="Search by name" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </label>
+      </div>
+
+      {courses.length === 0 && <p className="pc-empty">No degrees yet.</p>}
+      {people === null && <p>Loading…</p>}
+      {people && courses.length > 0 && shown.length === 0 && <p className="pc-empty">No salary entries in {active} for this month.</p>}
+
+      {shown.map((p) => {
+        const allPaid = p.paidTotal > 0 && p.readyTotal === 0 && p.notReadyTotal === 0;
+        return (
+          <div key={p.key} className="pc-panel">
+            <div className="pc-toolbar" style={{ marginBottom: 8 }}>
+              <div>
+                <h3 style={{ margin: 0 }}>{p.name}</h3>
+                <small style={{ color: '#4A6288' }}>{p.subjects.join(', ')}{p.phone ? ` · ${p.phone}` : ''}</small>
+                <br />
+                <small>
+                  Bank: {p.bank
+                    ? `${p.bank.bankName} · ${p.bank.accountNumber}${p.bank.bankBranch ? ` · ${p.bank.bankBranch}` : ''}${p.bank.accountHolder ? ` · ${p.bank.accountHolder}` : ''}`
+                    : <span style={{ color: '#B7791F' }}>no bank details added yet</span>}
+                </small>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 22, fontWeight: 700 }}>{formatMoney(totalOf(p.here))}</div>
+                <small style={{ color: '#4A6288' }}>{active} total for {monthLabel(month)}</small>
+                {p.others.length > 0 && <small style={{ display: 'block', color: '#4A6288' }}>All degrees together: <strong>{formatMoney(p.total)}</strong></small>}
+              </div>
+            </div>
+
+            <div className="pc-table-wrap">
+              <table className="pc-table">
+                <thead><tr><th>Degree / batch</th><th>Part</th><th className="num">Amount</th><th>Status</th></tr></thead>
+                <tbody>
+                  {p.here.map((i) => (
+                    <tr key={i._id}>
+                      <td>{i.faculty} — {i.batchYear} Batch{i.note && <><br /><small style={{ color: '#1E56C2' }}>{i.note}</small></>}</td>
+                      <td>{modeLabel(i.mode)}{i.type === 'fixed' ? ' · fixed' : ''}</td>
+                      <td className="num">{formatMoney(i.amount)}</td>
+                      <td><StatusBadge status={i.status} /></td>
+                    </tr>
+                  ))}
+                  {p.others.map((i) => (
+                    <tr key={i._id} style={{ opacity: 0.6 }}>
+                      <td>{i.faculty} — {i.batchYear} Batch <small>(other degree)</small></td>
+                      <td>{modeLabel(i.mode)}{i.type === 'fixed' ? ' · fixed' : ''}</td>
+                      <td className="num">{formatMoney(i.amount)}</td>
+                      <td><StatusBadge status={i.status} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              {p.readyTotal > 0 && isAdmin && (
+                <button className="pc-btn" disabled={busyKey === p.key} onClick={() => act(p, 'pay')}>
+                  {busyKey === p.key ? 'Paying…' : `Pay ${formatMoney(p.readyTotal)}`}
+                </button>
+              )}
+              {p.readyTotal > 0 && p.others.length > 0 && (
+                <small style={{ color: '#4A6288' }}>One payment for all degrees together{p.others.some((i) => i.status === 'verified') ? ' (includes verified salaries from the other degree)' : ''}.</small>
+              )}
+              {p.readyTotal > 0 && !isAdmin && <small>{formatMoney(p.readyTotal)} verified — waiting for the Super Admin to pay</small>}
+              {p.notReadyTotal > 0 && (
+                <small style={{ color: '#B7791F' }}>{formatMoney(p.notReadyTotal)} is not verified yet and is not included in the payment.</small>
+              )}
+              {p.paidTotal > 0 && (
+                <small style={{ color: '#0F7A6F' }}>
+                  Paid {formatMoney(p.paidTotal)}{p.paidDate ? ` on ${formatDate(p.paidDate)}` : ''}{p.paidByName ? ` by ${p.paidByName}` : ''}
+                </small>
+              )}
+              {p.paidTotal > 0 && isAdmin && (
+                <button className="pc-btn-sm pc-btn-danger" disabled={busyKey === p.key} onClick={() => act(p, 'unpay')}>
+                  {allPaid ? 'Undo payment' : 'Undo paid part'}
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })}
     </>
   );
 }
