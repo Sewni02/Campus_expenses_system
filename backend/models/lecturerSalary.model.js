@@ -26,6 +26,10 @@ const lecturerSalarySchema = new mongoose.Schema(
     attendance: { type: Number, min: 0 },
     subFee: { type: Number, min: 0 },
     percentage: { type: Number, min: 0, max: 100 },
+    hours: { type: Number, min: 0 },
+    hourRate: { type: Number, min: 0 },
+    // Readable explanation of the calculation (used for attendance-range formulas).
+    calcText: { type: String },
     // The salary BEFORE the batch deduction, the deduction % used, and the final amount.
     grossAmount: { type: Number, min: 0 },
     deductionPercent: { type: Number, default: 0, min: 0, max: 99 },

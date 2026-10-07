@@ -7,6 +7,8 @@ const lecturerSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     phone: { type: String, trim: true },
     subject: { type: String, required: true, trim: true },
+    // Language the lecturer teaches in.
+    medium: { type: String, enum: ['english', 'sinhala', 'both'] },
     // How this lecturer is normally paid:
     //   formula = attendance x sub fee x percentage / 100   (needs subFee + percentage)
     //   fixed   = a fixed amount, outside the formula       (needs fixedSalary)
@@ -14,6 +16,8 @@ const lecturerSchema = new mongoose.Schema(
     subFee: { type: Number, min: 0.01 },
     percentage: { type: Number, min: 0.01, max: 100 },
     fixedSalary: { type: Number, min: 0.01 },
+    // Pay per hour (for formulas that use hours x hourRate). Each batch / lecturer has its own rate.
+    hourRate: { type: Number, min: 0.01 },
     // Formula for this lecturer (optional). Empty = use the batch's formula.
     formula: { type: mongoose.Schema.Types.ObjectId, ref: 'LecturerFormula' },
     // Bank details (optional, can be added or changed later). Who changed them last is
