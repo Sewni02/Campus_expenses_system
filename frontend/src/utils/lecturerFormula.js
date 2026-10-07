@@ -17,7 +17,7 @@
 // The same logic is copied in frontend/src/utils/lecturerFormula.js for the live preview.
 // The server always re-calculates, so what is saved is what the server worked out.
 
-const VARIABLES = ['attendance', 'subFee', 'percentage'];
+const VARIABLES = ['attendance', 'subFee', 'percentage', 'hours', 'hourRate'];
 const VARIABLE_LOOKUP = new Map(VARIABLES.map((v) => [v.toLowerCase(), v]));
 const FUNCTIONS = {
   min: { fn: Math.min, minArgs: 2 },

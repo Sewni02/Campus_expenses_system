@@ -1,13 +1,16 @@
+const mongoose = require('mongoose');
 const LecturerBatch = require('../models/lecturerBatch.model');
 const LecturerSalary = require('../models/lecturerSalary.model');
 const LecturerFormula = require('../models/lecturerFormula.model');
+const Course = require('../models/course.model');
 const { FormulaError, parseFormula, evaluateFormula } = require('../utils/lecturerFormula');
 const User = require('../models/user.model');
 const { ApiError, findOrFail } = require('../utils/ApiError');
 const { requireString, optionalString } = require('../utils/validators');
 
-const FACULTIES = ['management', 'art'];
 const PAY_TYPES = ['formula', 'fixed'];
+const MODES = ['online', 'physical', 'recording'];
+const MEDIUMS = ['english', 'sinhala', 'both'];
 
 const isAdmin = (user) => user.role === 'super_admin';
 const isBlank = (v) => v === undefined || v === null || v === '';
@@ -27,9 +30,64 @@ const toNumber = (value) => {
 };
 const round2 = (n) => Math.round(n * 100) / 100;
 
-const validateFaculty = (value) => {
-  if (!FACULTIES.includes(value)) throw new ApiError(400, 'Faculty must be "management" or "art"');
-  return value;
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// ---------- Degrees / courses (super admin adds them: Management, Art, B.Com ...) ----------
+const findCourseByName = (name) => Course.findOne({ name: new RegExp(`^${escapeRegex(name)}$`, 'i') });
+
+const listCourses = async () => {
+  const courses = await Course.find().sort({ name: 1 });
+  const counts = await LecturerBatch.aggregate([{ $group: { _id: '$faculty', n: { $sum: 1 } } }]);
+  const byName = new Map(counts.map((c) => [c._id, c.n]));
+  return courses.map((c) => ({ _id: c._id, name: c.name, batchCount: byName.get(c.name) || 0 }));
+};
+
+const createCourse = async (user, body) => {
+  const name = requireString(body.name, 'Course name', { max: 60 });
+  if (await findCourseByName(name)) throw new ApiError(409, `The course "${name}" already exists`);
+  const course = await Course.create({ name, createdBy: user.id });
+  return { message: `${name} added`, course };
+};
+
+// Renaming also renames it on the course's batches and their salary records.
+const renameCourse = async (id, body) => {
+  const course = await findOrFail(Course, id, 'Course not found');
+  const name = requireString(body.name, 'Course name', { max: 60 });
+  const clash = await findCourseByName(name);
+  if (clash && clash._id.toString() !== course._id.toString()) throw new ApiError(409, `The course "${name}" already exists`);
+  const oldName = course.name;
+  course.name = name;
+  await course.save();
+  if (oldName !== name) {
+    await LecturerBatch.updateMany({ faculty: oldName }, { $set: { faculty: name } });
+    await LecturerSalary.updateMany({ faculty: oldName }, { $set: { faculty: name } });
+  }
+  return { message: 'Course renamed', course };
+};
+
+const deleteCourse = async (id) => {
+  const course = await findOrFail(Course, id, 'Course not found');
+  if (await LecturerBatch.exists({ faculty: course.name })) {
+    throw new ApiError(400, 'This course still has batches, so it cannot be deleted');
+  }
+  await course.deleteOne();
+  return { message: 'Course deleted' };
+};
+
+// Older data only had "management" / "art" typed into the batches. Turn every course name that
+// is used by a batch but missing from the course list into a real course (runs at startup).
+const migrateCourses = async () => {
+  const used = await LecturerBatch.distinct('faculty');
+  for (const raw of used) {
+    if (!raw || (await findCourseByName(raw))) continue;
+    const name = raw.charAt(0).toUpperCase() + raw.slice(1);
+    const existing = await findCourseByName(name);
+    if (!existing) await Course.create({ name });
+    if (name !== raw) {
+      await LecturerBatch.updateMany({ faculty: raw }, { $set: { faculty: name } });
+      await LecturerSalary.updateMany({ faculty: raw }, { $set: { faculty: name } });
+    }
+  }
 };
 
 const validateYear = (value) => {
@@ -38,6 +96,16 @@ const validateYear = (value) => {
     throw new ApiError(400, 'Batch year must be between 2000 and 2100');
   }
   return year;
+};
+
+const validateMedium = (value) => {
+  if (!MEDIUMS.includes(value)) throw new ApiError(400, 'Choose the medium: English, Sinhala or Both');
+  return value;
+};
+
+const validateMode = (value) => {
+  if (!MODES.includes(value)) throw new ApiError(400, 'Choose the part of the batch: online, physical or recording');
+  return value;
 };
 
 const validateSubFee = (value) => {
@@ -62,6 +130,17 @@ const validateFixedAmount = (value) => {
     throw new ApiError(400, 'Fixed salary must be a number greater than 0');
   }
   return round2(amount);
+};
+
+const validateRate = (value, label) => {
+  const n = toNumber(value);
+  if (!Number.isFinite(n) || n <= 0 || n > 1_000_000_000) throw new ApiError(400, `${label} must be a number greater than 0`);
+  return round2(n);
+};
+const validateHours = (value) => {
+  const n = toNumber(value);
+  if (!Number.isFinite(n) || n <= 0 || n > 100_000) throw new ApiError(400, 'Hours must be a number greater than 0');
+  return round2(n);
 };
 
 const validateAttendance = (value) => {
@@ -115,15 +194,89 @@ const guardFormula = (fn) => {
 // Checks that a formula is written correctly by trying it with sample numbers.
 const validateExpression = (value) => {
   const expression = requireString(value, 'Formula', { max: 200 });
-  guardFormula(() => evaluateFormula(expression, { attendance: 20, subFee: 5000, percentage: 60 }, { allowNegative: true }));
+  guardFormula(() => evaluateFormula(expression, { attendance: 20, subFee: 5000, percentage: 60, hours: 10, hourRate: 500 }, { allowNegative: true }));
   return expression;
 };
 
-const formulaFields = (body) => ({
-  name: requireString(body.name, 'Formula name', { max: 60 }),
-  expression: validateExpression(body.expression),
-  description: optionalString(body.description, 'Description', { max: 200 }),
-});
+// ---- Attendance-range formulas: e.g. 1-10 = Rs. 500, 11-50 = Rs. 400 ----
+const fmtMoney = (n) => `Rs. ${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const validateTiers = (value, rangeBy) => {
+  if (!Array.isArray(value) || value.length === 0) throw new ApiError(400, 'Add at least one range');
+  if (value.length > 30) throw new ApiError(400, 'A formula can have at most 30 ranges');
+  const whole = rangeBy !== 'hours'; // attendance = whole numbers, hours may have decimals
+  const label = rangeBy === 'hours' ? 'hours' : 'attendance';
+  const tiers = value.map((t, i) => {
+    const from = toNumber(t.from);
+    const open = isBlank(t.to); // no "to" = and above
+    const to = open ? null : toNumber(t.to);
+    const amount = toNumber(t.amount);
+    const okNumber = (n) => Number.isFinite(n) && n >= 0 && n <= 1_000_000 && (!whole || Number.isInteger(n));
+    if (!okNumber(from) || (!open && (!okNumber(to) || to < from))) {
+      throw new ApiError(400, `Range ${i + 1}: "from" and "to" must be ${whole ? 'whole numbers' : 'numbers'} for ${label}, and "to" cannot be less than "from" (leave "to" empty for "and above")`);
+    }
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000) {
+      throw new ApiError(400, `Range ${i + 1}: the amount must be greater than 0`);
+    }
+    const payBy = ['total', 'unit', 'rate'].includes(t.payBy) ? t.payBy : t.perUnit === true || t.perUnit === 'true' ? 'unit' : 'total';
+    // "rate": attendance x (amount x percentage%). The percentage may be set on the range; empty = the lecturer's percentage.
+    const percentage = payBy === 'rate' && !isBlank(t.percentage) ? validatePercentage(t.percentage) : undefined;
+    return { from, to, amount: round2(amount), payBy, perUnit: payBy === 'unit', percentage };
+  });
+  tiers.sort((a, b) => a.from - b.from || (a.to ?? Infinity) - (b.to ?? Infinity));
+  const open = tiers.filter((t) => t.to === null);
+  if (open.length > 1 || (open.length === 1 && tiers[tiers.length - 1].to !== null)) {
+    throw new ApiError(400, 'Only the last range (the highest "from") can be left open with no "to"');
+  }
+  return tiers;
+};
+
+// The first range that contains the value (a number shared by two ranges, e.g. 10, uses the lower range).
+const findTier = (tiers, value) => tiers.find((t) => value >= t.from && (t.to === null || t.to === undefined || value <= t.to));
+
+// Older range formulas had a single "per attendance" switch for every range.
+// How a range pays: 'total' | 'unit' (amount x attendance) | 'rate' (attendance x (amount x percentage%)). Older formulas only had the unit/total switch.
+const tierPay = (formula, tier) => tier.payBy || (tier.perUnit === true || formula.rangeBasis === 'perAttendance' ? 'unit' : 'total');
+
+const tierLabel = (t) => (t.to === null || t.to === undefined ? `${t.from}+` : `${t.from}-${t.to}`);
+
+const describeTiers = (tiers, rangeBy) =>
+  `${rangeBy === 'hours' ? 'By hours' : 'By attendance'}: ` +
+  tiers
+    .map((t) => {
+      const unit = rangeBy === 'hours' ? 'hour' : 'attendance';
+      if (t.payBy === 'rate') return `${tierLabel(t)} = ${unit} x (${fmtMoney(t.amount)} x ${t.percentage ? `${t.percentage}%` : 'lecturer %'})`;
+      return `${tierLabel(t)} = ${fmtMoney(t.amount)}${t.payBy === 'unit' ? ` per ${unit}` : ''}`;
+    })
+    .join(' | ');
+
+const formulaFields = (body) => {
+  const kind = body.kind === 'range' ? 'range' : 'expression';
+  const base = {
+    name: requireString(body.name, 'Formula name', { max: 60 }),
+    description: optionalString(body.description, 'Description', { max: 200 }),
+    degree: optionalString(body.degree, 'Degree', { max: 60 }) || undefined,
+    kind,
+  };
+  if (kind === 'range') {
+    const rangeBy = body.rangeBy === 'hours' ? 'hours' : 'attendance';
+    const tiers = validateTiers(body.tiers, rangeBy);
+    return { ...base, tiers, rangeBy, rangeBasis: 'fixed', expression: describeTiers(tiers, rangeBy) };
+  }
+  return { ...base, tiers: [], rangeBy: 'attendance', rangeBasis: 'fixed', expression: validateExpression(body.expression) };
+};
+
+// Which of the lecturer's rates a formula needs (so the lecturer form only asks for those).
+const formulaNeeds = (formula) => {
+  if (formula && formula.kind === 'range') {
+    // Only a range paid as "attendance x (sub fee x percentage)" without its own percentage needs the lecturer's percentage.
+    const needsPct = (formula.tiers || []).some((t) => tierPay(formula, t) === 'rate' && (t.percentage === null || t.percentage === undefined));
+    return { subFee: false, percentage: needsPct, hourRate: false };
+  }
+  if (!formula) return { subFee: false, percentage: false, hourRate: false };
+  const { variables } = guardFormula(() => parseFormula(formula.expression));
+  return { subFee: variables.includes('subFee'), percentage: variables.includes('percentage'), hourRate: variables.includes('hourRate') };
+};
 
 const listFormulas = async () => {
   await ensureDefaultFormula();
@@ -163,9 +316,12 @@ const deleteFormula = async (id) => {
 };
 
 // Blank = "none chosen". Otherwise the formula must exist.
-const validateFormulaRef = async (value) => {
+const validateFormulaRef = async (value, faculty) => {
   if (isBlank(value)) return undefined;
   const formula = await findOrFail(LecturerFormula, value, 'Formula not found');
+  if (faculty && formula.degree && formula.degree.toLowerCase() !== String(faculty).toLowerCase()) {
+    throw new ApiError(400, `The formula "${formula.name}" is only for the ${formula.degree} degree`);
+  }
   return formula._id;
 };
 
@@ -198,24 +354,29 @@ const bankFields = (body) => {
 
 // A "formula" lecturer needs sub fee + percentage. A "fixed" lecturer needs a fixed salary
 // (sub fee / percentage are then optional - kept only if typed in).
-const lecturerFields = (body) => {
+// "needs" = which rates the lecturer's formula uses; only those are required (the rest are optional).
+const lecturerFields = (body, needs = { subFee: true, percentage: true, hourRate: false }) => {
   const payType = validatePayType(body.payType);
   const fields = {
     name: requireString(body.name, 'Lecturer name', { max: 100 }),
     phone: optionalString(body.phone, 'Phone', { max: 20 }),
     subject: requireString(body.subject, 'Subject', { max: 100 }),
+    medium: validateMedium(body.medium),
     payType,
     ...bankFields(body),
   };
 
+  const optional = (value, check) => (isBlank(value) ? undefined : check(value));
   if (payType === 'formula') {
-    fields.subFee = validateSubFee(body.subFee);
-    fields.percentage = validatePercentage(body.percentage);
+    fields.subFee = needs.subFee ? validateSubFee(body.subFee) : optional(body.subFee, validateSubFee);
+    fields.percentage = needs.percentage ? validatePercentage(body.percentage) : optional(body.percentage, validatePercentage);
+    fields.hourRate = needs.hourRate ? validateRate(body.hourRate, 'Hourly rate') : optional(body.hourRate, (v) => validateRate(v, 'Hourly rate'));
     fields.fixedSalary = undefined;
   } else {
     fields.fixedSalary = validateFixedAmount(body.fixedSalary);
-    fields.subFee = isBlank(body.subFee) ? undefined : validateSubFee(body.subFee);
-    fields.percentage = isBlank(body.percentage) ? undefined : validatePercentage(body.percentage);
+    fields.subFee = optional(body.subFee, validateSubFee);
+    fields.percentage = optional(body.percentage, validatePercentage);
+    fields.hourRate = optional(body.hourRate, (v) => validateRate(v, 'Hourly rate'));
   }
   return fields;
 };
@@ -226,7 +387,7 @@ const bankChanged = (lecturer, fields) => BANK_KEYS.some((k) => (lecturer[k] || 
 // ---------- Batches (super admin) ----------
 // No faculty = every batch (used by the salary form's batch dropdown).
 const listBatches = async (faculty) => {
-  const filter = isBlank(faculty) ? {} : { faculty: validateFaculty(faculty) };
+  const filter = isBlank(faculty) ? {} : { faculty: String(faculty) };
   const batches = await LecturerBatch.find(filter).sort({ faculty: 1, year: -1 });
   const formulas = await LecturerFormula.find();
   const names = new Map(formulas.map((f) => [f._id.toString(), f.name]));
@@ -242,13 +403,15 @@ const listBatches = async (faculty) => {
 };
 
 const createBatch = async (user, body) => {
-  const faculty = validateFaculty(body.faculty);
+  const course = await findCourseByName(requireString(body.faculty, 'Course', { max: 60 }));
+  if (!course) throw new ApiError(400, 'Course not found. Add the course first');
+  const faculty = course.name;
   const year = validateYear(body.year);
 
   if (await LecturerBatch.exists({ faculty, year })) {
     throw new ApiError(409, `The ${year} batch already exists in this faculty`);
   }
-  const formula = await validateFormulaRef(body.formulaId);
+  const formula = await validateFormulaRef(body.formulaId, faculty);
   const batch = await LecturerBatch.create({ faculty, year, formula, createdBy: user.id });
   return { message: `${year} batch added`, batch };
 };
@@ -258,7 +421,7 @@ const createBatch = async (user, body) => {
 // pick up the new formula the next time they are edited and saved.
 const updateBatchSettings = async (id, body) => {
   const batch = await findOrFail(LecturerBatch, id, 'Batch not found');
-  batch.formula = await validateFormulaRef(body.formulaId);
+  batch.formula = await validateFormulaRef(body.formulaId, batch.faculty);
   batch.deductionPercent = 0; // the old deduction % setting is replaced by the formula
   await batch.save();
   return { message: 'Batch formula updated', batch };
@@ -278,8 +441,10 @@ const getBatch = (id) => findOrFail(LecturerBatch, id, 'Batch not found');
 // ---------- Lecturers (inside a batch) - accountant or super admin ----------
 const addLecturer = async (user, batchId, body) => {
   const batch = await findOrFail(LecturerBatch, batchId, 'Batch not found');
-  const fields = lecturerFields(body);
-  fields.formula = fields.payType === 'formula' ? await validateFormulaRef(body.formulaId) : undefined;
+  const formulaRef = await validateFormulaRef(body.formulaId, batch.faculty);
+  const needs = formulaNeeds(await resolveFormula(batch, { formula: formulaRef }, undefined));
+  const fields = lecturerFields(body, needs);
+  fields.formula = fields.payType === 'formula' ? formulaRef : undefined;
   if (fields.bankName) {
     fields.bankUpdatedAt = new Date();
     fields.bankUpdatedByName = await actorName(user);
@@ -294,8 +459,10 @@ const updateLecturer = async (user, batchId, lecturerId, body) => {
   const lecturer = batch.lecturers.id(lecturerId);
   if (!lecturer) throw new ApiError(404, 'Lecturer not found');
 
-  const fields = lecturerFields(body);
-  fields.formula = fields.payType === 'formula' ? await validateFormulaRef(body.formulaId) : undefined;
+  const formulaRef = await validateFormulaRef(body.formulaId, batch.faculty);
+  const needs = formulaNeeds(await resolveFormula(batch, { formula: formulaRef }, undefined));
+  const fields = lecturerFields(body, needs);
+  fields.formula = fields.payType === 'formula' ? formulaRef : undefined;
   if (bankChanged(lecturer, fields)) {
     fields.bankUpdatedAt = new Date();
     fields.bankUpdatedByName = await actorName(user);
@@ -327,22 +494,75 @@ const buildSalaryValues = async (batch, lecturer, input) => {
     batchYear: batch.year,
     lecturerName: lecturer.name,
     subject: lecturer.subject,
+    mode: validateMode(input.mode),
     type,
     note: optionalString(input.note, 'Note', { max: 200 }),
   };
 
   if (type === 'formula') {
-    const attendance = validateAttendance(input.attendance);
     const formula = await resolveFormula(batch, lecturer, input.formulaId);
+
+    // Range formula: the attendance (or the hours) picks the range, the range gives the amount.
+    if (formula.kind === 'range') {
+      const byHours = formula.rangeBy === 'hours';
+      const attendance = byHours ? undefined : validateAttendance(input.attendance);
+      const hours = byHours ? validateHours(input.hours) : undefined;
+      const value = byHours ? hours : attendance;
+      const word = byHours ? 'Hours' : 'Attendance';
+      const tier = findTier(formula.tiers, value);
+      if (!tier) {
+        throw new ApiError(400, `No range in "${formula.name}" covers ${word.toLowerCase()} ${value}. Add a range for it in the Formulas tab.`);
+      }
+      const payBy = tierPay(formula, tier);
+      let percentage;
+      if (payBy === 'rate') {
+        percentage = tier.percentage ? tier.percentage : isBlank(input.percentage) ? lecturer.percentage : validatePercentage(input.percentage);
+        if (!percentage) throw new ApiError(400, 'This range needs the lecturer\'s percentage. Type it in, or add it in the lecturer details.');
+      }
+      const amount = round2(payBy === 'rate' ? value * tier.amount * (percentage / 100) : payBy === 'unit' ? tier.amount * value : tier.amount);
+      return {
+        ...values,
+        formula: formula._id,
+        formulaName: formula.name,
+        expression: formula.expression,
+        attendance,
+        hours,
+        subFee: payBy === 'rate' ? tier.amount : undefined,
+        percentage,
+        hourRate: undefined,
+        calcText:
+          payBy === 'rate'
+            ? `${word} ${value} falls in ${tierLabel(tier)}: ${value} x (${fmtMoney(tier.amount)} x ${percentage}%)`
+            : payBy === 'unit'
+              ? `${word} ${value} falls in ${tierLabel(tier)}: ${value} x ${fmtMoney(tier.amount)}`
+              : `${word} ${value} falls in ${tierLabel(tier)}: ${fmtMoney(tier.amount)}`,
+        grossAmount: amount,
+        deductionPercent: 0,
+        amount,
+      };
+    }
+
     const { variables } = guardFormula(() => parseFormula(formula.expression));
-    if (variables.includes('subFee') && !lecturer.subFee) {
+    const attendance = variables.includes('attendance') ? validateAttendance(input.attendance) : undefined;
+    const hours = variables.includes('hours') ? validateHours(input.hours) : undefined;
+    let hourRate;
+    if (variables.includes('hourRate')) {
+      const raw = isBlank(input.hourRate) ? lecturer.hourRate : input.hourRate;
+      if (isBlank(raw)) throw new ApiError(400, 'This formula needs the hourly rate. Type it in, or add it in the lecturer details.');
+      hourRate = validateRate(raw, 'Hourly rate');
+    }
+    // Online / physical / recording can have different rates, so the entry may carry its own
+    // sub fee and percentage (blank = the lecturer's normal ones).
+    const subFee = isBlank(input.subFee) ? lecturer.subFee : validateSubFee(input.subFee);
+    const percentage = isBlank(input.percentage) ? lecturer.percentage : validatePercentage(input.percentage);
+    if (variables.includes('subFee') && !subFee) {
       throw new ApiError(400, 'This formula needs the lecturer\'s sub fee. Add it in the lecturer details, or use a fixed salary.');
     }
-    if (variables.includes('percentage') && !lecturer.percentage) {
+    if (variables.includes('percentage') && !percentage) {
       throw new ApiError(400, 'This formula needs the lecturer\'s percentage. Add it in the lecturer details, or use a fixed salary.');
     }
     const amount = guardFormula(() =>
-      evaluateFormula(formula.expression, { attendance, subFee: lecturer.subFee || 0, percentage: lecturer.percentage || 0 })
+      evaluateFormula(formula.expression, { attendance: attendance || 0, subFee: subFee || 0, percentage: percentage || 0, hours: hours || 0, hourRate: hourRate || 0 })
     );
     return {
       ...values,
@@ -350,8 +570,11 @@ const buildSalaryValues = async (batch, lecturer, input) => {
       formulaName: formula.name,
       expression: formula.expression,
       attendance,
-      subFee: lecturer.subFee,
-      percentage: lecturer.percentage,
+      subFee: variables.includes('subFee') ? subFee : undefined,
+      percentage: variables.includes('percentage') ? percentage : undefined,
+      hours,
+      hourRate,
+      calcText: undefined,
       grossAmount: amount,
       deductionPercent: 0,
       amount,
@@ -367,6 +590,9 @@ const buildSalaryValues = async (batch, lecturer, input) => {
     attendance: undefined,
     subFee: undefined,
     percentage: undefined,
+    hours: undefined,
+    hourRate: undefined,
+    calcText: undefined,
     grossAmount: amount,
     deductionPercent: 0,
     amount,
@@ -472,21 +698,11 @@ const salaryAction = async (user, salaryId, action, note) => {
     salary.verifiedByName = undefined;
     message = 'Sent back to draft';
   } else if (action === 'pay') {
-    mustBe('verified');
-    // Keep the bank details the lecturer has RIGHT NOW with the payment record.
-    const batch = await LecturerBatch.findById(salary.batch);
-    const lecturer = batch?.lecturers.id(salary.lecturer);
-    salary.status = 'paid';
-    salary.paidDate = now;
-    salary.paidByName = name;
-    salary.paidBankName = lecturer?.bankName;
-    salary.paidBankBranch = lecturer?.bankBranch;
-    salary.paidAccountNumber = lecturer?.accountNumber;
-    salary.paidAccountHolder = lecturer?.accountHolder;
-    message = 'Marked as paid';
+    throw new ApiError(400, 'Salaries are paid from the Payments tab: one payment per lecturer for all their batches');
   } else {
     mustBe('paid');
     salary.status = 'verified';
+    salary.paymentId = undefined;
     salary.paidDate = undefined;
     salary.paidByName = undefined;
     salary.paidBankName = undefined;
@@ -529,7 +745,132 @@ const bulkAction = async (user, body) => {
   return { message: `${result.modifiedCount} salary entr${result.modifiedCount === 1 ? 'y' : 'ies'} ${verb}`, changed: result.modifiedCount };
 };
 
+
+
+// ---------- Payments: ONE payment per lecturer per month, across all their batches ----------
+// The same person teaches in several batches (each batch has its own lecturer row), so people are
+// matched by phone number, or by name when there is no phone number.
+const personKey = (lecturer) => {
+  const digits = String(lecturer.phone || '').replace(/\D/g, '');
+  if (digits.length >= 7) return `tel:${digits}`;
+  return `name:${String(lecturer.name || '').trim().toLowerCase().replace(/\s+/g, ' ')}`;
+};
+
+// Every distinct lecturer over all batches (used to suggest names when adding a lecturer).
+const listPeople = async () => {
+  const batches = await LecturerBatch.find().sort({ year: -1 });
+  const people = new Map();
+  for (const b of batches) {
+    for (const l of b.lecturers) {
+      const key = personKey(l);
+      const prev = people.get(key);
+      if (!prev) {
+        people.set(key, { key, name: l.name, phone: l.phone, subject: l.subject, medium: l.medium, bankName: l.bankName, bankBranch: l.bankBranch, accountNumber: l.accountNumber, accountHolder: l.accountHolder, batches: 1 });
+      } else {
+        prev.batches += 1;
+        if (!prev.accountNumber && l.accountNumber) Object.assign(prev, { bankName: l.bankName, bankBranch: l.bankBranch, accountNumber: l.accountNumber, accountHolder: l.accountHolder });
+      }
+    }
+  }
+  return [...people.values()].sort((a, b) => a.name.localeCompare(b.name));
+};
+
+const lecturersOfEntries = async (salaries) => {
+  const batches = await LecturerBatch.find({ _id: { $in: [...new Set(salaries.map((s) => s.batch.toString()))] } });
+  const lecturerOf = new Map();
+  for (const b of batches) for (const l of b.lecturers) lecturerOf.set(l._id.toString(), l);
+  return lecturerOf;
+};
+
+// Everything owed to each lecturer in a month, with all their batches added together.
+const listPayments = async (query) => {
+  const month = validateMonth(query.month);
+  const salaries = await LecturerSalary.find({ month }).sort({ faculty: 1, batchYear: -1, createdAt: 1 });
+  const lecturerOf = await lecturersOfEntries(salaries);
+
+  const people = new Map();
+  for (const sal of salaries) {
+    const lec = lecturerOf.get(sal.lecturer.toString()) || { name: sal.lecturerName, subject: sal.subject };
+    const key = personKey(lec);
+    if (!people.has(key)) {
+      people.set(key, { key, name: lec.name, phone: lec.phone, subjects: new Set(), bank: null, items: [], total: 0, readyTotal: 0, paidTotal: 0, notReadyTotal: 0, paidDate: null, paidByName: null });
+    }
+    const p = people.get(key);
+    p.subjects.add(sal.subject);
+    if (!p.bank && lec.accountNumber) p.bank = { bankName: lec.bankName, bankBranch: lec.bankBranch, accountNumber: lec.accountNumber, accountHolder: lec.accountHolder };
+    p.items.push({ _id: sal._id, faculty: sal.faculty, batchYear: sal.batchYear, mode: sal.mode, type: sal.type, amount: sal.amount, status: sal.status, note: sal.note });
+    p.total += sal.amount;
+    if (sal.status === 'verified') p.readyTotal += sal.amount;
+    else if (sal.status === 'paid') { p.paidTotal += sal.amount; p.paidDate = sal.paidDate; p.paidByName = sal.paidByName; }
+    else p.notReadyTotal += sal.amount;
+  }
+  return [...people.values()]
+    .map((p) => ({
+      ...p,
+      subjects: [...p.subjects],
+      total: round2(p.total),
+      readyTotal: round2(p.readyTotal),
+      paidTotal: round2(p.paidTotal),
+      notReadyTotal: round2(p.notReadyTotal),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+};
+
+// Pay (or undo paying) ONE lecturer's whole month in a single payment. Super admin only.
+//   pay   : every VERIFIED entry of that person in that month becomes paid together
+//   unpay : every PAID entry of that person in that month goes back to verified
+const payLecturer = async (user, body) => {
+  if (!isAdmin(user)) throw new ApiError(403, 'Only the Super Admin can do this');
+  const month = validateMonth(body.month);
+  const key = requireString(body.personKey, 'Lecturer', { max: 200 });
+  if (!['pay', 'unpay'].includes(body.action)) throw new ApiError(400, 'Unknown action');
+
+  const all = await LecturerSalary.find({ month });
+  const lecturerOf = await lecturersOfEntries(all);
+  const mine = all.filter((sal) => personKey(lecturerOf.get(sal.lecturer.toString()) || { name: sal.lecturerName }) === key);
+  const name = await actorName(user);
+
+  if (body.action === 'pay') {
+    const ready = mine.filter((s) => s.status === 'verified');
+    if (ready.length === 0) throw new ApiError(400, 'Nothing is verified for this lecturer yet, so there is nothing to pay');
+    // Bank details the lecturer has RIGHT NOW stay with the payment record.
+    const withBank = mine.map((s) => lecturerOf.get(s.lecturer.toString())).find((l) => l && l.accountNumber);
+    const paymentId = new mongoose.Types.ObjectId();
+    const now = new Date();
+    for (const sal of ready) {
+      sal.status = 'paid';
+      sal.paymentId = paymentId;
+      sal.paidDate = now;
+      sal.paidByName = name;
+      sal.paidBankName = withBank?.bankName;
+      sal.paidBankBranch = withBank?.bankBranch;
+      sal.paidAccountNumber = withBank?.accountNumber;
+      sal.paidAccountHolder = withBank?.accountHolder;
+      await sal.save();
+    }
+    const total = round2(ready.reduce((t, s) => t + s.amount, 0));
+    return { message: `Paid ${ready.length} entr${ready.length === 1 ? 'y' : 'ies'} together (Rs. ${total.toFixed(2)})`, changed: ready.length };
+  }
+
+  const paid = mine.filter((s) => s.status === 'paid');
+  if (paid.length === 0) throw new ApiError(400, 'This lecturer has no paid entries in this month');
+  for (const sal of paid) {
+    sal.status = 'verified';
+    for (const f of ['paymentId', 'paidDate', 'paidByName', 'paidBankName', 'paidBankBranch', 'paidAccountNumber', 'paidAccountHolder']) sal[f] = undefined;
+    await sal.save();
+  }
+  return { message: 'Payment undone — back to verified', changed: paid.length };
+};
+
 module.exports = {
+  listPeople,
+  listPayments,
+  payLecturer,
+  listCourses,
+  createCourse,
+  renameCourse,
+  deleteCourse,
+  migrateCourses,
   listBatches,
   createBatch,
   listFormulas,

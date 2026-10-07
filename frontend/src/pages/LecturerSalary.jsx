@@ -7,11 +7,72 @@ import './PettyCash.css'; // re-uses the same cards / tables / buttons as Petty 
 
 const apiError = (err, fallback) => err.response?.data?.message || fallback;
 
-const FACULTIES = [
-  ['management', 'Management'],
-  ['art', 'Art'],
+// The 3 parts of every batch. One lecturer can be paid in all three.
+const MODES = [
+  ['online', 'Online'],
+  ['physical', 'Physical'],
+  ['recording', 'Recording'],
 ];
-const FACULTY_LABELS = Object.fromEntries(FACULTIES);
+// The language a lecturer teaches in.
+const MEDIUMS = [
+  ['english', 'English'],
+  ['sinhala', 'Sinhala'],
+  ['both', 'Both (English & Sinhala)'],
+];
+const mediumLabel = (m) => (MEDIUMS.find(([key]) => key === m) || [null, '—'])[1];
+const modeLabel = (m) => (MODES.find(([key]) => key === m) || [null, '—'])[1];
+
+// The degree tab to show: the one in the URL if it still exists, else the first degree.
+const pickCourse = (courses, wanted) => (courses.find((c) => c.name === wanted) || courses[0] || {}).name || '';
+
+// Degree tabs (Management | Art | B.Com ...)
+// The Super Admin also gets a "+ Add degree" tab at the end: type a name and a new tab appears.
+function CourseTabs({ courses, value, onChange, canAdd = false, onChanged }) {
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const add = async (e) => {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    try {
+      const res = await axios.post('/api/lecturer-salary/courses', { name });
+      setName('');
+      setAdding(false);
+      if (onChanged) await onChanged();
+      onChange(res.data.course.name);
+    } catch (err) {
+      setError(apiError(err, 'Could not add the degree'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="pc-tabs" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+        {courses.map((c) => (
+          <button key={c._id} className={`pc-tab ${value === c.name ? 'active' : ''}`} onClick={() => onChange(c.name)}>
+            {c.name}
+          </button>
+        ))}
+        {canAdd && !adding && (
+          <button className="pc-tab pc-tab-add" onClick={() => setAdding(true)}>+ Add degree</button>
+        )}
+        {canAdd && adding && (
+          <form onSubmit={add} className="pc-add-degree">
+            <input type="text" required autoFocus maxLength={60} placeholder="e.g. B.Com" value={name} onChange={(e) => setName(e.target.value)} />
+            <button className="pc-btn-sm" type="submit" disabled={busy}>Add</button>
+            <button className="pc-btn-sm" type="button" onClick={() => { setAdding(false); setName(''); setError(''); }}>Cancel</button>
+          </form>
+        )}
+      </div>
+      {error && <div className="pc-alert err">{error}</div>}
+    </>
+  );
+}
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
@@ -35,12 +96,34 @@ const formulaVariables = (expression) => {
   }
 };
 
+// Range formulas: the first range that contains the number (e.g. 10 belongs to 1-10). An empty "to" = and above.
+const findTier = (tiers, n) => (tiers || []).find((t) => n >= t.from && (t.to === null || t.to === undefined || n <= t.to));
+const tierLabel = (t) => (t.to === null || t.to === undefined ? `${t.from}+` : `${t.from}-${t.to}`);
+// How a range pays: 'total' (the amount as it is) | 'unit' (amount x attendance/hours) | 'rate' (attendance/hours x (sub fee x percentage%)).
+// Older formulas only had one total/unit switch for all ranges.
+const tierPay = (formula, t) => t.payBy || (t.perUnit === true || formula.rangeBasis === 'perAttendance' ? 'unit' : 'total');
+const hasPct = (t) => t.percentage !== null && t.percentage !== undefined && t.percentage !== '';
+
+// The inputs a formula needs (a range formula needs the attendance, or the hours, and the percentage for "sub fee x percentage" ranges).
+const formulaUses = (formula) => {
+  if (!formula) return [];
+  if (formula.kind === 'range') {
+    const uses = [formula.rangeBy === 'hours' ? 'hours' : 'attendance'];
+    if ((formula.tiers || []).some((t) => tierPay(formula, t) === 'rate' && !hasPct(t))) uses.push('percentage');
+    return uses;
+  }
+  return formulaVariables(formula.expression);
+};
+
 // Dropdown options for choosing a formula. "emptyLabel" = the choice that means "none picked".
-function FormulaOptions({ formulas, emptyLabel }) {
+// "degree" hides the formulas that were made for a different degree (e.g. Art ranges for a Management batch).
+function FormulaOptions({ formulas, emptyLabel, degree }) {
   return (
     <>
       <option value="">{emptyLabel}</option>
-      {formulas.filter((f) => !f.isDefault).map((f) => <option key={f._id} value={f._id}>{f.name}</option>)}
+      {formulas
+        .filter((f) => !f.isDefault && (!f.degree || !degree || f.degree.toLowerCase() === degree.toLowerCase()))
+        .map((f) => <option key={f._id} value={f._id}>{f.name}{f.kind === 'range' ? ' (ranges)' : ''}</option>)}
     </>
   );
 }
@@ -135,7 +218,7 @@ function MonthYearPicker({ value, onChange, disabled = false }) {
   );
 }
 
-const batchLabel = (b) => `${FACULTY_LABELS[b.faculty]} — ${b.year} Batch`;
+const batchLabel = (b) => `${b.faculty} — ${b.year} Batch`;
 const payTypeLabel = (t) => (t === 'fixed' ? 'Fixed salary' : 'Formula');
 
 // ---------------------------------------------------------------------------
@@ -146,7 +229,7 @@ const payTypeLabel = (t) => (t === 'fixed' ? 'Fixed salary' : 'Formula');
 //                       lecturers + bank details, enters salaries, submits them
 //
 //   Tab "Salaries"             -> the salary FORM (pick batch, month, year, lecturer) + that month's entries
-//   Tab "Batches & Lecturers"  -> Management | Art -> batches -> lecturers (pay type, bank details)
+//   Tab "Batches & Lecturers"  -> degrees (super admin adds them) -> batches -> lecturers (pay type, bank details)
 //   Tab "Formulas" (super admin) -> write your own salary formulas
 // The selected tab ("ls"), faculty ("lf") and opened batch ("lb") live in the URL, so a
 // refresh or the browser back button keeps you where you were.
@@ -154,10 +237,15 @@ const payTypeLabel = (t) => (t === 'fixed' ? 'Fixed salary' : 'Formula');
 function LecturerSalary({ isAdmin = true }) {
   const [section, setSection] = useTabState('ls', 'salaries');
   const [formulas, setFormulas] = useState([]);
+  const [courses, setCourses] = useState(null); // the degrees
 
   const loadFormulas = () =>
     axios.get('/api/lecturer-salary/formulas').then((res) => setFormulas(res.data)).catch(() => {});
   useEffect(() => { loadFormulas(); }, []);
+
+  const loadCourses = () =>
+    axios.get('/api/lecturer-salary/courses').then((res) => setCourses(res.data)).catch(() => setCourses([]));
+  useEffect(() => { loadCourses(); }, []);
 
   return (
     <div className="sa-page pc-page">
@@ -165,38 +253,92 @@ function LecturerSalary({ isAdmin = true }) {
         <h1 className="sa-page-title" style={{ margin: 0 }}>Lecturer Salary</h1>
       </div>
       <div className="pc-tabs">
-        {[['salaries', 'Salaries'], ['batches', 'Batches & Lecturers'], ...(isAdmin ? [['formulas', 'Formulas']] : [])].map(([key, label]) => (
+        {[['salaries', 'Salaries'], ['payments', 'Payments'], ['batches', 'Batches & Lecturers'], ...(isAdmin ? [['formulas', 'Formulas']] : [])].map(([key, label]) => (
           <button key={key} className={`pc-tab ${section === key ? 'active' : ''}`} onClick={() => setSection(key)}>
             {label}
           </button>
         ))}
       </div>
 
-      {section === 'salaries' && <SalariesSection isAdmin={isAdmin} formulas={formulas} />}
-      {section === 'batches' && <BatchesSection isAdmin={isAdmin} formulas={formulas} />}
-      {section === 'formulas' && isAdmin && <FormulasSection formulas={formulas} onChanged={loadFormulas} />}
+      {section === 'salaries' && <SalariesSection isAdmin={isAdmin} formulas={formulas} courses={courses} onCoursesChanged={loadCourses} />}
+      {section === 'payments' && <PaymentsSection isAdmin={isAdmin} courses={courses || []} />}
+      {section === 'batches' && <BatchesSection isAdmin={isAdmin} formulas={formulas} courses={courses} onCoursesChanged={loadCourses} onFormulasChanged={loadFormulas} />}
+      {section === 'formulas' && isAdmin && <FormulasSection formulas={formulas} courses={courses || []} onChanged={loadFormulas} />}
     </div>
   );
 }
 
 // ---------- Batches & lecturers ----------
-function BatchesSection({ isAdmin, formulas }) {
-  const [faculty, setFaculty] = useTabState('lf', 'management');
+function BatchesSection({ isAdmin, formulas, courses, onCoursesChanged, onFormulasChanged }) {
+  const [faculty, setFaculty] = useTabState('lf', '');
   const [batchId, setBatchId] = useTabState('lb', '');
 
-  if (batchId) return <BatchDetail batchId={batchId} isAdmin={isAdmin} formulas={formulas} onBack={() => setBatchId('')} />;
+  if (batchId) return <BatchDetail batchId={batchId} isAdmin={isAdmin} formulas={formulas} onFormulasChanged={onFormulasChanged} onBack={() => setBatchId('')} />;
+  if (courses === null) return <p>Loading…</p>;
+  const active = pickCourse(courses, faculty);
 
   return (
     <>
-      <div className="pc-tabs">
-        {FACULTIES.map(([key, label]) => (
-          <button key={key} className={`pc-tab ${faculty === key ? 'active' : ''}`} onClick={() => setFaculty(key)}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <BatchList faculty={faculty} isAdmin={isAdmin} formulas={formulas} onOpen={setBatchId} />
+      <CourseTabs courses={courses} value={active} onChange={setFaculty} canAdd={isAdmin} onChanged={onCoursesChanged} />
+      {courses.length === 0 ? (
+        <p className="pc-empty">
+          {isAdmin ? 'No degrees yet — click “+ Add degree” above (for example Management, Art, B.Com), then add its batches.' : 'No degrees yet. The Super Admin needs to add a degree first.'}
+        </p>
+      ) : (
+        <>
+          {isAdmin && <CoursesPanel courses={courses} active={active} onSelect={setFaculty} onChanged={onCoursesChanged} />}
+          <BatchList faculty={active} isAdmin={isAdmin} formulas={formulas} onOpen={setBatchId} />
+        </>
+      )}
     </>
+  );
+}
+
+// Super admin: add / rename / delete degrees (Management, Art, B.Com ...).
+function CoursesPanel({ courses, active, onSelect, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(null);
+  const current = courses.find((c) => c.name === active);
+
+  const run = async (fn) => {
+    setMessage(null);
+    setBusy(true);
+    try {
+      const res = await fn();
+      setMessage({ type: 'ok', text: res.data.message });
+      onChanged();
+      return res;
+    } catch (err) {
+      setMessage({ type: 'err', text: apiError(err, 'Could not update the course') });
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rename = async () => {
+    const next = window.prompt(`New name for "${current.name}"?`, current.name);
+    if (next === null || !next.trim() || next.trim() === current.name) return;
+    const res = await run(() => axios.put(`/api/lecturer-salary/courses/${current._id}`, { name: next.trim() }));
+    if (res) onSelect(res.data.course.name);
+  };
+
+  const remove = async () => {
+    if (!window.confirm(`Delete the degree "${current.name}"? This only works if it has no batches.`)) return;
+    await run(() => axios.delete(`/api/lecturer-salary/courses/${current._id}`));
+  };
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      {message && <div className={`pc-alert ${message.type}`}>{message.text}</div>}
+      {current && (
+        <div>
+          <small style={{ color: '#4A6288' }}>Selected degree: <strong>{current.name}</strong> ({current.batchCount} batch{current.batchCount === 1 ? '' : 'es'}) </small>{' '}
+          <button className="pc-btn-sm" disabled={busy} onClick={rename}>Rename</button>{' '}
+          <button className="pc-btn-sm pc-btn-danger" disabled={busy || current.batchCount > 0} title={current.batchCount > 0 ? 'Delete its batches first' : ''} onClick={remove}>Delete</button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -254,7 +396,7 @@ function BatchList({ faculty, isAdmin, formulas = [], onOpen, readOnly = false }
 
       {canManage && (
         <div className="pc-panel">
-          <h3>Add a new {FACULTY_LABELS[faculty]} batch</h3>
+          <h3>Add a new {faculty} batch</h3>
           <form className="pc-form" onSubmit={addBatch}>
             <label className="pc-field">
               Batch year
@@ -263,7 +405,7 @@ function BatchList({ faculty, isAdmin, formulas = [], onOpen, readOnly = false }
             <label className="pc-field">
               Salary formula
               <select value={formulaId} onChange={(e) => setFormulaId(e.target.value)}>
-                <FormulaOptions formulas={formulas} emptyLabel={`${defaultFormula?.name || 'Standard'} (default)`} />
+                <FormulaOptions formulas={formulas} degree={faculty} emptyLabel={`${defaultFormula?.name || 'Standard'} (default)`} />
               </select>
             </label>
             <div>
@@ -273,7 +415,7 @@ function BatchList({ faculty, isAdmin, formulas = [], onOpen, readOnly = false }
         </div>
       )}
 
-      <h3>{FACULTY_LABELS[faculty]} batches</h3>
+      <h3>{faculty} batches</h3>
       {batches === null && <p>Loading…</p>}
       {batches && batches.length === 0 && (
         <p className="pc-empty">
@@ -296,7 +438,7 @@ function BatchList({ faculty, isAdmin, formulas = [], onOpen, readOnly = false }
               onClick={() => onOpen(b._id)}
               onKeyDown={(e) => e.key === 'Enter' && onOpen(b._id)}
             >
-              <p>{FACULTY_LABELS[faculty]}</p>
+              <p>{faculty}</p>
               <h2>{b.year} Batch</h2>
               <small>{b.lecturerCount} lecturer(s) · {b.formulaName || defaultFormula?.name || 'Standard'}</small>
               {b.legacyDeduction > 0 && <><br /><small style={{ color: '#B7791F' }}>Old −{b.legacyDeduction}% deduction no longer used — choose a formula</small></>}
@@ -317,7 +459,7 @@ function BatchList({ faculty, isAdmin, formulas = [], onOpen, readOnly = false }
 }
 
 // ---------- One batch: its formula setting + its lecturers ----------
-function BatchDetail({ batchId, isAdmin, formulas, onBack }) {
+function BatchDetail({ batchId, isAdmin, formulas, onFormulasChanged, onBack }) {
   const [batch, setBatch] = useState(null);
   const [error, setError] = useState('');
 
@@ -347,7 +489,7 @@ function BatchDetail({ batchId, isAdmin, formulas, onBack }) {
         <button className="pc-btn-sm" onClick={onBack}>← Back to batches</button>
       </div>
       <BatchFormula batch={batch} isAdmin={isAdmin} formulas={formulas} onBatchChange={setBatch} />
-      <LecturersPanel batch={batch} formulas={formulas} onBatchChange={setBatch} />
+      <LecturersPanel batch={batch} isAdmin={isAdmin} formulas={formulas} onFormulasChanged={onFormulasChanged} onBatchChange={setBatch} />
     </>
   );
 }
@@ -396,7 +538,7 @@ function BatchFormula({ batch, isAdmin, formulas, onBatchChange }) {
               <label className="pc-field">
                 Use formula
                 <select value={value} onChange={(e) => setValue(e.target.value)}>
-                  <FormulaOptions formulas={formulas} emptyLabel={`${defaultFormula?.name || 'Standard'} (default)`} />
+                  <FormulaOptions formulas={formulas} degree={batch.faculty} emptyLabel={`${defaultFormula?.name || 'Standard'} (default)`} />
                 </select>
               </label>
               <button className="pc-btn-sm" disabled={saving || value === (batch.formula || '')} onClick={save}>
@@ -412,16 +554,22 @@ function BatchFormula({ batch, isAdmin, formulas, onBatchChange }) {
 
 // ---------- Lecturers of the batch (add / edit / remove, pay type, bank details) ----------
 const emptyForm = {
-  name: '', phone: '', subject: '', payType: 'formula', subFee: '', percentage: '', fixedSalary: '', formulaId: '',
+  name: '', phone: '', subject: '', medium: '', payType: 'formula', subFee: '', percentage: '', hourRate: '', fixedSalary: '', formulaId: '',
   bankName: '', bankBranch: '', accountNumber: '', accountHolder: '',
 };
 
-function LecturersPanel({ batch, formulas = [], onBatchChange }) {
+function LecturersPanel({ batch, isAdmin, formulas = [], onFormulasChanged, onBatchChange }) {
   const [form, setForm] = useState(emptyForm);
+  const [newFormula, setNewFormula] = useState(null); // { name, expression } while creating one
+  const [creatingFormula, setCreatingFormula] = useState(false);
+  const [people, setPeople] = useState([]); // lecturers already added in any batch
   const [editingId, setEditingId] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
   const fixed = form.payType === 'fixed';
+  // The formula this lecturer will be paid by decides which rates are needed.
+  const effFormula = formulas.find((f) => f._id === (form.formulaId || batch.formula)) || formulas.find((f) => f.isDefault);
+  const uses = formulaUses(effFormula);
 
   const setField = (key) => (e) => {
     let value = e.target.value;
@@ -431,6 +579,50 @@ function LecturersPanel({ batch, formulas = [], onBatchChange }) {
   };
 
   const reset = () => { setForm(emptyForm); setEditingId(''); };
+
+  // A formula made just for this lecturer: create it, then select it for them.
+  const createLecturerFormula = async () => {
+    setMessage(null);
+    setCreatingFormula(true);
+    try {
+      const res = await axios.post('/api/lecturer-salary/formulas', { name: newFormula.name, expression: newFormula.expression });
+      if (onFormulasChanged) await onFormulasChanged();
+      setForm((f) => ({ ...f, formulaId: res.data.formula._id }));
+      setNewFormula(null);
+      setMessage({ type: 'ok', text: `Formula “${res.data.formula.name}” created and selected for this lecturer` });
+    } catch (err) {
+      setMessage({ type: 'err', text: apiError(err, 'Could not create the formula') });
+    } finally {
+      setCreatingFormula(false);
+    }
+  };
+
+  useEffect(() => {
+    axios.get('/api/lecturer-salary/people').then((res) => setPeople(res.data)).catch(() => {});
+  }, [batch]);
+
+  // The same person teaching in another batch: picking their name fills in their details, so they are
+  // recognised as ONE lecturer and can be paid in one payment.
+  const nameChanged = (e) => {
+    const value = e.target.value;
+    const match = !editingId && people.find((p) => p.name.toLowerCase() === value.trim().toLowerCase());
+    setForm((f) => ({
+      ...f,
+      name: value,
+      ...(match
+        ? {
+            phone: f.phone || match.phone || '',
+            subject: f.subject || match.subject || '',
+            medium: f.medium || match.medium || '',
+            bankName: f.bankName || match.bankName || '',
+            bankBranch: f.bankBranch || match.bankBranch || '',
+            accountNumber: f.accountNumber || match.accountNumber || '',
+            accountHolder: f.accountHolder || match.accountHolder || '',
+          }
+        : {}),
+    }));
+  };
+
 
   const submit = async (e) => {
     e.preventDefault();
@@ -452,8 +644,9 @@ function LecturersPanel({ batch, formulas = [], onBatchChange }) {
   const startEdit = (l) => {
     setEditingId(l._id);
     setForm({
-      name: l.name, phone: l.phone || '', subject: l.subject, payType: l.payType || 'formula',
+      name: l.name, phone: l.phone || '', subject: l.subject, medium: l.medium || '', payType: l.payType || 'formula',
       subFee: l.subFee ? String(l.subFee) : '', percentage: l.percentage ? String(l.percentage) : '',
+      hourRate: l.hourRate ? String(l.hourRate) : '',
       fixedSalary: l.fixedSalary ? String(l.fixedSalary) : '',
       formulaId: l.formula || '',
       bankName: l.bankName || '', bankBranch: l.bankBranch || '', accountNumber: l.accountNumber || '', accountHolder: l.accountHolder || '',
@@ -483,7 +676,10 @@ function LecturersPanel({ batch, formulas = [], onBatchChange }) {
         <form className="pc-form" onSubmit={submit}>
           <label className="pc-field">
             Lecturer name
-            <input type="text" required maxLength={100} value={form.name} onChange={setField('name')} />
+            <input type="text" required maxLength={100} list="lecturer-people" value={form.name} onChange={nameChanged} />
+            <datalist id="lecturer-people">
+              {people.map((p) => <option key={p.key} value={p.name}>{p.subject}{p.phone ? ` · ${p.phone}` : ''}</option>)}
+            </datalist>
           </label>
           <label className="pc-field">
             Phone (optional)
@@ -492,6 +688,13 @@ function LecturersPanel({ batch, formulas = [], onBatchChange }) {
           <label className="pc-field">
             Subject
             <input type="text" required maxLength={100} value={form.subject} onChange={setField('subject')} />
+          </label>
+          <label className="pc-field">
+            Medium
+            <select required value={form.medium} onChange={setField('medium')}>
+              <option value="">Select...</option>
+              {MEDIUMS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select>
           </label>
           <label className="pc-field">
             How is this lecturer paid?
@@ -509,19 +712,59 @@ function LecturersPanel({ batch, formulas = [], onBatchChange }) {
           ) : (
             <>
               <label className="pc-field">
-                Sub fee (Rs.)
-                <input type="number" required min="0.01" step="0.01" value={form.subFee} onChange={setField('subFee')} />
-              </label>
-              <label className="pc-field">
-                Percentage (%)
-                <input type="number" required min="0.01" max="100" step="0.01" value={form.percentage} onChange={setField('percentage')} />
-              </label>
-              <label className="pc-field">
-                Formula (optional)
+                Formula for this lecturer (optional)
                 <select value={form.formulaId} onChange={setField('formulaId')}>
-                  <FormulaOptions formulas={formulas} emptyLabel="Same as the batch formula" />
+                  <FormulaOptions formulas={formulas} degree={batch.faculty} emptyLabel="Same as the batch formula" />
                 </select>
+                {isAdmin && (
+                  <button type="button" className="pc-btn-sm" style={{ marginTop: 6, alignSelf: 'flex-start' }} onClick={() => setNewFormula((f) => (f ? null : { name: '', expression: '' }))}>
+                    {newFormula ? 'Cancel new formula' : '+ New formula for this lecturer'}
+                  </button>
+                )}
               </label>
+              {newFormula && (
+                <div className="wide pc-panel" style={{ margin: 0 }}>
+                  <div className="pc-form">
+                    <label className="pc-field">
+                      Formula name
+                      <input type="text" maxLength={60} placeholder="e.g. Nalin special" value={newFormula.name} onChange={(e) => setNewFormula((f) => ({ ...f, name: e.target.value }))} />
+                    </label>
+                    <label className="pc-field" style={{ flex: 2 }}>
+                      Formula
+                      <input type="text" maxLength={300} placeholder="attendance * subFee * percentage% - 5%" value={newFormula.expression} onChange={(e) => setNewFormula((f) => ({ ...f, expression: e.target.value }))} />
+                    </label>
+                    <div style={{ alignSelf: 'flex-end' }}>
+                      <button type="button" className="pc-btn-sm" disabled={creatingFormula} onClick={createLecturerFormula}>
+                        {creatingFormula ? 'Saving…' : 'Create & use'}
+                      </button>
+                    </div>
+                  </div>
+                  <small style={{ color: '#4A6288' }}>You can use attendance, subFee, percentage, hours, hourRate, numbers, + - * / ( ) and %. This formula is then used only for this lecturer. For attendance ranges, use the Formulas tab.</small>
+                </div>
+              )}
+              {uses.includes('subFee') && (
+                <label className="pc-field">
+                  Sub fee (Rs.)
+                  <input type="number" required min="0.01" step="0.01" value={form.subFee} onChange={setField('subFee')} />
+                </label>
+              )}
+              {uses.includes('percentage') && (
+                <label className="pc-field">
+                  Percentage (%)
+                  <input type="number" required min="0.01" max="100" step="0.01" value={form.percentage} onChange={setField('percentage')} />
+                </label>
+              )}
+              {uses.includes('hourRate') && (
+                <label className="pc-field">
+                  Hourly rate (Rs. per hour)
+                  <input type="number" required min="0.01" step="0.01" value={form.hourRate} onChange={setField('hourRate')} />
+                </label>
+              )}
+              {effFormula && effFormula.kind === 'range' && (
+                <p className="wide" style={{ margin: 0, fontSize: 13, color: '#4A6288' }}>
+                  “{effFormula.name}” pays by ranges ({effFormula.expression}){uses.includes('percentage') ? ', so the percentage above is needed.' : ', so no sub fee or percentage is needed.'}
+                </p>
+              )}
             </>
           )}
 
@@ -560,19 +803,20 @@ function LecturersPanel({ batch, formulas = [], onBatchChange }) {
       <div className="pc-table-wrap">
         <table className="pc-table">
           <thead>
-            <tr><th>Name</th><th>Subject</th><th>Pay</th><th>Bank details</th><th></th></tr>
+            <tr><th>Name</th><th>Subject</th><th>Medium</th><th>Pay</th><th>Bank details</th><th></th></tr>
           </thead>
           <tbody>
-            {batch.lecturers.length === 0 && <tr><td colSpan="5" className="pc-empty">No lecturers in this batch yet</td></tr>}
+            {batch.lecturers.length === 0 && <tr><td colSpan="6" className="pc-empty">No lecturers in this batch yet</td></tr>}
             {batch.lecturers.map((l) => (
               <tr key={l._id}>
                 <td>{l.name}{l.phone && <><br /><small>{l.phone}</small></>}</td>
                 <td>{l.subject}</td>
+                <td>{mediumLabel(l.medium)}</td>
                 <td>
                   {l.payType === 'fixed' ? (
                     <>Fixed<br /><small>{formatMoney(l.fixedSalary)}</small></>
                   ) : (
-                    <>Formula{l.formula && formulas.find((f) => f._id === l.formula) ? ` · ${formulas.find((f) => f._id === l.formula).name}` : ''}<br /><small>{formatMoney(l.subFee)} · {l.percentage}%</small></>
+                    <>Formula · {l.formula && formulas.find((f) => f._id === l.formula) ? formulas.find((f) => f._id === l.formula).name : 'batch formula'}<br /><small>{[l.subFee ? formatMoney(l.subFee) : null, l.percentage ? `${l.percentage}%` : null, l.hourRate ? `${formatMoney(l.hourRate)} / hour` : null].filter(Boolean).join(' · ') || 'no rates needed'}</small></>
                   )}
                 </td>
                 <td>
@@ -600,23 +844,27 @@ function LecturersPanel({ batch, formulas = [], onBatchChange }) {
 }
 
 // ---------- Salaries: Management | Art -> batch cards -> the batch's salary page ----------
-function SalariesSection({ isAdmin, formulas }) {
-  const [faculty, setFaculty] = useTabState('sf', 'management');
+function SalariesSection({ isAdmin, formulas, courses, onCoursesChanged }) {
+  const [faculty, setFaculty] = useTabState('sf', '');
   const [batchId, setBatchId] = useTabState('sb', '');
 
   if (batchId) return <BatchSalaries batchId={batchId} isAdmin={isAdmin} formulas={formulas} onBack={() => setBatchId('')} />;
+  if (courses === null) return <p>Loading…</p>;
+  const active = pickCourse(courses, faculty);
+  if (courses.length === 0) {
+    return (
+      <>
+        <CourseTabs courses={courses} value="" onChange={setFaculty} canAdd={isAdmin} onChanged={onCoursesChanged} />
+        <p className="pc-empty">{isAdmin ? 'No degrees yet — click “+ Add degree” above.' : 'No degrees yet. The Super Admin needs to add a degree first.'}</p>
+      </>
+    );
+  }
 
   return (
     <>
       <p style={{ margin: '0 0 14px', color: '#4A6288', fontSize: 13 }}>Choose a batch to enter its salaries.</p>
-      <div className="pc-tabs">
-        {FACULTIES.map(([key, label]) => (
-          <button key={key} className={`pc-tab ${faculty === key ? 'active' : ''}`} onClick={() => setFaculty(key)}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <BatchList faculty={faculty} isAdmin={isAdmin} formulas={formulas} readOnly onOpen={setBatchId} />
+      <CourseTabs courses={courses} value={active} onChange={setFaculty} canAdd={isAdmin} onChanged={onCoursesChanged} />
+      <BatchList faculty={active} isAdmin={isAdmin} formulas={formulas} readOnly onOpen={setBatchId} />
     </>
   );
 }
@@ -626,6 +874,7 @@ function BatchSalaries({ batchId, isAdmin, formulas, onBack }) {
   const [batch, setBatch] = useState(null);
   const [error, setError] = useState('');
   const [month, setMonth] = useState(currentMonthString());
+  const [mode, setMode] = useTabState('sm', 'online'); // the 3 parts of a batch
   const [editing, setEditing] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -661,8 +910,17 @@ function BatchSalaries({ batchId, isAdmin, formulas, onBack }) {
         <button className="pc-btn-sm" onClick={onBack}>← Back to batches</button>
       </div>
 
+      <div className="pc-tabs">
+        {MODES.map(([key, label]) => (
+          <button key={key} className={`pc-tab ${mode === key ? 'active' : ''}`} onClick={() => { setMode(key); setEditing(null); }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
       <SalaryForm
         batch={batch}
+        mode={mode}
         formulas={formulas}
         editing={editing}
         defaultMonth={month}
@@ -671,6 +929,7 @@ function BatchSalaries({ batchId, isAdmin, formulas, onBack }) {
       />
       <SalaryList
         batchId={batch._id}
+        mode={mode}
         month={month}
         setMonth={setMonth}
         refreshKey={refreshKey}
@@ -684,12 +943,16 @@ function BatchSalaries({ batchId, isAdmin, formulas, onBack }) {
 
 // The salary FORM of one batch. Pick the month + year and the lecturer: the lecturer's details
 // fill in by themselves. Then either the formula (attendance) or a fixed salary.
-function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit, onSaved }) {
+function SalaryForm({ batch, mode, formulas = [], editing, defaultMonth, onCancelEdit, onSaved }) {
   const batchId = batch._id;
   const defaultFormula = formulas.find((f) => f.isDefault);
   const [lecturerId, setLecturerId] = useState('');
   const [month, setMonth] = useState(defaultMonth);
   const [type, setType] = useState('formula');
+  const [subFeeInput, setSubFeeInput] = useState('');
+  const [percentageInput, setPercentageInput] = useState('');
+  const [hoursInput, setHoursInput] = useState('');
+  const [hourRateInput, setHourRateInput] = useState('');
   const [formulaId, setFormulaId] = useState('');
   const [attendance, setAttendance] = useState('');
   const [fixedAmount, setFixedAmount] = useState('');
@@ -715,6 +978,10 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
     setLecturerId(editing.lecturer);
     setMonth(editing.month);
     setType(editing.type || 'formula');
+    setSubFeeInput(editing.subFee ? String(editing.subFee) : '');
+    setPercentageInput(editing.percentage ? String(editing.percentage) : '');
+    setHoursInput(editing.hours ? String(editing.hours) : '');
+    setHourRateInput(editing.hourRate ? String(editing.hourRate) : '');
     const lec = batch.lecturers.find((l) => l._id === editing.lecturer);
     setFormulaId(lec?.formula || batch.formula || '');
     setAttendance(editing.type === 'fixed' || editing.attendance === undefined ? '' : String(editing.attendance));
@@ -735,6 +1002,10 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
       setType(l.payType || 'formula');
       setFormulaId(l.formula || batch.formula || '');
       setFixedAmount(l.fixedSalary ? String(l.fixedSalary) : '');
+      setSubFeeInput(l.subFee ? String(l.subFee) : '');
+      setPercentageInput(l.percentage ? String(l.percentage) : '');
+      setHourRateInput(l.hourRate ? String(l.hourRate) : '');
+      setHoursInput('');
     }
   };
 
@@ -744,6 +1015,10 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
     setFixedAmount('');
     setNote('');
     setType('formula');
+    setSubFeeInput('');
+    setPercentageInput('');
+    setHoursInput('');
+    setHourRateInput('');
   };
 
   // Live preview of the amount (the server works it out again when saving).
@@ -752,14 +1027,35 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
   const validAtt = attendance !== '' && Number.isInteger(attNum) && attNum >= 0;
   const fixedNum = Number(fixedAmount);
   const validFixed = fixedAmount !== '' && fixedNum > 0;
-  const used = formula ? formulaVariables(formula.expression) : [];
+  const used = formulaUses(formula);
+  const needAtt = used.includes('attendance');
+  const needHours = used.includes('hours');
+  const subFeeNum = Number(subFeeInput) > 0 ? Number(subFeeInput) : 0;
+  const percentageNum = Number(percentageInput) > 0 ? Number(percentageInput) : 0;
+  const hoursNum = Number(hoursInput) > 0 ? Number(hoursInput) : 0;
+  const hourRateNum = Number(hourRateInput) > 0 ? Number(hourRateInput) : 0;
   const missing = lecturer
-    ? [used.includes('subFee') && !lecturer.subFee && 'sub fee', used.includes('percentage') && !lecturer.percentage && 'percentage'].filter(Boolean)
+    ? [
+        used.includes('subFee') && !subFeeNum && 'sub fee',
+        used.includes('percentage') && !percentageNum && 'percentage',
+        used.includes('hourRate') && !hourRateNum && 'hourly rate',
+      ].filter(Boolean)
     : [];
-  const calc =
-    type === 'formula' && lecturer && formula && validAtt && missing.length === 0
-      ? tryFormula(formula.expression, { attendance: attNum, subFee: lecturer.subFee || 0, percentage: lecturer.percentage || 0 })
-      : null;
+  const inputsOk = (!needAtt || validAtt) && (!needHours || hoursNum > 0);
+  let calc = null;
+  if (type === 'formula' && lecturer && formula && inputsOk && missing.length === 0) {
+    if (formula.kind === 'range') {
+      const value = formula.rangeBy === 'hours' ? hoursNum : attNum;
+      const tier = findTier(formula.tiers, value);
+      const pay = tier ? tierPay(formula, tier) : null;
+      const pct = tier && hasPct(tier) ? Number(tier.percentage) : percentageNum;
+      calc = tier
+        ? { amount: round2(pay === 'rate' ? value * tier.amount * (pct / 100) : pay === 'unit' ? tier.amount * value : tier.amount), tier, value, pay, pct }
+        : { error: `No range in “${formula.name}” covers ${value}. Add a range for it in the Formulas tab.` };
+    } else {
+      calc = tryFormula(formula.expression, { attendance: attNum || 0, subFee: subFeeNum, percentage: percentageNum, hours: hoursNum, hourRate: hourRateNum });
+    }
+  }
   const amount = type === 'fixed' ? (validFixed ? round2(fixedNum) : null) : calc && calc.amount !== undefined ? calc.amount : null;
 
   const submit = async (e) => {
@@ -768,7 +1064,7 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
     setSaving(true);
     try {
       // No formulaId is sent: the server uses the lecturer's formula, else the batch's formula.
-      const body = { type, note, ...(type === 'formula' ? { attendance } : { fixedAmount }) };
+      const body = { type, mode, note, ...(type === 'formula' ? { attendance, hours: hoursInput, subFee: subFeeInput, percentage: percentageInput, hourRate: hourRateInput } : { fixedAmount }) };
       const res = editing
         ? await axios.put(`/api/lecturer-salary/salaries/${editing._id}`, body)
         : await axios.post('/api/lecturer-salary/salaries', { ...body, batchId, lecturerId, month });
@@ -784,7 +1080,7 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
 
   return (
     <div className="pc-panel">
-      <h3>{editing ? `Edit salary — ${editing.lecturerName}` : 'Add a salary'}</h3>
+      <h3>{editing ? `Edit salary — ${editing.lecturerName}` : 'Add a salary'} · {modeLabel(mode)}</h3>
       {message && <div className={`pc-alert ${message.type}`}>{message.text}</div>}
 
       <form className="pc-form" onSubmit={submit}>
@@ -811,7 +1107,7 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
             Normally paid: <strong>{payTypeLabel(lecturer.payType)}</strong>
             {lecturer.payType === 'fixed'
               ? ` — ${formatMoney(lecturer.fixedSalary)}`
-              : ` — ${lecturer.subFee ? `sub fee ${formatMoney(lecturer.subFee)}` : 'no sub fee'}, ${lecturer.percentage ? `${lecturer.percentage}%` : 'no percentage'}`}
+              : ` — ${[lecturer.subFee ? `sub fee ${formatMoney(lecturer.subFee)}` : null, lecturer.percentage ? `${lecturer.percentage}%` : null, lecturer.hourRate ? `${formatMoney(lecturer.hourRate)} / hour` : null].filter(Boolean).join(', ') || 'by the formula'}`}
             <br />
             Bank:{' '}
             {lecturer.accountNumber
@@ -822,7 +1118,7 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
                 <br />
                 <span style={{ color: '#1E56C2' }}>
                   Already has {existing.length} salary entr{existing.length === 1 ? 'y' : 'ies'} in {monthLabel(month)}
-                  {' '}({existing.map((r) => formatMoney(r.amount)).join(', ')}). You can still add another one.
+                  {' '}({existing.map((r) => `${modeLabel(r.mode)} ${formatMoney(r.amount)}`).join(', ')}). You can still add another one.
                 </span>
               </>
             )}
@@ -840,14 +1136,43 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
             </label>
 
             {type === 'formula' ? (
-              <label className="pc-field">
-                Attendance
-                <input type="number" required min="0" step="1" value={attendance} onChange={(e) => setAttendance(e.target.value)} />
-              </label>
+              <>
+                {needAtt && (
+                  <label className="pc-field">
+                    Attendance
+                    <input type="number" required min="0" step="1" value={attendance} onChange={(e) => setAttendance(e.target.value)} />
+                  </label>
+                )}
+                {needHours && (
+                  <label className="pc-field">
+                    Hours
+                    <input type="number" required min="0.01" step="0.01" value={hoursInput} onChange={(e) => setHoursInput(e.target.value)} />
+                  </label>
+                )}
+              </>
             ) : (
               <label className="pc-field">
                 Fixed salary (Rs.)
                 <input type="number" required min="0.01" step="0.01" value={fixedAmount} onChange={(e) => setFixedAmount(e.target.value)} />
+              </label>
+            )}
+
+            {type === 'formula' && used.includes('subFee') && (
+              <label className="pc-field">
+                Sub fee (Rs.)
+                <input type="number" required min="0.01" step="0.01" value={subFeeInput} onChange={(e) => setSubFeeInput(e.target.value)} />
+              </label>
+            )}
+            {type === 'formula' && used.includes('percentage') && (
+              <label className="pc-field">
+                Percentage (%)
+                <input type="number" required min="0.01" max="100" step="0.01" value={percentageInput} onChange={(e) => setPercentageInput(e.target.value)} />
+              </label>
+            )}
+            {type === 'formula' && used.includes('hourRate') && (
+              <label className="pc-field">
+                Hourly rate (Rs. per hour)
+                <input type="number" required min="0.01" step="0.01" value={hourRateInput} onChange={(e) => setHourRateInput(e.target.value)} />
               </label>
             )}
 
@@ -858,7 +1183,7 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
 
             {type === 'formula' && missing.length > 0 && (
               <p className="wide" style={{ margin: 0, color: '#B3382C' }}>
-                This formula needs the lecturer's {missing.join(' and ')}. Add {missing.length > 1 ? 'them' : 'it'} in the lecturer details, or choose “Fixed amount”.
+                This formula needs the {missing.join(' and ')}. Type {missing.length > 1 ? 'them' : 'it'} above, or choose “Fixed amount”.
               </p>
             )}
             {calc?.error && <p className="wide" style={{ margin: 0, color: '#B3382C' }}>{calc.error}</p>}
@@ -867,11 +1192,16 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
               {type === 'formula' && formula ? (
                 <div style={{ color: '#4A6288', fontSize: 13 }}>
                   <strong>{formula.name}:</strong> <code>{formula.expression}</code>
-                  {validAtt && lecturer && (
+                  {lecturer && inputsOk && (
                     <><br />
-                      attendance = {attNum}
-                      {used.includes('subFee') && `, subFee = ${formatMoney(lecturer.subFee || 0)}`}
-                      {used.includes('percentage') && `, percentage = ${lecturer.percentage || 0}`}
+                      {[
+                        needAtt && `attendance = ${attNum}`,
+                        needHours && `hours = ${hoursNum}`,
+                        used.includes('subFee') && `subFee = ${formatMoney(subFeeNum)}`,
+                        used.includes('percentage') && `percentage = ${percentageNum}`,
+                        used.includes('hourRate') && `hourRate = ${formatMoney(hourRateNum)}`,
+                      ].filter(Boolean).join(', ')}
+                      {calc?.tier && <><br />Range {tierLabel(calc.tier)} applies{calc.pay === 'rate' ? ` (${calc.value} × (${formatMoney(calc.tier.amount)} × ${calc.pct}%))` : calc.pay === 'unit' ? ` (${formatMoney(calc.tier.amount)} × ${calc.value})` : ` (${formatMoney(calc.tier.amount)})`}</>}
                     </>
                   )}
                 </div>
@@ -897,7 +1227,7 @@ function SalaryForm({ batch, formulas = [], editing, defaultMonth, onCancelEdit,
 }
 
 // The entries of one batch for one month, with the submit -> verify -> pay steps.
-function SalaryList({ batchId, month, setMonth, refreshKey, reload, isAdmin, onEdit }) {
+function SalaryList({ batchId, mode, month, setMonth, refreshKey, reload, isAdmin, onEdit }) {
   const [records, setRecords] = useState(null);
   const [message, setMessage] = useState(null);
   const [busyId, setBusyId] = useState('');
@@ -968,7 +1298,8 @@ function SalaryList({ batchId, month, setMonth, refreshKey, reload, isAdmin, onE
     }
   };
 
-  const list = records || [];
+  // Only this part (Online / Physical / Recording). Older entries saved before the 3 parts existed show under Online.
+  const list = (records || []).filter((r) => r.mode === mode || (!r.mode && mode === 'online'));
   const sum = (items) => items.reduce((t, s) => t + s.amount, 0);
   const total = sum(list);
   const paid = sum(list.filter((s) => s.status === 'paid'));
@@ -979,14 +1310,14 @@ function SalaryList({ batchId, month, setMonth, refreshKey, reload, isAdmin, onE
   return (
     <>
       <div className="pc-toolbar" style={{ marginTop: 24 }}>
-        <h3 style={{ margin: 0 }}>Salaries — {monthLabel(month)}</h3>
+        <h3 style={{ margin: 0 }}>{modeLabel(mode)} salaries — {monthLabel(month)}</h3>
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <MonthYearPicker value={month} onChange={(v) => { setMonth(v); setMessage(null); }} />
         </div>
       </div>
 
       <p style={{ margin: '0 0 14px', color: '#4A6288', fontSize: 13 }}>
-        Steps: add the salary above (draft) → Submit → Super Admin verifies → Mark paid.
+        Steps: add the salary above (draft) → Submit → Super Admin verifies → paid from the “Payments” tab (one payment per lecturer, all their batches together).
       </p>
 
       {message && <div className={`pc-alert ${message.type}`}>{message.text}</div>}
@@ -1030,9 +1361,17 @@ function SalaryList({ batchId, month, setMonth, refreshKey, reload, isAdmin, onE
                           {rec.formulaName}
                           <br />
                           <small>
-                            {rec.attendance} attendance
-                            {rec.subFee ? ` · ${formatMoney(rec.subFee)}` : ''}
-                            {rec.percentage ? ` · ${rec.percentage}%` : ''}
+                            {rec.calcText ? rec.calcText : (
+                              <>
+                                {[
+                                  rec.attendance !== undefined && rec.attendance !== null ? `${rec.attendance} attendance` : null,
+                                  rec.hours ? `${rec.hours} hours` : null,
+                                  rec.hourRate ? `${formatMoney(rec.hourRate)} / hour` : null,
+                                  rec.subFee ? formatMoney(rec.subFee) : null,
+                                  rec.percentage ? `${rec.percentage}%` : null,
+                                ].filter(Boolean).join(' · ')}
+                              </>
+                            )}
                           </small>
                         </span>
                       ) : (
@@ -1072,11 +1411,11 @@ function SalaryList({ batchId, month, setMonth, refreshKey, reload, isAdmin, onE
                       {rec.status === 'submitted' && !isAdmin && <small>Waiting for Super Admin</small>}
                       {rec.status === 'verified' && isAdmin && (
                         <>
-                          <button className="pc-btn-sm" disabled={busy} onClick={() => act(rec, 'pay')}>Mark paid</button>{' '}
                           <button className="pc-btn-sm pc-btn-danger" disabled={busy} onClick={() => sendBack(rec)}>Send back</button>
                         </>
                       )}
                       {rec.status === 'verified' && !isAdmin && <small>Verified — waiting for payment</small>}
+                      {rec.status === 'verified' && isAdmin && <small style={{ display: 'block', marginTop: 4 }}>Pay it in the Payments tab</small>}
                       {rec.status === 'paid' && isAdmin && (
                         <button className="pc-btn-sm pc-btn-danger" disabled={busy} onClick={() => undoPaid(rec)}>Undo paid</button>
                       )}
@@ -1097,27 +1436,223 @@ function SalaryList({ batchId, month, setMonth, refreshKey, reload, isAdmin, onE
   );
 }
 
+// ---------- Payments: one payment per lecturer per month, ALL their batches added together ----------
+function PaymentsSection({ isAdmin, courses }) {
+  const [month, setMonth] = useState(currentMonthString());
+  const [degree, setDegree] = useState(''); // '' = every degree
+  const [search, setSearch] = useState('');
+  const [people, setPeople] = useState(null);
+  const [message, setMessage] = useState(null);
+  const [busyKey, setBusyKey] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPeople(null);
+    axios
+      .get('/api/lecturer-salary/payments', { params: { month } })
+      .then((res) => { if (!cancelled) setPeople(res.data); })
+      .catch((err) => { if (!cancelled) { setPeople([]); setMessage({ type: 'err', text: apiError(err, 'Could not load the payments') }); } });
+    return () => { cancelled = true; };
+  }, [month, refreshKey]);
+
+  const act = async (person, action) => {
+    const text = action === 'pay'
+      ? `Pay ${person.name} ${formatMoney(person.readyTotal)} now, for all their verified entries this month?`
+      : `Undo the payment of ${person.name}? Their entries go back to “Verified”.`;
+    if (!window.confirm(text)) return;
+    setMessage(null);
+    setBusyKey(person.key);
+    try {
+      const res = await axios.post('/api/lecturer-salary/payments', { month, personKey: person.key, action });
+      setMessage({ type: 'ok', text: res.data.message });
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      setMessage({ type: 'err', text: apiError(err, 'Could not update this payment') });
+    } finally {
+      setBusyKey('');
+    }
+  };
+
+  // One tab per degree. Only lecturers who have entries in that degree are listed.
+  const active = pickCourse(courses, degree);
+  const rows = (people || [])
+    .map((p) => {
+      const here = p.items.filter((i) => i.faculty === active);
+      return { ...p, here, others: p.items.filter((i) => i.faculty !== active) };
+    })
+    .filter((p) => p.here.length > 0)
+    .filter((p) => !search.trim() || p.name.toLowerCase().includes(search.trim().toLowerCase()));
+  const totalOf = (items, status) => round2(items.filter((i) => !status || i.status === status).reduce((t, i) => t + i.amount, 0));
+  const sumHere = (status) => round2(rows.reduce((t, p) => t + totalOf(p.here, status), 0));
+  const notVerifiedHere = round2(rows.reduce((t, p) => t + totalOf(p.here.filter((i) => i.status !== 'verified' && i.status !== 'paid')), 0));
+  const shown = rows;
+
+  return (
+    <>
+      <div className="pc-toolbar">
+        <h3 style={{ margin: 0 }}>Payments — {monthLabel(month)}</h3>
+        <MonthYearPicker value={month} onChange={(v) => { setMonth(v); setMessage(null); }} />
+      </div>
+      <p style={{ margin: '0 0 14px', color: '#4A6288', fontSize: 13 }}>
+        Salaries are listed degree by degree. A lecturer who teaches in more than one degree is still paid <strong>once</strong>:
+        the Pay button adds up all their verified salaries (every batch, degree and online / physical / recording part).
+        People are matched by phone number (or by name when there is no phone number).
+      </p>
+
+      {message && <div className={`pc-alert ${message.type}`}>{message.text}</div>}
+
+      <div className="pc-cards">
+        <div className="pc-card"><p>{active} — total salaries</p><h2>{formatMoney(sumHere())}</h2><small>{rows.length} lecturer{rows.length === 1 ? '' : 's'}</small></div>
+        <div className="pc-card"><p>Ready to pay (verified)</p><h2>{formatMoney(sumHere('verified'))}</h2></div>
+        <div className="pc-card balance"><p>Paid</p><h2>{formatMoney(sumHere('paid'))}</h2></div>
+        <div className="pc-card spent"><p>Not verified yet</p><h2>{formatMoney(notVerifiedHere)}</h2></div>
+      </div>
+
+      <CourseTabs courses={courses} value={active} onChange={setDegree} />
+
+      <div className="pc-form" style={{ marginBottom: 14 }}>
+        <label className="pc-field">
+          Lecturer
+          <input type="text" placeholder="Search by name" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </label>
+      </div>
+
+      {courses.length === 0 && <p className="pc-empty">No degrees yet.</p>}
+      {people === null && <p>Loading…</p>}
+      {people && courses.length > 0 && shown.length === 0 && <p className="pc-empty">No salary entries in {active} for this month.</p>}
+
+      {shown.map((p) => {
+        const allPaid = p.paidTotal > 0 && p.readyTotal === 0 && p.notReadyTotal === 0;
+        return (
+          <div key={p.key} className="pc-panel">
+            <div className="pc-toolbar" style={{ marginBottom: 8 }}>
+              <div>
+                <h3 style={{ margin: 0 }}>{p.name}</h3>
+                <small style={{ color: '#4A6288' }}>{p.subjects.join(', ')}{p.phone ? ` · ${p.phone}` : ''}</small>
+                <br />
+                <small>
+                  Bank: {p.bank
+                    ? `${p.bank.bankName} · ${p.bank.accountNumber}${p.bank.bankBranch ? ` · ${p.bank.bankBranch}` : ''}${p.bank.accountHolder ? ` · ${p.bank.accountHolder}` : ''}`
+                    : <span style={{ color: '#B7791F' }}>no bank details added yet</span>}
+                </small>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 22, fontWeight: 700 }}>{formatMoney(totalOf(p.here))}</div>
+                <small style={{ color: '#4A6288' }}>{active} total for {monthLabel(month)}</small>
+                {p.others.length > 0 && <small style={{ display: 'block', color: '#4A6288' }}>All degrees together: <strong>{formatMoney(p.total)}</strong></small>}
+              </div>
+            </div>
+
+            <div className="pc-table-wrap">
+              <table className="pc-table">
+                <thead><tr><th>Degree / batch</th><th>Part</th><th className="num">Amount</th><th>Status</th></tr></thead>
+                <tbody>
+                  {p.here.map((i) => (
+                    <tr key={i._id}>
+                      <td>{i.faculty} — {i.batchYear} Batch{i.note && <><br /><small style={{ color: '#1E56C2' }}>{i.note}</small></>}</td>
+                      <td>{modeLabel(i.mode)}{i.type === 'fixed' ? ' · fixed' : ''}</td>
+                      <td className="num">{formatMoney(i.amount)}</td>
+                      <td><StatusBadge status={i.status} /></td>
+                    </tr>
+                  ))}
+                  {p.others.map((i) => (
+                    <tr key={i._id} style={{ opacity: 0.6 }}>
+                      <td>{i.faculty} — {i.batchYear} Batch <small>(other degree)</small></td>
+                      <td>{modeLabel(i.mode)}{i.type === 'fixed' ? ' · fixed' : ''}</td>
+                      <td className="num">{formatMoney(i.amount)}</td>
+                      <td><StatusBadge status={i.status} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              {p.readyTotal > 0 && isAdmin && (
+                <button className="pc-btn" disabled={busyKey === p.key} onClick={() => act(p, 'pay')}>
+                  {busyKey === p.key ? 'Paying…' : `Pay ${formatMoney(p.readyTotal)}`}
+                </button>
+              )}
+              {p.readyTotal > 0 && p.others.length > 0 && (
+                <small style={{ color: '#4A6288' }}>One payment for all degrees together{p.others.some((i) => i.status === 'verified') ? ' (includes verified salaries from the other degree)' : ''}.</small>
+              )}
+              {p.readyTotal > 0 && !isAdmin && <small>{formatMoney(p.readyTotal)} verified — waiting for the Super Admin to pay</small>}
+              {p.notReadyTotal > 0 && (
+                <small style={{ color: '#B7791F' }}>{formatMoney(p.notReadyTotal)} is not verified yet and is not included in the payment.</small>
+              )}
+              {p.paidTotal > 0 && (
+                <small style={{ color: '#0F7A6F' }}>
+                  Paid {formatMoney(p.paidTotal)}{p.paidDate ? ` on ${formatDate(p.paidDate)}` : ''}{p.paidByName ? ` by ${p.paidByName}` : ''}
+                </small>
+              )}
+              {p.paidTotal > 0 && isAdmin && (
+                <button className="pc-btn-sm pc-btn-danger" disabled={busyKey === p.key} onClick={() => act(p, 'unpay')}>
+                  {allPaid ? 'Undo payment' : 'Undo paid part'}
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 // ---------- Formulas (super admin): write your own salary formulas ----------
 const FORMULA_EXAMPLES = [
   ['Standard', 'attendance * subFee * percentage%'],
-  ['Minus 5%', 'attendance * subFee * percentage% * (1 - 5%)'],
+  ['Minus 5%', 'attendance * subFee * percentage% - 5%'],
+  ['Pay by hours', 'hours * hourRate'],
   ['Capped at 100,000', 'min(attendance * subFee * percentage%, 100000)'],
 ];
 
-function FormulasSection({ formulas, onChanged }) {
-  const [form, setForm] = useState({ name: '', expression: '', description: '' });
+const blankTier = () => ({ from: '', to: '', amount: '', payBy: 'total', percentage: '' });
+const blankFormulaForm = () => ({
+  name: '', description: '', kind: 'expression', expression: '', degree: '', rangeBy: 'attendance',
+  tiers: [blankTier()],
+});
+
+function FormulasSection({ formulas, courses = [], onChanged }) {
+  const [form, setForm] = useState(blankFormulaForm);
   const [editingId, setEditingId] = useState('');
-  const [test, setTest] = useState({ attendance: '20', subFee: '5000', percentage: '60' });
+  const [test, setTest] = useState({ attendance: '20', subFee: '5000', percentage: '60', hours: '10', hourRate: '500' });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
 
+  const isRange = form.kind === 'range';
   const setField = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
-  const reset = () => { setForm({ name: '', expression: '', description: '' }); setEditingId(''); };
+  const reset = () => { setForm(blankFormulaForm()); setEditingId(''); };
+  const setTier = (i, key, value) => setForm((f) => ({ ...f, tiers: f.tiers.map((t, idx) => (idx === i ? { ...t, [key]: value } : t)) }));
+  const addTier = () => setForm((f) => {
+    const last = f.tiers[f.tiers.length - 1];
+    const next = last && last.to !== '' && Number(last.to) >= 0 ? String(Math.floor(Number(last.to)) + 1) : '';
+    return { ...f, tiers: [...f.tiers, { ...blankTier(), from: next }] };
+  });
+  const removeTier = (i) => setForm((f) => ({ ...f, tiers: f.tiers.length > 1 ? f.tiers.filter((_, idx) => idx !== i) : f.tiers }));
 
   // Live check while typing: does the formula work, and what does it give for the test numbers?
-  const result = form.expression.trim()
-    ? tryFormula(form.expression, { attendance: Number(test.attendance) || 0, subFee: Number(test.subFee) || 0, percentage: Number(test.percentage) || 0 })
-    : null;
+  const num = (v) => Number(v) || 0;
+  let result = null;
+  const byHours = form.rangeBy === 'hours';
+  if (isRange) {
+    const tiers = form.tiers.map((t) => ({ from: Number(t.from), to: t.to === '' ? null : Number(t.to), amount: Number(t.amount), payBy: t.payBy, percentage: t.percentage, empty: t.from === '' && t.to === '' && t.amount === '' }));
+    const okNum = (n) => Number.isFinite(n) && n >= 0 && (byHours || Number.isInteger(n));
+    const bad = tiers.findIndex((t) => !okNum(t.from) || (t.to !== null && (!okNum(t.to) || t.to < t.from)) || !(t.amount > 0));
+    if (tiers.every((t) => t.empty)) result = null;
+    else if (bad >= 0) result = { error: `Range ${bad + 1}: fill in ${byHours ? 'numbers' : 'whole numbers'} for from / to (to is not less than from, or leave it empty for “and above”) and an amount above 0.` };
+    else {
+      const value = num(byHours ? test.hours : test.attendance);
+      const sorted = [...tiers].sort((a, b) => a.from - b.from || (a.to ?? Infinity) - (b.to ?? Infinity));
+      const tier = findTier(sorted, value);
+      const pct = tier && tier.percentage !== '' ? Number(tier.percentage) : num(test.percentage);
+      result = tier
+        ? { amount: tier.payBy === 'rate' ? value * tier.amount * (pct / 100) : tier.payBy === 'unit' ? tier.amount * value : tier.amount, tier, value }
+        : { error: `No range covers ${byHours ? 'hours' : 'attendance'} ${value}.` };
+    }
+  } else if (form.expression.trim()) {
+    result = tryFormula(form.expression, { attendance: num(test.attendance), subFee: num(test.subFee), percentage: num(test.percentage), hours: num(test.hours), hourRate: num(test.hourRate) });
+  }
 
   const submit = async (e) => {
     e.preventDefault();
@@ -1139,7 +1674,17 @@ function FormulasSection({ formulas, onChanged }) {
 
   const startEdit = (f) => {
     setEditingId(f._id);
-    setForm({ name: f.name, expression: f.expression, description: f.description || '' });
+    setForm({
+      name: f.name,
+      description: f.description || '',
+      kind: f.kind || 'expression',
+      expression: f.kind === 'range' ? '' : f.expression,
+      degree: f.degree || '',
+      rangeBy: f.rangeBy || 'attendance',
+      tiers: f.kind === 'range' && f.tiers?.length
+        ? f.tiers.map((t) => ({ from: String(t.from), to: t.to === null || t.to === undefined ? '' : String(t.to), amount: String(t.amount), payBy: tierPay(f, t), percentage: t.percentage === null || t.percentage === undefined ? '' : String(t.percentage) }))
+        : [blankTier()],
+    });
     setMessage(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -1165,74 +1710,163 @@ function FormulasSection({ formulas, onChanged }) {
         <form className="pc-form" onSubmit={submit}>
           <label className="pc-field">
             Formula name
-            <input type="text" required maxLength={60} placeholder="e.g. Standard minus 5%" value={form.name} onChange={setField('name')} />
+            <input type="text" required maxLength={60} placeholder={isRange ? 'e.g. Art 2025 ranges' : 'e.g. Standard minus 5%'} value={form.name} onChange={setField('name')} />
+          </label>
+          <label className="pc-field">
+            Type
+            <select value={form.kind} onChange={setField('kind')}>
+              <option value="expression">Maths formula (you type the calculation)</option>
+              <option value="range">Ranges (the pay changes with the attendance or hours)</option>
+            </select>
+          </label>
+          <label className="pc-field">
+            Only for degree (optional)
+            <select value={form.degree} onChange={setField('degree')}>
+              <option value="">Every degree</option>
+              {courses.map((c) => <option key={c._id} value={c.name}>{c.name}</option>)}
+            </select>
           </label>
           <label className="pc-field">
             Description (optional)
             <input type="text" maxLength={200} value={form.description} onChange={setField('description')} />
           </label>
 
-          <label className="pc-field wide">
-            Formula
-            <input
-              type="text"
-              required
-              maxLength={200}
-              style={{ fontFamily: 'monospace' }}
-              placeholder="attendance * subFee * percentage%"
-              value={form.expression}
-              onChange={setField('expression')}
-            />
-          </label>
+          <p className="wide" style={{ margin: 0, fontSize: 13, color: '#4A6288' }}>
+            {isRange
+              ? 'Ranges: you list the ranges yourself (as many as you need). The attendance (or hours) typed when entering the salary decides which range is used.'
+              : 'Maths formula: you type the calculation, for example attendance × sub fee × percentage, or hours × hourly rate.'}
+          </p>
 
-          <div className="wide" style={{ fontSize: 13, color: '#4A6288' }}>
-            Click to add a name:{' '}
-            {VARIABLES.map((v) => (
-              <button
-                key={v}
-                type="button"
-                className="pc-btn-sm"
-                style={{ marginRight: 6 }}
-                onClick={() => setForm((f) => ({ ...f, expression: `${f.expression}${f.expression && !f.expression.endsWith(' ') ? ' ' : ''}${v}` }))}
-              >
-                {v}
-              </button>
-            ))}
-            <br />
-            Use <code>+ − * /</code> and brackets <code>( )</code>. <code>%</code> after a number or name divides it by 100 (<code>5%</code> = 0.05,{' '}
-            <code>percentage%</code> = the lecturer's percentage as a fraction). Also <code>min(a, b)</code>, <code>max(a, b)</code>, <code>round(a)</code>, <code>floor(a)</code> (drops the cents).
-            <br />
-            Examples:{' '}
-            {FORMULA_EXAMPLES.map(([label, expression]) => (
-              <button
-                key={label}
-                type="button"
-                className="pc-btn-sm"
-                style={{ marginRight: 6, marginTop: 4 }}
-                onClick={() => setForm((f) => ({ ...f, name: f.name || label, expression }))}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {!isRange && (
+            <>
+              <label className="pc-field wide">
+                Formula
+                <input
+                  type="text"
+                  required
+                  maxLength={200}
+                  style={{ fontFamily: 'monospace' }}
+                  placeholder="attendance * subFee * percentage%"
+                  value={form.expression}
+                  onChange={setField('expression')}
+                />
+              </label>
+
+              <div className="wide" style={{ fontSize: 13, color: '#4A6288' }}>
+                Click to add a name:{' '}
+                {VARIABLES.map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    className="pc-btn-sm"
+                    style={{ marginRight: 6 }}
+                    onClick={() => setForm((f) => ({ ...f, expression: `${f.expression}${f.expression && !f.expression.endsWith(' ') ? ' ' : ''}${v}` }))}
+                  >
+                    {v}
+                  </button>
+                ))}
+                <br />
+                Use <code>+ − * /</code> and brackets <code>( )</code>. <code>%</code> after a number or name divides it by 100 (<code>5%</code> = 0.05,{' '}
+                <code>percentage%</code> = the lecturer's percentage as a fraction). After <code>+</code> or <code>−</code>, <code>5%</code> means 5% of the amount so far
+                (<code>… − 5%</code> takes 5% off). Also <code>min(a, b)</code>, <code>max(a, b)</code>, <code>round(a)</code>, <code>floor(a)</code> (drops the cents).
+                <br />
+                <code>hours</code> and <code>hourRate</code> are for lecturers paid by the hour: the hours are typed when the salary is entered, and the
+                hourly rate is set on each lecturer (so it can be different for every batch and every lecturer).
+                <br />
+                Examples:{' '}
+                {FORMULA_EXAMPLES.map(([label, expression]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    className="pc-btn-sm"
+                    style={{ marginRight: 6, marginTop: 4 }}
+                    onClick={() => setForm((f) => ({ ...f, name: f.name || label, expression }))}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {isRange && (
+            <div className="wide" style={{ background: '#F4F8FD', border: '1px solid #DCE6F4', borderRadius: 10, padding: '12px 16px' }}>
+              <label className="pc-field" style={{ maxWidth: 320, marginBottom: 10 }}>
+                Ranges are counted on
+                <select value={form.rangeBy} onChange={setField('rangeBy')}>
+                  <option value="attendance">Attendance</option>
+                  <option value="hours">Hours</option>
+                </select>
+              </label>
+              <div className="pc-table-wrap">
+                <table className="pc-table">
+                  <thead>
+                    <tr>
+                      <th>{byHours ? 'Hours' : 'Attendance'} from</th>
+                      <th>to (empty = and above)</th>
+                      <th>Pays</th>
+                      <th>Amount (Rs.)</th>
+                      <th>Percentage (%)</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {form.tiers.map((t, i) => (
+                      <tr key={i}>
+                        <td><input type="number" min="0" step={byHours ? 'any' : '1'} required value={t.from} onChange={(e) => setTier(i, 'from', e.target.value)} style={{ width: 100 }} /></td>
+                        <td><input type="number" min="0" step={byHours ? 'any' : '1'} placeholder="and above" value={t.to} onChange={(e) => setTier(i, 'to', e.target.value)} style={{ width: 120 }} /></td>
+                        <td>
+                          <select value={t.payBy} onChange={(e) => setTier(i, 'payBy', e.target.value)}>
+                            <option value="total">This amount in total</option>
+                            <option value="unit">This amount × {byHours ? 'hours' : 'attendance'}</option>
+                            <option value="rate">{byHours ? 'Hours' : 'Attendance'} × (sub fee × percentage)</option>
+                          </select>
+                        </td>
+                        <td><input type="number" min="0.01" step="0.01" required placeholder={t.payBy === 'rate' ? 'sub fee' : ''} value={t.amount} onChange={(e) => setTier(i, 'amount', e.target.value)} style={{ width: 130 }} /></td>
+                        <td>
+                          {t.payBy === 'rate'
+                            ? <input type="number" min="0.01" max="100" step="0.01" placeholder="lecturer's %" value={t.percentage} onChange={(e) => setTier(i, 'percentage', e.target.value)} style={{ width: 120 }} />
+                            : <small style={{ color: '#8FA3C0' }}>—</small>}
+                        </td>
+                        <td><button type="button" className="pc-btn-sm pc-btn-danger" disabled={form.tiers.length === 1} onClick={() => removeTier(i)}>Remove</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <button type="button" className="pc-btn-sm" style={{ marginTop: 8 }} onClick={addTier}>+ Add a range</button>
+              <p style={{ margin: '8px 0 0', fontSize: 13, color: '#4A6288' }}>
+                Each range has its own “Pays” choice. “Attendance × (sub fee × percentage)”: the Amount is the sub fee for that range, and the salary =
+                attendance × sub fee × percentage ÷ 100 — leave the percentage empty to use each lecturer's own percentage (typed when entering the salary).
+                Other examples: 1 to 10 = 500 in total, 11 to 50 = 400 in total, 101 and above (leave “to” empty) = 25 × attendance.
+                If two ranges share a number (like 10), the lower range is used. Make a separate formula for every batch that has different ranges
+                (e.g. “Art 2025 ranges”, “Art 2024 ranges”), then choose it on that batch.
+              </p>
+            </div>
+          )}
 
           <div className="wide" style={{ background: '#F4F8FD', border: '1px solid #DCE6F4', borderRadius: 10, padding: '12px 16px' }}>
             <strong>Try it</strong>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', margin: '8px 0' }}>
-              {VARIABLES.map((v) => (
+              {(isRange ? [byHours ? 'hours' : 'attendance', ...(form.tiers.some((t) => t.payBy === 'rate') ? ['percentage'] : [])] : VARIABLES).map((v) => (
                 <label key={v} className="pc-field">
                   {v}
                   <input type="number" step="any" style={{ width: 120 }} value={test[v]} onChange={(e) => setTest((t) => ({ ...t, [v]: e.target.value }))} />
                 </label>
               ))}
             </div>
-            {result === null && <span style={{ color: '#4A6288' }}>Type a formula to test it.</span>}
+            {result === null && <span style={{ color: '#4A6288' }}>{isRange ? 'Fill in the ranges to test them.' : 'Type a formula to test it.'}</span>}
             {result?.error && <span style={{ color: '#B3382C' }}>{result.error}</span>}
-            {result && result.amount !== undefined && <span style={{ fontSize: 18, fontWeight: 700 }}>Result: {formatMoney(result.amount)}</span>}
+            {result && result.amount !== undefined && (
+              <span style={{ fontSize: 18, fontWeight: 700 }}>
+                Result: {formatMoney(result.amount)}
+                {result.tier && <small style={{ fontWeight: 400, color: '#4A6288' }}> (range {tierLabel(result.tier)})</small>}
+              </span>
+            )}
           </div>
 
           <div className="wide">
-            <button className="pc-btn" type="submit" disabled={saving || (result && result.error !== undefined && !/negative/.test(result.error))}>
+            <button className="pc-btn" type="submit" disabled={saving || (!isRange && result && result.error !== undefined && !/negative/.test(result.error))}>
               {saving ? 'Saving…' : editingId ? 'Update formula' : 'Add formula'}
             </button>
             {editingId && <button type="button" className="pc-btn-sm" style={{ marginLeft: 10 }} onClick={reset}>Cancel</button>}
@@ -1254,9 +1888,14 @@ function FormulasSection({ formulas, onChanged }) {
                 <td>
                   {f.name}
                   {f.isDefault && <> <span className="pc-badge ok">Default</span></>}
+                  {f.kind === 'range' && <> <span className="pc-badge">Ranges</span></>}
+                  {f.degree && <> <span className="pc-badge">{f.degree} only</span></>}
                   {f.description && <><br /><small>{f.description}</small></>}
                 </td>
-                <td><code>{f.expression}</code></td>
+                <td>
+                  <code>{f.expression}</code>
+                  {f.kind === 'range' && <><br /><small>ranges counted on {f.rangeBy === 'hours' ? 'hours' : 'attendance'}</small></>}
+                </td>
                 <td style={{ whiteSpace: 'nowrap' }}>
                   <button className="pc-btn-sm" onClick={() => startEdit(f)}>Edit</button>{' '}
                   {!f.isDefault && <button className="pc-btn-sm pc-btn-danger" onClick={() => remove(f)}>Delete</button>}
