@@ -19,6 +19,19 @@ router.post('/formulas', superAdminOnly, c.createFormula);
 router.put('/formulas/:id', superAdminOnly, c.updateFormula);
 router.delete('/formulas/:id', superAdminOnly, c.deleteFormula);
 
+// Courses (Management, Art, Law ...): everyone with access can read, only the super admin changes them
+router.get('/courses', staff, c.getCourses);
+router.post('/courses', superAdminOnly, c.createCourse);
+router.put('/courses/:id', superAdminOnly, c.renameCourse);
+router.delete('/courses/:id', superAdminOnly, c.deleteCourse);
+
+// Every distinct lecturer over all batches (name suggestions when adding a lecturer)
+router.get('/people', staff, c.getPeople);
+
+// Payments: what each lecturer is owed in a month (all batches added together), and paying it in ONE payment
+router.get('/payments', staff, c.getPayments);
+router.post('/payments', superAdminOnly, c.payLecturer);
+
 // Batches (Management / Art  ->  2023, 2024, 2025 ...)
 router.get('/batches', staff, c.getBatches);
 router.post('/batches', superAdminOnly, c.createBatch);

@@ -1,13 +1,15 @@
+const mongoose = require('mongoose');
 const LecturerBatch = require('../models/lecturerBatch.model');
 const LecturerSalary = require('../models/lecturerSalary.model');
 const LecturerFormula = require('../models/lecturerFormula.model');
+const Course = require('../models/course.model');
 const { FormulaError, parseFormula, evaluateFormula } = require('../utils/lecturerFormula');
 const User = require('../models/user.model');
 const { ApiError, findOrFail } = require('../utils/ApiError');
 const { requireString, optionalString } = require('../utils/validators');
 
-const FACULTIES = ['management', 'art'];
 const PAY_TYPES = ['formula', 'fixed'];
+const MODES = ['online', 'physical', 'recording'];
 
 const isAdmin = (user) => user.role === 'super_admin';
 const isBlank = (v) => v === undefined || v === null || v === '';
@@ -27,9 +29,64 @@ const toNumber = (value) => {
 };
 const round2 = (n) => Math.round(n * 100) / 100;
 
-const validateFaculty = (value) => {
-  if (!FACULTIES.includes(value)) throw new ApiError(400, 'Faculty must be "management" or "art"');
-  return value;
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// ---------- Degrees / courses (super admin adds them: Management, Art, B.Com ...) ----------
+const findCourseByName = (name) => Course.findOne({ name: new RegExp(`^${escapeRegex(name)}$`, 'i') });
+
+const listCourses = async () => {
+  const courses = await Course.find().sort({ name: 1 });
+  const counts = await LecturerBatch.aggregate([{ $group: { _id: '$faculty', n: { $sum: 1 } } }]);
+  const byName = new Map(counts.map((c) => [c._id, c.n]));
+  return courses.map((c) => ({ _id: c._id, name: c.name, batchCount: byName.get(c.name) || 0 }));
+};
+
+const createCourse = async (user, body) => {
+  const name = requireString(body.name, 'Course name', { max: 60 });
+  if (await findCourseByName(name)) throw new ApiError(409, `The course "${name}" already exists`);
+  const course = await Course.create({ name, createdBy: user.id });
+  return { message: `${name} added`, course };
+};
+
+// Renaming also renames it on the course's batches and their salary records.
+const renameCourse = async (id, body) => {
+  const course = await findOrFail(Course, id, 'Course not found');
+  const name = requireString(body.name, 'Course name', { max: 60 });
+  const clash = await findCourseByName(name);
+  if (clash && clash._id.toString() !== course._id.toString()) throw new ApiError(409, `The course "${name}" already exists`);
+  const oldName = course.name;
+  course.name = name;
+  await course.save();
+  if (oldName !== name) {
+    await LecturerBatch.updateMany({ faculty: oldName }, { $set: { faculty: name } });
+    await LecturerSalary.updateMany({ faculty: oldName }, { $set: { faculty: name } });
+  }
+  return { message: 'Course renamed', course };
+};
+
+const deleteCourse = async (id) => {
+  const course = await findOrFail(Course, id, 'Course not found');
+  if (await LecturerBatch.exists({ faculty: course.name })) {
+    throw new ApiError(400, 'This course still has batches, so it cannot be deleted');
+  }
+  await course.deleteOne();
+  return { message: 'Course deleted' };
+};
+
+// Older data only had "management" / "art" typed into the batches. Turn every course name that
+// is used by a batch but missing from the course list into a real course (runs at startup).
+const migrateCourses = async () => {
+  const used = await LecturerBatch.distinct('faculty');
+  for (const raw of used) {
+    if (!raw || (await findCourseByName(raw))) continue;
+    const name = raw.charAt(0).toUpperCase() + raw.slice(1);
+    const existing = await findCourseByName(name);
+    if (!existing) await Course.create({ name });
+    if (name !== raw) {
+      await LecturerBatch.updateMany({ faculty: raw }, { $set: { faculty: name } });
+      await LecturerSalary.updateMany({ faculty: raw }, { $set: { faculty: name } });
+    }
+  }
 };
 
 const validateYear = (value) => {
@@ -38,6 +95,11 @@ const validateYear = (value) => {
     throw new ApiError(400, 'Batch year must be between 2000 and 2100');
   }
   return year;
+};
+
+const validateMode = (value) => {
+  if (!MODES.includes(value)) throw new ApiError(400, 'Choose the part of the batch: online, physical or recording');
+  return value;
 };
 
 const validateSubFee = (value) => {
@@ -226,7 +288,7 @@ const bankChanged = (lecturer, fields) => BANK_KEYS.some((k) => (lecturer[k] || 
 // ---------- Batches (super admin) ----------
 // No faculty = every batch (used by the salary form's batch dropdown).
 const listBatches = async (faculty) => {
-  const filter = isBlank(faculty) ? {} : { faculty: validateFaculty(faculty) };
+  const filter = isBlank(faculty) ? {} : { faculty: String(faculty) };
   const batches = await LecturerBatch.find(filter).sort({ faculty: 1, year: -1 });
   const formulas = await LecturerFormula.find();
   const names = new Map(formulas.map((f) => [f._id.toString(), f.name]));
@@ -242,7 +304,9 @@ const listBatches = async (faculty) => {
 };
 
 const createBatch = async (user, body) => {
-  const faculty = validateFaculty(body.faculty);
+  const course = await findCourseByName(requireString(body.faculty, 'Course', { max: 60 }));
+  if (!course) throw new ApiError(400, 'Course not found. Add the course first');
+  const faculty = course.name;
   const year = validateYear(body.year);
 
   if (await LecturerBatch.exists({ faculty, year })) {
@@ -327,6 +391,7 @@ const buildSalaryValues = async (batch, lecturer, input) => {
     batchYear: batch.year,
     lecturerName: lecturer.name,
     subject: lecturer.subject,
+    mode: validateMode(input.mode),
     type,
     note: optionalString(input.note, 'Note', { max: 200 }),
   };
@@ -335,14 +400,18 @@ const buildSalaryValues = async (batch, lecturer, input) => {
     const attendance = validateAttendance(input.attendance);
     const formula = await resolveFormula(batch, lecturer, input.formulaId);
     const { variables } = guardFormula(() => parseFormula(formula.expression));
-    if (variables.includes('subFee') && !lecturer.subFee) {
+    // Online / physical / recording can have different rates, so the entry may carry its own
+    // sub fee and percentage (blank = the lecturer's normal ones).
+    const subFee = isBlank(input.subFee) ? lecturer.subFee : validateSubFee(input.subFee);
+    const percentage = isBlank(input.percentage) ? lecturer.percentage : validatePercentage(input.percentage);
+    if (variables.includes('subFee') && !subFee) {
       throw new ApiError(400, 'This formula needs the lecturer\'s sub fee. Add it in the lecturer details, or use a fixed salary.');
     }
-    if (variables.includes('percentage') && !lecturer.percentage) {
+    if (variables.includes('percentage') && !percentage) {
       throw new ApiError(400, 'This formula needs the lecturer\'s percentage. Add it in the lecturer details, or use a fixed salary.');
     }
     const amount = guardFormula(() =>
-      evaluateFormula(formula.expression, { attendance, subFee: lecturer.subFee || 0, percentage: lecturer.percentage || 0 })
+      evaluateFormula(formula.expression, { attendance, subFee: subFee || 0, percentage: percentage || 0 })
     );
     return {
       ...values,
@@ -350,8 +419,8 @@ const buildSalaryValues = async (batch, lecturer, input) => {
       formulaName: formula.name,
       expression: formula.expression,
       attendance,
-      subFee: lecturer.subFee,
-      percentage: lecturer.percentage,
+      subFee,
+      percentage,
       grossAmount: amount,
       deductionPercent: 0,
       amount,
@@ -472,21 +541,11 @@ const salaryAction = async (user, salaryId, action, note) => {
     salary.verifiedByName = undefined;
     message = 'Sent back to draft';
   } else if (action === 'pay') {
-    mustBe('verified');
-    // Keep the bank details the lecturer has RIGHT NOW with the payment record.
-    const batch = await LecturerBatch.findById(salary.batch);
-    const lecturer = batch?.lecturers.id(salary.lecturer);
-    salary.status = 'paid';
-    salary.paidDate = now;
-    salary.paidByName = name;
-    salary.paidBankName = lecturer?.bankName;
-    salary.paidBankBranch = lecturer?.bankBranch;
-    salary.paidAccountNumber = lecturer?.accountNumber;
-    salary.paidAccountHolder = lecturer?.accountHolder;
-    message = 'Marked as paid';
+    throw new ApiError(400, 'Salaries are paid from the Payments tab: one payment per lecturer for all their batches');
   } else {
     mustBe('paid');
     salary.status = 'verified';
+    salary.paymentId = undefined;
     salary.paidDate = undefined;
     salary.paidByName = undefined;
     salary.paidBankName = undefined;
@@ -529,7 +588,132 @@ const bulkAction = async (user, body) => {
   return { message: `${result.modifiedCount} salary entr${result.modifiedCount === 1 ? 'y' : 'ies'} ${verb}`, changed: result.modifiedCount };
 };
 
+
+
+// ---------- Payments: ONE payment per lecturer per month, across all their batches ----------
+// The same person teaches in several batches (each batch has its own lecturer row), so people are
+// matched by phone number, or by name when there is no phone number.
+const personKey = (lecturer) => {
+  const digits = String(lecturer.phone || '').replace(/\D/g, '');
+  if (digits.length >= 7) return `tel:${digits}`;
+  return `name:${String(lecturer.name || '').trim().toLowerCase().replace(/\s+/g, ' ')}`;
+};
+
+// Every distinct lecturer over all batches (used to suggest names when adding a lecturer).
+const listPeople = async () => {
+  const batches = await LecturerBatch.find().sort({ year: -1 });
+  const people = new Map();
+  for (const b of batches) {
+    for (const l of b.lecturers) {
+      const key = personKey(l);
+      const prev = people.get(key);
+      if (!prev) {
+        people.set(key, { key, name: l.name, phone: l.phone, subject: l.subject, bankName: l.bankName, bankBranch: l.bankBranch, accountNumber: l.accountNumber, accountHolder: l.accountHolder, batches: 1 });
+      } else {
+        prev.batches += 1;
+        if (!prev.accountNumber && l.accountNumber) Object.assign(prev, { bankName: l.bankName, bankBranch: l.bankBranch, accountNumber: l.accountNumber, accountHolder: l.accountHolder });
+      }
+    }
+  }
+  return [...people.values()].sort((a, b) => a.name.localeCompare(b.name));
+};
+
+const lecturersOfEntries = async (salaries) => {
+  const batches = await LecturerBatch.find({ _id: { $in: [...new Set(salaries.map((s) => s.batch.toString()))] } });
+  const lecturerOf = new Map();
+  for (const b of batches) for (const l of b.lecturers) lecturerOf.set(l._id.toString(), l);
+  return lecturerOf;
+};
+
+// Everything owed to each lecturer in a month, with all their batches added together.
+const listPayments = async (query) => {
+  const month = validateMonth(query.month);
+  const salaries = await LecturerSalary.find({ month }).sort({ faculty: 1, batchYear: -1, createdAt: 1 });
+  const lecturerOf = await lecturersOfEntries(salaries);
+
+  const people = new Map();
+  for (const sal of salaries) {
+    const lec = lecturerOf.get(sal.lecturer.toString()) || { name: sal.lecturerName, subject: sal.subject };
+    const key = personKey(lec);
+    if (!people.has(key)) {
+      people.set(key, { key, name: lec.name, phone: lec.phone, subjects: new Set(), bank: null, items: [], total: 0, readyTotal: 0, paidTotal: 0, notReadyTotal: 0, paidDate: null, paidByName: null });
+    }
+    const p = people.get(key);
+    p.subjects.add(sal.subject);
+    if (!p.bank && lec.accountNumber) p.bank = { bankName: lec.bankName, bankBranch: lec.bankBranch, accountNumber: lec.accountNumber, accountHolder: lec.accountHolder };
+    p.items.push({ _id: sal._id, faculty: sal.faculty, batchYear: sal.batchYear, mode: sal.mode, type: sal.type, amount: sal.amount, status: sal.status, note: sal.note });
+    p.total += sal.amount;
+    if (sal.status === 'verified') p.readyTotal += sal.amount;
+    else if (sal.status === 'paid') { p.paidTotal += sal.amount; p.paidDate = sal.paidDate; p.paidByName = sal.paidByName; }
+    else p.notReadyTotal += sal.amount;
+  }
+  return [...people.values()]
+    .map((p) => ({
+      ...p,
+      subjects: [...p.subjects],
+      total: round2(p.total),
+      readyTotal: round2(p.readyTotal),
+      paidTotal: round2(p.paidTotal),
+      notReadyTotal: round2(p.notReadyTotal),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+};
+
+// Pay (or undo paying) ONE lecturer's whole month in a single payment. Super admin only.
+//   pay   : every VERIFIED entry of that person in that month becomes paid together
+//   unpay : every PAID entry of that person in that month goes back to verified
+const payLecturer = async (user, body) => {
+  if (!isAdmin(user)) throw new ApiError(403, 'Only the Super Admin can do this');
+  const month = validateMonth(body.month);
+  const key = requireString(body.personKey, 'Lecturer', { max: 200 });
+  if (!['pay', 'unpay'].includes(body.action)) throw new ApiError(400, 'Unknown action');
+
+  const all = await LecturerSalary.find({ month });
+  const lecturerOf = await lecturersOfEntries(all);
+  const mine = all.filter((sal) => personKey(lecturerOf.get(sal.lecturer.toString()) || { name: sal.lecturerName }) === key);
+  const name = await actorName(user);
+
+  if (body.action === 'pay') {
+    const ready = mine.filter((s) => s.status === 'verified');
+    if (ready.length === 0) throw new ApiError(400, 'Nothing is verified for this lecturer yet, so there is nothing to pay');
+    // Bank details the lecturer has RIGHT NOW stay with the payment record.
+    const withBank = mine.map((s) => lecturerOf.get(s.lecturer.toString())).find((l) => l && l.accountNumber);
+    const paymentId = new mongoose.Types.ObjectId();
+    const now = new Date();
+    for (const sal of ready) {
+      sal.status = 'paid';
+      sal.paymentId = paymentId;
+      sal.paidDate = now;
+      sal.paidByName = name;
+      sal.paidBankName = withBank?.bankName;
+      sal.paidBankBranch = withBank?.bankBranch;
+      sal.paidAccountNumber = withBank?.accountNumber;
+      sal.paidAccountHolder = withBank?.accountHolder;
+      await sal.save();
+    }
+    const total = round2(ready.reduce((t, s) => t + s.amount, 0));
+    return { message: `Paid ${ready.length} entr${ready.length === 1 ? 'y' : 'ies'} together (Rs. ${total.toFixed(2)})`, changed: ready.length };
+  }
+
+  const paid = mine.filter((s) => s.status === 'paid');
+  if (paid.length === 0) throw new ApiError(400, 'This lecturer has no paid entries in this month');
+  for (const sal of paid) {
+    sal.status = 'verified';
+    for (const f of ['paymentId', 'paidDate', 'paidByName', 'paidBankName', 'paidBankBranch', 'paidAccountNumber', 'paidAccountHolder']) sal[f] = undefined;
+    await sal.save();
+  }
+  return { message: 'Payment undone — back to verified', changed: paid.length };
+};
+
 module.exports = {
+  listPeople,
+  listPayments,
+  payLecturer,
+  listCourses,
+  createCourse,
+  renameCourse,
+  deleteCourse,
+  migrateCourses,
   listBatches,
   createBatch,
   listFormulas,

@@ -17,6 +17,8 @@ const lecturerSalarySchema = new mongoose.Schema(
     subject: { type: String, required: true },
     month: { type: String, required: true, match: /^\d{4}-(0[1-9]|1[0-2])$/ },
     type: { type: String, enum: ['formula', 'fixed'], default: 'formula' },
+    // Which part of the batch: online / physical / recording. One lecturer can be paid for all three.
+    mode: { type: String, enum: ['online', 'physical', 'recording'] },
     // The formula used (a COPY of its name + expression, so later edits never change this entry).
     formula: { type: mongoose.Schema.Types.ObjectId, ref: 'LecturerFormula' },
     formulaName: { type: String },
@@ -41,6 +43,8 @@ const lecturerSalarySchema = new mongoose.Schema(
     // Why the super admin sent it back to draft (shown to the accountant).
     returnNote: { type: String },
     paidDate: { type: Date },
+    // Entries paid together (one lecturer, one month, all their batches) share this id.
+    paymentId: { type: mongoose.Schema.Types.ObjectId },
     paidByName: { type: String },
     // Bank details the lecturer had at the moment of payment (they may be changed later).
     paidBankName: { type: String },
@@ -53,5 +57,6 @@ const lecturerSalarySchema = new mongoose.Schema(
 );
 
 lecturerSalarySchema.index({ month: 1, batch: 1 });
+lecturerSalarySchema.index({ paymentId: 1 });
 
 module.exports = mongoose.model('LecturerSalary', lecturerSalarySchema);

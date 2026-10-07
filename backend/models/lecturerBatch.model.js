@@ -32,7 +32,8 @@ const lecturerSchema = new mongoose.Schema(
 // whenever one starts, so nothing about the years is hard-coded.
 const lecturerBatchSchema = new mongoose.Schema(
   {
-    faculty: { type: String, enum: ['management', 'art'], required: true },
+    // The course NAME (Management, Art, ...). Courses are added by the super admin.
+    faculty: { type: String, required: true, trim: true },
     year: { type: Number, required: true, min: 2000, max: 2100 },
     // The formula this batch's lecturers are paid by. Empty = the Standard formula.
     formula: { type: mongoose.Schema.Types.ObjectId, ref: 'LecturerFormula' },

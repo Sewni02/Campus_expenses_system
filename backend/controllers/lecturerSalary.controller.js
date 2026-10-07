@@ -94,7 +94,45 @@ const salaryAction = asyncHandler(async (req, res) => {
   res.json(await service.salaryAction(req.user, req.params.salaryId, req.body.action, req.body.note));
 });
 
+
+// GET /api/lecturer-salary/courses
+const getCourses = asyncHandler(async (req, res) => {
+  res.json(await service.listCourses());
+});
+// POST /api/lecturer-salary/courses   { name }   (super admin)
+const createCourse = asyncHandler(async (req, res) => {
+  res.status(201).json(await service.createCourse(req.user, req.body));
+});
+// PUT /api/lecturer-salary/courses/:id   { name }   (super admin)
+const renameCourse = asyncHandler(async (req, res) => {
+  res.json(await service.renameCourse(req.params.id, req.body));
+});
+// DELETE /api/lecturer-salary/courses/:id   (super admin, only a course with no batches)
+const deleteCourse = asyncHandler(async (req, res) => {
+  res.json(await service.deleteCourse(req.params.id));
+});
+// GET /api/lecturer-salary/people   every distinct lecturer over all batches
+const getPeople = asyncHandler(async (req, res) => {
+  res.json(await service.listPeople());
+});
+// GET /api/lecturer-salary/payments?month=2026-10   what each lecturer is owed, all batches added together
+const getPayments = asyncHandler(async (req, res) => {
+  res.json(await service.listPayments(req.query));
+});
+// POST /api/lecturer-salary/payments   { month, personKey, action: 'pay' | 'unpay' }   (super admin)
+const payLecturer = asyncHandler(async (req, res) => {
+  res.json(await service.payLecturer(req.user, req.body));
+});
+
 module.exports = {
+  getPeople,
+  getPayments,
+  payLecturer,
+  getCourses,
+  createCourse,
+  renameCourse,
+  deleteCourse,
+
   getFormulas,
   createFormula,
   updateFormula,
