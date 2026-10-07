@@ -141,6 +141,11 @@ app.use(async (err, req, res, next) => {
 // (connectDB exits the process with a clear message if the connection fails.)
 const PORT = process.env.PORT || 5000;
 connectDB().then(async () => {
+  try {
+    await require('./services/lecturerSalary.service').migrateCourses();
+  } catch (err) {
+    console.warn('Could not set up lecturer courses:', err.message);
+  }
   // An older version of the lecturer salary page made "one salary per lecturer per month" a
   // database rule (a unique index). That rule is gone from the code but stays inside MongoDB,
   // and it is what gives "batch already in use" when a 2nd entry is saved. Drop it (safe to repeat).
