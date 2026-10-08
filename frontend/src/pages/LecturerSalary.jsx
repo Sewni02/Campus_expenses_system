@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import axios from 'axios';
 import useTabState from '../hooks/useTabState';
 import { formatMoney, formatDate, monthLabel, currentMonthString } from '../utils/pettyCash';
@@ -14,12 +14,32 @@ const MODES = [
   ['recording', 'Recording'],
 ];
 // The language a lecturer teaches in.
+const MEDIUM_NAME = { english: 'English', sinhala: 'Sinhala' };
 const MEDIUMS = [
   ['english', 'English'],
   ['sinhala', 'Sinhala'],
   ['both', 'Both (English & Sinhala)'],
 ];
 const mediumLabel = (m) => (MEDIUMS.find(([key]) => key === m) || [null, '—'])[1];
+// Each part of a batch has both mediums (a lecturer who teaches "both" gets an entry for each).
+const ENTRY_MEDIUMS = [
+  ['english', 'English'],
+  ['sinhala', 'Sinhala'],
+];
+const entryMediumLabel = (m) => (ENTRY_MEDIUMS.find(([key]) => key === m) || [null, 'Not set'])[1];
+// A lecturer has their own rates for each medium they teach (sub fee, percentage, hourly rate, fixed salary).
+const blankRate = () => ({ subFee: '', percentage: '', hourRate: '', fixedSalary: '' });
+const blankRates = () => ({ english: blankRate(), sinhala: blankRate() });
+const mediumsOf = (medium) => (medium === 'both' ? ['english', 'sinhala'] : medium ? [medium] : []);
+// One rate of a lecturer for a medium (older lecturers only have the plain fields).
+const rateFor = (l, medium, key) => {
+  const r = l.rates && medium ? l.rates[medium] : undefined;
+  return r && r[key] !== undefined && r[key] !== null ? r[key] : l[key];
+};
+const ratesText = (l, medium) =>
+  [rateFor(l, medium, 'subFee') ? `sub fee ${formatMoney(rateFor(l, medium, 'subFee'))}` : null,
+   rateFor(l, medium, 'percentage') ? `${rateFor(l, medium, 'percentage')}%` : null,
+   rateFor(l, medium, 'hourRate') ? `${formatMoney(rateFor(l, medium, 'hourRate'))} / hour` : null].filter(Boolean).join(', ');
 const modeLabel = (m) => (MODES.find(([key]) => key === m) || [null, '—'])[1];
 
 // The degree tab to show: the one in the URL if it still exists, else the first degree.
@@ -218,6 +238,8 @@ function MonthYearPicker({ value, onChange, disabled = false }) {
   );
 }
 
+// How a salary entry names its batch (older entries may have no degree / batch saved).
+const entryBatchText = (i) => (i.faculty ? `${i.faculty} — ${i.batchYear} Batch` : 'Older entry (no batch saved)');
 const batchLabel = (b) => `${b.faculty} — ${b.year} Batch`;
 const payTypeLabel = (t) => (t === 'fixed' ? 'Fixed salary' : 'Formula');
 
@@ -497,20 +519,27 @@ function BatchDetail({ batchId, isAdmin, formulas, onFormulasChanged, onBack }) 
 // ---------- The formula the batch uses (only the super admin can change it) ----------
 function BatchFormula({ batch, isAdmin, formulas, onBatchChange }) {
   const defaultFormula = formulas.find((f) => f.isDefault);
+  const nameOf = (id) => (formulas.find((f) => f._id === id) || defaultFormula || {}).name || '…';
   const current = formulas.find((f) => f._id === batch.formula) || defaultFormula;
   const [value, setValue] = useState(batch.formula || '');
+  const [english, setEnglish] = useState((batch.mediumFormulas && batch.mediumFormulas.english) || '');
+  const [sinhala, setSinhala] = useState((batch.mediumFormulas && batch.mediumFormulas.sinhala) || '');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
+
+  const savedEnglish = (batch.mediumFormulas && batch.mediumFormulas.english) || '';
+  const savedSinhala = (batch.mediumFormulas && batch.mediumFormulas.sinhala) || '';
+  const changed = value !== (batch.formula || '') || english !== savedEnglish || sinhala !== savedSinhala;
 
   const save = async () => {
     setMessage(null);
     setSaving(true);
     try {
-      const res = await axios.patch(`/api/lecturer-salary/batches/${batch._id}/settings`, { formulaId: value });
+      const res = await axios.patch(`/api/lecturer-salary/batches/${batch._id}/settings`, { formulaId: value, mediumFormulas: { english, sinhala } });
       onBatchChange(res.data.batch);
-      setMessage({ type: 'ok', text: 'Formula updated. Drafts use it the next time you press Update.' });
+      setMessage({ type: 'ok', text: 'Formulas updated. Drafts use them the next time you press Update.' });
     } catch (err) {
-      setMessage({ type: 'err', text: apiError(err, 'Could not update the formula') });
+      setMessage({ type: 'err', text: apiError(err, 'Could not update the formulas') });
     } finally {
       setSaving(false);
     }
@@ -522,10 +551,14 @@ function BatchFormula({ batch, isAdmin, formulas, onBatchChange }) {
     <>
       {message && <div className={`pc-alert ${message.type}`}>{message.text}</div>}
       <div className="pc-panel" style={{ padding: '14px 20px' }}>
-        <div className="pc-toolbar" style={{ margin: 0 }}>
+        <div className="pc-toolbar" style={{ margin: 0, alignItems: 'flex-start' }}>
           <div>
             <strong>Salary formula:</strong> {current ? current.name : '…'}
             {current && <><br /><code style={{ fontSize: 13 }}>{current.expression}</code></>}
+            <br />
+            <small style={{ color: '#4A6288' }}>
+              English medium: <strong>{nameOf(savedEnglish || batch.formula)}</strong> · Sinhala medium: <strong>{nameOf(savedSinhala || batch.formula)}</strong>
+            </small>
             {legacy && (
               <><br /><small style={{ color: '#B7791F' }}>
                 This batch had an old −{batch.deductionPercent}% deduction setting. It is no longer used — add a formula for it
@@ -534,19 +567,34 @@ function BatchFormula({ batch, isAdmin, formulas, onBatchChange }) {
             )}
           </div>
           {isAdmin && (
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
               <label className="pc-field">
-                Use formula
+                Formula (all mediums)
                 <select value={value} onChange={(e) => setValue(e.target.value)}>
                   <FormulaOptions formulas={formulas} degree={batch.faculty} emptyLabel={`${defaultFormula?.name || 'Standard'} (default)`} />
                 </select>
               </label>
-              <button className="pc-btn-sm" disabled={saving || value === (batch.formula || '')} onClick={save}>
+              <label className="pc-field">
+                English medium
+                <select value={english} onChange={(e) => setEnglish(e.target.value)}>
+                  <FormulaOptions formulas={formulas} degree={batch.faculty} emptyLabel="Same as above" />
+                </select>
+              </label>
+              <label className="pc-field">
+                Sinhala medium
+                <select value={sinhala} onChange={(e) => setSinhala(e.target.value)}>
+                  <FormulaOptions formulas={formulas} degree={batch.faculty} emptyLabel="Same as above" />
+                </select>
+              </label>
+              <button className="pc-btn-sm" disabled={saving || !changed} onClick={save}>
                 {saving ? 'Saving…' : 'Save'}
               </button>
             </div>
           )}
         </div>
+        <p style={{ margin: '10px 0 0', fontSize: 12.5, color: '#4A6288' }}>
+          English and Sinhala can use different formulas (the sub fee changes with the medium). When a salary is entered, the formula can also be picked on the salary form.
+        </p>
       </div>
     </>
   );
@@ -554,7 +602,7 @@ function BatchFormula({ batch, isAdmin, formulas, onBatchChange }) {
 
 // ---------- Lecturers of the batch (add / edit / remove, pay type, bank details) ----------
 const emptyForm = {
-  name: '', phone: '', subject: '', medium: '', payType: 'formula', subFee: '', percentage: '', hourRate: '', fixedSalary: '', formulaId: '',
+  name: '', phone: '', subject: '', medium: '', modes: [], payType: 'formula', rates: blankRates(), formulaId: '',
   bankName: '', bankBranch: '', accountNumber: '', accountHolder: '',
 };
 
@@ -569,7 +617,12 @@ function LecturersPanel({ batch, isAdmin, formulas = [], onFormulasChanged, onBa
   const fixed = form.payType === 'fixed';
   // The formula this lecturer will be paid by decides which rates are needed.
   const effFormula = formulas.find((f) => f._id === (form.formulaId || batch.formula)) || formulas.find((f) => f.isDefault);
-  const uses = formulaUses(effFormula);
+  // The mediums this lecturer teaches, and the formula that pays each of them (the batch can use a different formula for English and Sinhala).
+  const taught = mediumsOf(form.medium);
+  const mediumFormula = (m) =>
+    form.formulaId
+      ? effFormula
+      : formulas.find((x) => x._id === ((batch.mediumFormulas && batch.mediumFormulas[m]) || batch.formula)) || formulas.find((x) => x.isDefault);
 
   const setField = (key) => (e) => {
     let value = e.target.value;
@@ -578,7 +631,9 @@ function LecturersPanel({ batch, isAdmin, formulas = [], onFormulasChanged, onBa
     setForm((f) => ({ ...f, [key]: value }));
   };
 
-  const reset = () => { setForm(emptyForm); setEditingId(''); };
+  const reset = () => { setForm({ ...emptyForm, modes: [], rates: blankRates() }); setEditingId(''); };
+  const setRate = (medium, key) => (e) => { const value = e.target.value; setForm((f) => ({ ...f, rates: { ...f.rates, [medium]: { ...f.rates[medium], [key]: value } } })); };
+  const toggleMode = (key) => setForm((f) => ({ ...f, modes: f.modes.includes(key) ? f.modes.filter((m) => m !== key) : [...f.modes, key] }));
 
   // A formula made just for this lecturer: create it, then select it for them.
   const createLecturerFormula = async () => {
@@ -614,6 +669,13 @@ function LecturersPanel({ batch, isAdmin, formulas = [], onFormulasChanged, onBa
             phone: f.phone || match.phone || '',
             subject: f.subject || match.subject || '',
             medium: f.medium || match.medium || '',
+            modes: f.modes.length ? f.modes : match.modes || [],
+            rates: f.rates.english.subFee || f.rates.sinhala.subFee || f.rates.english.fixedSalary || f.rates.sinhala.fixedSalary
+              ? f.rates
+              : {
+                  english: { ...blankRate(), ...Object.fromEntries(['subFee', 'percentage', 'hourRate', 'fixedSalary'].map((k) => [k, rateFor(match, 'english', k) ? String(rateFor(match, 'english', k)) : ''])) },
+                  sinhala: { ...blankRate(), ...Object.fromEntries(['subFee', 'percentage', 'hourRate', 'fixedSalary'].map((k) => [k, rateFor(match, 'sinhala', k) ? String(rateFor(match, 'sinhala', k)) : ''])) },
+                },
             bankName: f.bankName || match.bankName || '',
             bankBranch: f.bankBranch || match.bankBranch || '',
             accountNumber: f.accountNumber || match.accountNumber || '',
@@ -627,6 +689,10 @@ function LecturersPanel({ batch, isAdmin, formulas = [], onFormulasChanged, onBa
   const submit = async (e) => {
     e.preventDefault();
     setMessage(null);
+    if (form.modes.length === 0) {
+      setMessage({ type: 'err', text: 'Tick at least one part the lecturer teaches: Online, Physical or Recording' });
+      return;
+    }
     setSaving(true);
     try {
       const url = `/api/lecturer-salary/batches/${batch._id}/lecturers`;
@@ -644,10 +710,11 @@ function LecturersPanel({ batch, isAdmin, formulas = [], onFormulasChanged, onBa
   const startEdit = (l) => {
     setEditingId(l._id);
     setForm({
-      name: l.name, phone: l.phone || '', subject: l.subject, medium: l.medium || '', payType: l.payType || 'formula',
-      subFee: l.subFee ? String(l.subFee) : '', percentage: l.percentage ? String(l.percentage) : '',
-      hourRate: l.hourRate ? String(l.hourRate) : '',
-      fixedSalary: l.fixedSalary ? String(l.fixedSalary) : '',
+      name: l.name, phone: l.phone || '', subject: l.subject, medium: l.medium || '', modes: l.modes || [], payType: l.payType || 'formula',
+      rates: {
+        english: { ...blankRate(), ...Object.fromEntries(['subFee', 'percentage', 'hourRate', 'fixedSalary'].map((k) => [k, rateFor(l, 'english', k) ? String(rateFor(l, 'english', k)) : ''])) },
+        sinhala: { ...blankRate(), ...Object.fromEntries(['subFee', 'percentage', 'hourRate', 'fixedSalary'].map((k) => [k, rateFor(l, 'sinhala', k) ? String(rateFor(l, 'sinhala', k)) : ''])) },
+      },
       formulaId: l.formula || '',
       bankName: l.bankName || '', bankBranch: l.bankBranch || '', accountNumber: l.accountNumber || '', accountHolder: l.accountHolder || '',
     });
@@ -696,6 +763,17 @@ function LecturersPanel({ batch, isAdmin, formulas = [], onFormulasChanged, onBa
               {MEDIUMS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
             </select>
           </label>
+          <div className="pc-field">
+            Teaches (tick all that apply)
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', minHeight: 40, textTransform: 'none', letterSpacing: 0, fontWeight: 500, fontSize: 14, color: '#0A1F44' }}>
+              {MODES.map(([key, label]) => (
+                <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input type="checkbox" style={{ width: 16, height: 16, padding: 0 }} checked={form.modes.includes(key)} onChange={() => toggleMode(key)} />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
           <label className="pc-field">
             How is this lecturer paid?
             <select value={form.payType} onChange={setField('payType')}>
@@ -705,10 +783,15 @@ function LecturersPanel({ batch, isAdmin, formulas = [], onFormulasChanged, onBa
           </label>
 
           {fixed ? (
-            <label className="pc-field">
-              Fixed salary (Rs.)
-              <input type="number" required min="0.01" step="0.01" value={form.fixedSalary} onChange={setField('fixedSalary')} />
-            </label>
+            <>
+              {taught.length === 0 && <p className="wide" style={{ margin: 0, fontSize: 13, color: '#4A6288' }}>Choose the medium above, then enter the fixed salary for each medium.</p>}
+              {taught.map((m) => (
+                <label key={m} className="pc-field">
+                  Fixed salary — {MEDIUM_NAME[m]} medium (Rs.)
+                  <input type="number" required min="0.01" step="0.01" value={form.rates[m].fixedSalary} onChange={setRate(m, 'fixedSalary')} />
+                </label>
+              ))}
+            </>
           ) : (
             <>
               <label className="pc-field">
@@ -742,29 +825,42 @@ function LecturersPanel({ batch, isAdmin, formulas = [], onFormulasChanged, onBa
                   <small style={{ color: '#4A6288' }}>You can use attendance, subFee, percentage, hours, hourRate, numbers, + - * / ( ) and %. This formula is then used only for this lecturer. For attendance ranges, use the Formulas tab.</small>
                 </div>
               )}
-              {uses.includes('subFee') && (
-                <label className="pc-field">
-                  Sub fee (Rs.)
-                  <input type="number" required min="0.01" step="0.01" value={form.subFee} onChange={setField('subFee')} />
-                </label>
-              )}
-              {uses.includes('percentage') && (
-                <label className="pc-field">
-                  Percentage (%)
-                  <input type="number" required min="0.01" max="100" step="0.01" value={form.percentage} onChange={setField('percentage')} />
-                </label>
-              )}
-              {uses.includes('hourRate') && (
-                <label className="pc-field">
-                  Hourly rate (Rs. per hour)
-                  <input type="number" required min="0.01" step="0.01" value={form.hourRate} onChange={setField('hourRate')} />
-                </label>
-              )}
-              {effFormula && effFormula.kind === 'range' && (
-                <p className="wide" style={{ margin: 0, fontSize: 13, color: '#4A6288' }}>
-                  “{effFormula.name}” pays by ranges ({effFormula.expression}){uses.includes('percentage') ? ', so the percentage above is needed.' : ', so no sub fee or percentage is needed.'}
-                </p>
-              )}
+              {taught.length === 0 && <p className="wide" style={{ margin: 0, fontSize: 13, color: '#4A6288' }}>Choose the medium above, then enter the rates for each medium.</p>}
+              {taught.map((m) => {
+                const mf = mediumFormula(m);
+                const u = formulaUses(mf);
+                return (
+                  <div key={m} className="wide pc-panel" style={{ margin: 0, padding: '12px 16px' }}>
+                    <strong>{MEDIUM_NAME[m]} medium rates</strong>
+                    <small style={{ color: '#4A6288' }}> — paid by “{mf ? mf.name : 'Standard'}”</small>
+                    <div className="pc-form" style={{ marginTop: 8 }}>
+                      {u.includes('subFee') && (
+                        <label className="pc-field">
+                          Sub fee (Rs.)
+                          <input type="number" required min="0.01" step="0.01" value={form.rates[m].subFee} onChange={setRate(m, 'subFee')} />
+                        </label>
+                      )}
+                      {u.includes('percentage') && (
+                        <label className="pc-field">
+                          Percentage (%)
+                          <input type="number" required={!(mf && mf.kind === 'range')} min="0.01" max="100" step="0.01" value={form.rates[m].percentage} onChange={setRate(m, 'percentage')} />
+                        </label>
+                      )}
+                      {u.includes('hourRate') && (
+                        <label className="pc-field">
+                          Hourly rate (Rs. per hour)
+                          <input type="number" required min="0.01" step="0.01" value={form.rates[m].hourRate} onChange={setRate(m, 'hourRate')} />
+                        </label>
+                      )}
+                      {mf && mf.kind === 'range' && (
+                        <p className="wide" style={{ margin: 0, fontSize: 13, color: '#4A6288' }}>
+                          Pays by ranges ({mf.expression}){u.includes('percentage') ? ' — the percentage is needed.' : ' — no sub fee or percentage is needed.'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </>
           )}
 
@@ -803,21 +899,26 @@ function LecturersPanel({ batch, isAdmin, formulas = [], onFormulasChanged, onBa
       <div className="pc-table-wrap">
         <table className="pc-table">
           <thead>
-            <tr><th>Name</th><th>Subject</th><th>Medium</th><th>Pay</th><th>Bank details</th><th></th></tr>
+            <tr><th>Name</th><th>Subject</th><th>Medium</th><th>Teaches</th><th>Pay</th><th>Bank details</th><th></th></tr>
           </thead>
           <tbody>
-            {batch.lecturers.length === 0 && <tr><td colSpan="6" className="pc-empty">No lecturers in this batch yet</td></tr>}
+            {batch.lecturers.length === 0 && <tr><td colSpan="7" className="pc-empty">No lecturers in this batch yet</td></tr>}
             {batch.lecturers.map((l) => (
               <tr key={l._id}>
                 <td>{l.name}{l.phone && <><br /><small>{l.phone}</small></>}</td>
                 <td>{l.subject}</td>
                 <td>{mediumLabel(l.medium)}</td>
+                <td>{l.modes && l.modes.length ? l.modes.map(modeLabel).join(', ') : <span style={{ color: '#8FA3C0' }}>Not set</span>}</td>
                 <td>
-                  {l.payType === 'fixed' ? (
-                    <>Fixed<br /><small>{formatMoney(l.fixedSalary)}</small></>
-                  ) : (
-                    <>Formula · {l.formula && formulas.find((f) => f._id === l.formula) ? formulas.find((f) => f._id === l.formula).name : 'batch formula'}<br /><small>{[l.subFee ? formatMoney(l.subFee) : null, l.percentage ? `${l.percentage}%` : null, l.hourRate ? `${formatMoney(l.hourRate)} / hour` : null].filter(Boolean).join(' · ') || 'no rates needed'}</small></>
-                  )}
+                  {l.payType === 'fixed' ? 'Fixed' : <>Formula · {l.formula && formulas.find((f) => f._id === l.formula) ? formulas.find((f) => f._id === l.formula).name : 'batch formula'}</>}
+                  {(mediumsOf(l.medium).length ? mediumsOf(l.medium) : [null]).map((m) => (
+                    <div key={m || 'plain'}>
+                      <small>
+                        {m && mediumsOf(l.medium).length > 1 ? `${MEDIUM_NAME[m]}: ` : ''}
+                        {l.payType === 'fixed' ? formatMoney(rateFor(l, m, 'fixedSalary')) : ratesText(l, m) || 'no rates needed'}
+                      </small>
+                    </div>
+                  ))}
                 </td>
                 <td>
                   {l.accountNumber ? (
@@ -875,6 +976,7 @@ function BatchSalaries({ batchId, isAdmin, formulas, onBack }) {
   const [error, setError] = useState('');
   const [month, setMonth] = useState(currentMonthString());
   const [mode, setMode] = useTabState('sm', 'online'); // the 3 parts of a batch
+  const [medium, setMedium] = useTabState('sd', 'english'); // English / Sinhala (both exist in every part)
   const [editing, setEditing] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -916,11 +1018,27 @@ function BatchSalaries({ batchId, isAdmin, formulas, onBack }) {
             {label}
           </button>
         ))}
+        <button className={`pc-tab ${mode === 'summary' ? 'active' : ''}`} onClick={() => { setMode('summary'); setEditing(null); }}>
+          Lecturer totals
+        </button>
+      </div>
+
+      {mode === 'summary' ? (
+        <BatchSummary batchId={batch._id} month={month} setMonth={setMonth} refreshKey={refreshKey} />
+      ) : (
+      <>
+      <div className="pc-tabs">
+        {ENTRY_MEDIUMS.map(([key, label]) => (
+          <button key={key} className={`pc-tab ${medium === key ? 'active' : ''}`} onClick={() => { setMedium(key); setEditing(null); }}>
+            {label} medium
+          </button>
+        ))}
       </div>
 
       <SalaryForm
         batch={batch}
         mode={mode}
+        medium={medium}
         formulas={formulas}
         editing={editing}
         defaultMonth={month}
@@ -930,6 +1048,7 @@ function BatchSalaries({ batchId, isAdmin, formulas, onBack }) {
       <SalaryList
         batchId={batch._id}
         mode={mode}
+        medium={medium}
         month={month}
         setMonth={setMonth}
         refreshKey={refreshKey}
@@ -937,15 +1056,109 @@ function BatchSalaries({ batchId, isAdmin, formulas, onBack }) {
         isAdmin={isAdmin}
         onEdit={(rec) => { setEditing(rec); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
       />
+      </>
+      )}
+    </>
+  );
+}
+
+// ---------- Lecturer totals of ONE batch: every lecturer's total, split by part and medium ----------
+function BatchSummary({ batchId, month, setMonth, refreshKey }) {
+  const [allMonths, setAllMonths] = useState(false);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setData(null);
+    setError('');
+    axios
+      .get(`/api/lecturer-salary/batches/${batchId}/summary`, { params: { month: allMonths ? 'all' : month } })
+      .then((res) => { if (!cancelled) setData(res.data); })
+      .catch((err) => { if (!cancelled) setError(apiError(err, 'Could not load the totals')); });
+    return () => { cancelled = true; };
+  }, [batchId, month, allMonths, refreshKey]);
+
+  const cell = (row, part, medium) => row.cells[`${part}|${medium}`] || 0;
+  const other = (row) => round2(Object.entries(row.cells).filter(([k]) => k.includes('none')).reduce((t, [, v]) => t + v, 0));
+  const show = (n) => (n ? formatMoney(n) : <span style={{ color: '#B8C4D8' }}>—</span>);
+  const hasOther = data ? other(data.totals) > 0 : false;
+
+  return (
+    <>
+      <div className="pc-toolbar">
+        <h3 style={{ margin: 0 }}>Lecturer totals — {allMonths ? 'all months' : monthLabel(month)}</h3>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, cursor: 'pointer' }}>
+            <input type="checkbox" checked={allMonths} onChange={(e) => setAllMonths(e.target.checked)} /> All months together
+          </label>
+          <MonthYearPicker value={month} onChange={setMonth} disabled={allMonths} />
+        </div>
+      </div>
+      <p style={{ margin: '0 0 14px', color: '#4A6288', fontSize: 13 }}>
+        What every lecturer of this batch earned: split by part (online / physical / recording) and medium (English / Sinhala), with the grand total.
+      </p>
+      {error && <div className="pc-alert err">{error}</div>}
+      {!data && !error && <p>Loading…</p>}
+      {data && (
+        <div className="pc-table-wrap">
+          <table className="pc-table">
+            <thead>
+              <tr>
+                <th rowSpan="2">Lecturer</th>
+                {MODES.map(([key, label]) => <th key={key} colSpan="2" style={{ textAlign: 'center' }}>{label}</th>)}
+                {hasOther && <th rowSpan="2" className="num">Not set</th>}
+                <th rowSpan="2" className="num">Total</th>
+                <th rowSpan="2" className="num">Paid</th>
+                <th rowSpan="2" className="num">Not paid</th>
+              </tr>
+              <tr>
+                {MODES.map(([key]) => ENTRY_MEDIUMS.map(([m, label]) => <th key={`${key}-${m}`} className="num">{label}</th>))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.rows.length === 0 && <tr><td colSpan="12" className="pc-empty">No lecturers in this batch yet</td></tr>}
+              {data.rows.map((r) => (
+                <tr key={String(r.lecturerId)}>
+                  <td>
+                    {r.name}{r.removed && <small style={{ color: '#B7791F' }}> (removed)</small>}
+                    <br /><small style={{ color: '#4A6288' }}>{r.subject}{r.medium ? ` · ${mediumLabel(r.medium)}` : ''}</small>
+                  </td>
+                  {MODES.map(([key]) => ENTRY_MEDIUMS.map(([m]) => <td key={`${key}-${m}`} className="num">{show(cell(r, key, m))}</td>))}
+                  {hasOther && <td className="num">{show(other(r))}</td>}
+                  <td className="num"><strong>{formatMoney(r.total)}</strong></td>
+                  <td className="num">{show(r.paid)}</td>
+                  <td className="num">{show(r.notPaid)}</td>
+                </tr>
+              ))}
+              {data.rows.length > 0 && (
+                <tr style={{ background: '#F1F6FD', fontWeight: 700 }}>
+                  <td>Batch total</td>
+                  {MODES.map(([key]) => ENTRY_MEDIUMS.map(([m]) => <td key={`${key}-${m}`} className="num">{show(cell(data.totals, key, m))}</td>))}
+                  {hasOther && <td className="num">{show(other(data.totals))}</td>}
+                  <td className="num">{formatMoney(data.totals.total)}</td>
+                  <td className="num">{show(data.totals.paid)}</td>
+                  <td className="num">{show(data.totals.notPaid)}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </>
   );
 }
 
 // The salary FORM of one batch. Pick the month + year and the lecturer: the lecturer's details
 // fill in by themselves. Then either the formula (attendance) or a fixed salary.
-function SalaryForm({ batch, mode, formulas = [], editing, defaultMonth, onCancelEdit, onSaved }) {
+function SalaryForm({ batch, mode, medium, formulas = [], editing, defaultMonth, onCancelEdit, onSaved }) {
   const batchId = batch._id;
   const defaultFormula = formulas.find((f) => f.isDefault);
+  // The formula used when none is picked: the lecturer's own, else the batch's formula for this medium, else the batch formula.
+  const defaultFor = (lec) => {
+    const id = (lec && lec.formula) || (batch.mediumFormulas && batch.mediumFormulas[medium]) || batch.formula;
+    return formulas.find((f) => f._id === id) || defaultFormula;
+  };
   const [lecturerId, setLecturerId] = useState('');
   const [month, setMonth] = useState(defaultMonth);
   const [type, setType] = useState('formula');
@@ -953,7 +1166,7 @@ function SalaryForm({ batch, mode, formulas = [], editing, defaultMonth, onCance
   const [percentageInput, setPercentageInput] = useState('');
   const [hoursInput, setHoursInput] = useState('');
   const [hourRateInput, setHourRateInput] = useState('');
-  const [formulaId, setFormulaId] = useState('');
+  const [formulaId, setFormulaId] = useState(''); // the formula picked for this entry ('' = the default one)
   const [attendance, setAttendance] = useState('');
   const [fixedAmount, setFixedAmount] = useState('');
   const [note, setNote] = useState('');
@@ -983,14 +1196,38 @@ function SalaryForm({ batch, mode, formulas = [], editing, defaultMonth, onCance
     setHoursInput(editing.hours ? String(editing.hours) : '');
     setHourRateInput(editing.hourRate ? String(editing.hourRate) : '');
     const lec = batch.lecturers.find((l) => l._id === editing.lecturer);
-    setFormulaId(lec?.formula || batch.formula || '');
+    // keep the formula that was picked for this entry (only when it differs from the default one)
+    setFormulaId(editing.formula && editing.formula !== defaultFor(lec)?._id ? editing.formula : '');
     setAttendance(editing.type === 'fixed' || editing.attendance === undefined ? '' : String(editing.attendance));
     setFixedAmount(editing.type === 'fixed' ? String(editing.amount) : '');
     setNote(editing.note || '');
     setMessage(null);
   }, [editing, batch]);
 
+  // Only the lecturers who teach in this medium (English-only lecturers are not offered in the Sinhala tab, and the other way round).
+  const lecturersHere = batch.lecturers.filter(
+    (l) => (!ENTRY_MEDIUMS.some(([key]) => key === l.medium) || l.medium === medium) && (!l.modes || l.modes.length === 0 || l.modes.includes(mode) || (mode === 'recording' && l.modes.includes('online')))
+  );
+  useEffect(() => {
+    if (lecturerId && !editing && !lecturersHere.some((l) => l._id === lecturerId)) setLecturerId('');
+    if (!editing) setFormulaId('');
+    // switching the medium tab: take the rates of the other medium
+    if (lecturerId && !editing) {
+      const l = batch.lecturers.find((x) => x._id === lecturerId);
+      if (l && lecturersHere.some((x) => x._id === lecturerId)) applyRates(l);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [medium, mode]);
   const lecturer = batch.lecturers.find((l) => l._id === lecturerId) || null;
+
+  // The lecturer's own rates for THIS medium (English and Sinhala have different sub fees) fill in the calculation.
+  const applyRates = (l) => {
+    const str = (k) => (rateFor(l, medium, k) ? String(rateFor(l, medium, k)) : '');
+    setFixedAmount(str('fixedSalary'));
+    setSubFeeInput(str('subFee'));
+    setPercentageInput(str('percentage'));
+    setHourRateInput(str('hourRate'));
+  };
 
   // Choosing a lecturer fills in how they are paid.
   const pickLecturer = (id) => {
@@ -1000,11 +1237,8 @@ function SalaryForm({ batch, mode, formulas = [], editing, defaultMonth, onCance
     const l = batch.lecturers.find((x) => x._id === id);
     if (l) {
       setType(l.payType || 'formula');
-      setFormulaId(l.formula || batch.formula || '');
-      setFixedAmount(l.fixedSalary ? String(l.fixedSalary) : '');
-      setSubFeeInput(l.subFee ? String(l.subFee) : '');
-      setPercentageInput(l.percentage ? String(l.percentage) : '');
-      setHourRateInput(l.hourRate ? String(l.hourRate) : '');
+      setFormulaId('');
+      applyRates(l);
       setHoursInput('');
     }
   };
@@ -1022,7 +1256,7 @@ function SalaryForm({ batch, mode, formulas = [], editing, defaultMonth, onCance
   };
 
   // Live preview of the amount (the server works it out again when saving).
-  const formula = formulas.find((f) => f._id === formulaId) || defaultFormula;
+  const formula = formulas.find((f) => f._id === formulaId) || defaultFor(lecturer);
   const attNum = Number(attendance);
   const validAtt = attendance !== '' && Number.isInteger(attNum) && attNum >= 0;
   const fixedNum = Number(fixedAmount);
@@ -1063,8 +1297,8 @@ function SalaryForm({ batch, mode, formulas = [], editing, defaultMonth, onCance
     setMessage(null);
     setSaving(true);
     try {
-      // No formulaId is sent: the server uses the lecturer's formula, else the batch's formula.
-      const body = { type, mode, note, ...(type === 'formula' ? { attendance, hours: hoursInput, subFee: subFeeInput, percentage: percentageInput, hourRate: hourRateInput } : { fixedAmount }) };
+      // formulaId = the formula picked on the form; empty = the server uses the default for this lecturer / medium.
+      const body = { type, mode, medium, note, ...(type === 'formula' ? { formulaId, attendance, hours: hoursInput, subFee: subFeeInput, percentage: percentageInput, hourRate: hourRateInput } : { fixedAmount }) };
       const res = editing
         ? await axios.put(`/api/lecturer-salary/salaries/${editing._id}`, body)
         : await axios.post('/api/lecturer-salary/salaries', { ...body, batchId, lecturerId, month });
@@ -1080,7 +1314,7 @@ function SalaryForm({ batch, mode, formulas = [], editing, defaultMonth, onCance
 
   return (
     <div className="pc-panel">
-      <h3>{editing ? `Edit salary — ${editing.lecturerName}` : 'Add a salary'} · {modeLabel(mode)}</h3>
+      <h3>{editing ? `Edit salary — ${editing.lecturerName}` : 'Add a salary'} · {modeLabel(mode)} · {entryMediumLabel(medium)}</h3>
       {message && <div className={`pc-alert ${message.type}`}>{message.text}</div>}
 
       <form className="pc-form" onSubmit={submit}>
@@ -1090,13 +1324,23 @@ function SalaryForm({ batch, mode, formulas = [], editing, defaultMonth, onCance
           Lecturer
           <select required disabled={!!editing} value={lecturerId} onChange={(e) => pickLecturer(e.target.value)}>
             <option value="">Select lecturer...</option>
-            {batch.lecturers.map((l) => <option key={l._id} value={l._id}>{l.name} — {l.subject}</option>)}
+            {lecturersHere.map((l) => <option key={l._id} value={l._id}>{l.name} — {l.subject}{l.medium === 'both' ? ' (both mediums)' : ''}{mode === 'recording' && l.modes && l.modes.length > 0 && !l.modes.includes('recording') ? ' (online lecturer)' : ''}</option>)}
           </select>
         </label>
 
         {batch.lecturers.length === 0 && (
           <p className="wide" style={{ margin: 0, color: '#B7791F' }}>
             This batch has no lecturers yet — add them in the “Batches &amp; Lecturers” tab.
+          </p>
+        )}
+        {mode === 'recording' && (
+          <p className="wide" style={{ margin: 0, fontSize: 13, color: '#4A6288' }}>
+            Recordings are made from online classes, so the lecturers who teach Online are listed here too.
+          </p>
+        )}
+        {batch.lecturers.length > 0 && lecturersHere.length === 0 && (
+          <p className="wide" style={{ margin: 0, color: '#B7791F' }}>
+            No lecturer of this batch teaches {modeLabel(mode)} in {entryMediumLabel(medium)}. Set each lecturer's medium and parts (Online / Physical / Recording) in the “Batches &amp; Lecturers” tab.
           </p>
         )}
 
@@ -1106,8 +1350,8 @@ function SalaryForm({ batch, mode, formulas = [], editing, defaultMonth, onCance
             <br />
             Normally paid: <strong>{payTypeLabel(lecturer.payType)}</strong>
             {lecturer.payType === 'fixed'
-              ? ` — ${formatMoney(lecturer.fixedSalary)}`
-              : ` — ${[lecturer.subFee ? `sub fee ${formatMoney(lecturer.subFee)}` : null, lecturer.percentage ? `${lecturer.percentage}%` : null, lecturer.hourRate ? `${formatMoney(lecturer.hourRate)} / hour` : null].filter(Boolean).join(', ') || 'by the formula'}`}
+              ? ` — ${formatMoney(rateFor(lecturer, medium, 'fixedSalary'))} (${entryMediumLabel(medium)})`
+              : ` — ${ratesText(lecturer, medium) || 'by the formula'} (${entryMediumLabel(medium)} medium)`}
             <br />
             Bank:{' '}
             {lecturer.accountNumber
@@ -1118,7 +1362,7 @@ function SalaryForm({ batch, mode, formulas = [], editing, defaultMonth, onCance
                 <br />
                 <span style={{ color: '#1E56C2' }}>
                   Already has {existing.length} salary entr{existing.length === 1 ? 'y' : 'ies'} in {monthLabel(month)}
-                  {' '}({existing.map((r) => `${modeLabel(r.mode)} ${formatMoney(r.amount)}`).join(', ')}). You can still add another one.
+                  {' '}({existing.map((r) => `${modeLabel(r.mode)} / ${entryMediumLabel(r.medium)} ${formatMoney(r.amount)}`).join(', ')}). You can still add another one.
                 </span>
               </>
             )}
@@ -1134,6 +1378,19 @@ function SalaryForm({ batch, mode, formulas = [], editing, defaultMonth, onCance
                 <option value="fixed">Fixed amount</option>
               </select>
             </label>
+
+            {type === 'formula' && (
+              <label className="pc-field">
+                Formula
+                <select value={formulaId} onChange={(e) => setFormulaId(e.target.value)}>
+                  <FormulaOptions
+                    formulas={formulas}
+                    degree={batch.faculty}
+                    emptyLabel={`${defaultFor(lecturer)?.name || 'Standard'} (default for ${entryMediumLabel(medium)} medium)`}
+                  />
+                </select>
+              </label>
+            )}
 
             {type === 'formula' ? (
               <>
@@ -1227,7 +1484,7 @@ function SalaryForm({ batch, mode, formulas = [], editing, defaultMonth, onCance
 }
 
 // The entries of one batch for one month, with the submit -> verify -> pay steps.
-function SalaryList({ batchId, mode, month, setMonth, refreshKey, reload, isAdmin, onEdit }) {
+function SalaryList({ batchId, mode, medium, month, setMonth, refreshKey, reload, isAdmin, onEdit }) {
   const [records, setRecords] = useState(null);
   const [message, setMessage] = useState(null);
   const [busyId, setBusyId] = useState('');
@@ -1299,7 +1556,8 @@ function SalaryList({ batchId, mode, month, setMonth, refreshKey, reload, isAdmi
   };
 
   // Only this part (Online / Physical / Recording). Older entries saved before the 3 parts existed show under Online.
-  const list = (records || []).filter((r) => r.mode === mode || (!r.mode && mode === 'online'));
+  // Entries saved before the mediums existed show under English.
+  const list = (records || []).filter((r) => (r.mode === mode || (!r.mode && mode === 'online')) && (r.medium === medium || (!r.medium && medium === 'english')));
   const sum = (items) => items.reduce((t, s) => t + s.amount, 0);
   const total = sum(list);
   const paid = sum(list.filter((s) => s.status === 'paid'));
@@ -1310,7 +1568,7 @@ function SalaryList({ batchId, mode, month, setMonth, refreshKey, reload, isAdmi
   return (
     <>
       <div className="pc-toolbar" style={{ marginTop: 24 }}>
-        <h3 style={{ margin: 0 }}>{modeLabel(mode)} salaries — {monthLabel(month)}</h3>
+        <h3 style={{ margin: 0 }}>{modeLabel(mode)} · {entryMediumLabel(medium)} salaries — {monthLabel(month)}</h3>
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <MonthYearPicker value={month} onChange={(v) => { setMonth(v); setMessage(null); }} />
         </div>
@@ -1546,27 +1804,39 @@ function PaymentsSection({ isAdmin, courses }) {
 
             <div className="pc-table-wrap">
               <table className="pc-table">
-                <thead><tr><th>Degree / batch</th><th>Part</th><th className="num">Amount</th><th>Status</th></tr></thead>
+                <thead><tr><th>Degree / batch</th><th>Part</th><th>Medium</th><th className="num">Amount</th><th>Status</th></tr></thead>
                 <tbody>
-                  {p.here.map((i) => (
-                    <tr key={i._id}>
-                      <td>{i.faculty} — {i.batchYear} Batch{i.note && <><br /><small style={{ color: '#1E56C2' }}>{i.note}</small></>}</td>
-                      <td>{modeLabel(i.mode)}{i.type === 'fixed' ? ' · fixed' : ''}</td>
-                      <td className="num">{formatMoney(i.amount)}</td>
-                      <td><StatusBadge status={i.status} /></td>
-                    </tr>
-                  ))}
-                  {p.others.map((i) => (
-                    <tr key={i._id} style={{ opacity: 0.6 }}>
-                      <td>{i.faculty} — {i.batchYear} Batch <small>(other degree)</small></td>
-                      <td>{modeLabel(i.mode)}{i.type === 'fixed' ? ' · fixed' : ''}</td>
-                      <td className="num">{formatMoney(i.amount)}</td>
-                      <td><StatusBadge status={i.status} /></td>
-                    </tr>
-                  ))}
+                  {[['english', 'English medium'], ['sinhala', 'Sinhala medium'], ['', 'Medium not set']].map(([key, title]) => {
+                    const rowsHere = [...p.here.map((i) => ({ ...i, other: false })), ...p.others.map((i) => ({ ...i, other: true }))].filter((i) => (i.medium || '') === key);
+                    if (rowsHere.length === 0) return null;
+                    const sub = round2(rowsHere.reduce((t, i) => t + i.amount, 0));
+                    return (
+                      <Fragment key={key || 'none'}>
+                        <tr style={{ background: '#F1F6FD' }}>
+                          <td colSpan="4"><strong>{title}</strong></td>
+                          <td className="num"><strong>{formatMoney(sub)}</strong></td>
+                        </tr>
+                        {rowsHere.map((i) => (
+                          <tr key={i._id} style={i.other ? { opacity: 0.6 } : undefined}>
+                            <td>{entryBatchText(i)}{i.other && <> <small>(other degree)</small></>}{i.note && i.note !== '-' && <><br /><small style={{ color: '#1E56C2' }}>{i.note}</small></>}</td>
+                            <td>{i.mode ? modeLabel(i.mode) : <span style={{ color: '#8FA3C0' }}>Not set</span>}{i.type === 'fixed' ? ' · fixed' : ''}</td>
+                            <td>{i.medium ? entryMediumLabel(i.medium) : <span style={{ color: '#8FA3C0' }}>Not set</span>}</td>
+                            <td className="num">{formatMoney(i.amount)}</td>
+                            <td><StatusBadge status={i.status} /></td>
+                          </tr>
+                        ))}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
+
+            {p.items.some((i) => !i.mode || !i.medium) && (
+              <p style={{ margin: '8px 0 0', fontSize: 12.5, color: '#B7791F' }}>
+                “Not set” entries were saved before the parts / mediums existed. Open them in the Salaries tab (they show under Online · English) and press Update to set them.
+              </p>
+            )}
 
             <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
               {p.readyTotal > 0 && isAdmin && (
