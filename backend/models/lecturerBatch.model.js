@@ -9,6 +9,8 @@ const lecturerSchema = new mongoose.Schema(
     subject: { type: String, required: true, trim: true },
     // Language the lecturer teaches in.
     medium: { type: String, enum: ['english', 'sinhala', 'both'] },
+    // Which parts of the batch the lecturer teaches: online / physical / recording (one or more).
+    modes: [{ type: String, enum: ['online', 'physical', 'recording'] }],
     // How this lecturer is normally paid:
     //   formula = attendance x sub fee x percentage / 100   (needs subFee + percentage)
     //   fixed   = a fixed amount, outside the formula       (needs fixedSalary)
@@ -41,6 +43,11 @@ const lecturerBatchSchema = new mongoose.Schema(
     year: { type: Number, required: true, min: 2000, max: 2100 },
     // The formula this batch's lecturers are paid by. Empty = the Standard formula.
     formula: { type: mongoose.Schema.Types.ObjectId, ref: 'LecturerFormula' },
+    // A different formula for each medium (sub fee / ranges can differ between English and Sinhala). Empty = the batch formula above.
+    mediumFormulas: {
+      english: { type: mongoose.Schema.Types.ObjectId, ref: 'LecturerFormula' },
+      sinhala: { type: mongoose.Schema.Types.ObjectId, ref: 'LecturerFormula' },
+    },
     // OLD setting (a plain deduction %), no longer used. Kept only so old data can still be read;
     // it is replaced by choosing a formula.
     deductionPercent: { type: Number, default: 0, min: 0, max: 99 },
