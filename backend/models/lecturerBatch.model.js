@@ -1,5 +1,16 @@
 const mongoose = require('mongoose');
 
+// The rates for ONE medium. The same lecturer has a different sub fee (percentage ...) for English and for Sinhala.
+const rateSchema = new mongoose.Schema(
+  {
+    subFee: { type: Number, min: 0.01 },
+    percentage: { type: Number, min: 0.01, max: 100 },
+    hourRate: { type: Number, min: 0.01 },
+    fixedSalary: { type: Number, min: 0.01 },
+  },
+  { _id: false }
+);
+
 // One lecturer inside one batch. The same person teaching in two batches is
 // simply added in both (each batch can have its own rates).
 const lecturerSchema = new mongoose.Schema(
@@ -11,6 +22,9 @@ const lecturerSchema = new mongoose.Schema(
     medium: { type: String, enum: ['english', 'sinhala', 'both'] },
     // Which parts of the batch the lecturer teaches: online / physical / recording (one or more).
     modes: [{ type: String, enum: ['online', 'physical', 'recording'] }],
+    // Rates per medium (English / Sinhala). The plain subFee / percentage / hourRate / fixedSalary below are kept as a
+    // copy of the first medium's rates so older data and code still work.
+    rates: { english: rateSchema, sinhala: rateSchema },
     // How this lecturer is normally paid:
     //   formula = attendance x sub fee x percentage / 100   (needs subFee + percentage)
     //   fixed   = a fixed amount, outside the formula       (needs fixedSalary)
