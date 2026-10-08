@@ -11,6 +11,7 @@ const { requireString, optionalString } = require('../utils/validators');
 const PAY_TYPES = ['formula', 'fixed'];
 const MODES = ['online', 'physical', 'recording'];
 const MEDIUMS = ['english', 'sinhala', 'both'];
+const ENTRY_MEDIUMS = ['english', 'sinhala']; // a salary entry is for one medium; a 'both' lecturer gets one entry per medium
 
 const isAdmin = (user) => user.role === 'super_admin';
 const isBlank = (v) => v === undefined || v === null || v === '';
@@ -101,6 +102,34 @@ const validateYear = (value) => {
 const validateMedium = (value) => {
   if (!MEDIUMS.includes(value)) throw new ApiError(400, 'Choose the medium: English, Sinhala or Both');
   return value;
+};
+
+// The salary entry's medium. A lecturer who teaches in one language only cannot get entries in the other.
+const checkEntryMedium = (value, lecturer) => {
+  if (!ENTRY_MEDIUMS.includes(value)) throw new ApiError(400, 'Choose the medium: English or Sinhala');
+  if (ENTRY_MEDIUMS.includes(lecturer.medium) && lecturer.medium !== value) {
+    throw new ApiError(400, `${lecturer.name} teaches in ${lecturer.medium === 'english' ? 'English' : 'Sinhala'} only`);
+  }
+  return value;
+};
+
+// The parts (online / physical / recording) a lecturer teaches - at least one.
+const validateModes = (value) => {
+  const list = [...new Set(Array.isArray(value) ? value : [])];
+  if (list.length === 0 || list.some((m) => !MODES.includes(m))) {
+    throw new ApiError(400, 'Choose at least one part the lecturer teaches: online, physical or recording');
+  }
+  return MODES.filter((m) => list.includes(m));
+};
+
+// A salary entry can only be for a part the lecturer teaches (older lecturers without parts are allowed in any).
+const checkLecturerMode = (mode, lecturer) => {
+  // Recordings are made from online classes, so a lecturer who teaches online can also get recording entries.
+  const teaches = (m) => lecturer.modes.includes(m) || (m === 'recording' && lecturer.modes.includes('online'));
+  if (lecturer.modes && lecturer.modes.length > 0 && !teaches(mode)) {
+    throw new ApiError(400, `${lecturer.name} does not teach ${mode}`);
+  }
+  return mode;
 };
 
 const validateMode = (value) => {
@@ -326,14 +355,37 @@ const validateFormulaRef = async (value, faculty) => {
 };
 
 // Which formula an entry uses: the one picked on the form, else the lecturer's, else the batch's, else Standard.
-const resolveFormula = async (batch, lecturer, explicitId) => {
-  if (!isBlank(explicitId)) return findOrFail(LecturerFormula, explicitId, 'Formula not found');
-  const inherited = lecturer.formula || batch.formula;
+// Which formula pays an entry: the one picked on the salary form, else the lecturer's own formula,
+// else the batch's formula for that medium (English / Sinhala), else the batch formula, else Standard.
+const resolveFormula = async (batch, lecturer, explicitId, medium) => {
+  if (!isBlank(explicitId)) {
+    const formula = await findOrFail(LecturerFormula, explicitId, 'Formula not found');
+    if (formula.degree && formula.degree.toLowerCase() !== String(batch.faculty).toLowerCase()) {
+      throw new ApiError(400, `The formula "${formula.name}" is only for the ${formula.degree} degree`);
+    }
+    return formula;
+  }
+  const byMedium = medium && batch.mediumFormulas ? batch.mediumFormulas[medium] : undefined;
+  const inherited = lecturer.formula || byMedium || batch.formula;
   if (inherited) {
     const formula = await LecturerFormula.findById(inherited);
     if (formula) return formula;
   }
   return ensureDefaultFormula();
+};
+
+// A rate (sub fee, percentage, hourly rate) is required on the lecturer only when EVERY formula that could pay
+// them needs it (the batch can have a different formula for English and for Sinhala).
+const lecturerNeeds = async (batch, formulaRef) => {
+  const candidates = formulaRef
+    ? [await resolveFormula(batch, { formula: formulaRef }, undefined, undefined)]
+    : await Promise.all(ENTRY_MEDIUMS.map((m) => resolveFormula(batch, {}, undefined, m)));
+  const all = candidates.map(formulaNeeds);
+  return {
+    subFee: all.every((n) => n.subFee),
+    percentage: all.every((n) => n.percentage),
+    hourRate: all.every((n) => n.hourRate),
+  };
 };
 
 // Bank details are all optional, but bank + account number go together.
@@ -362,6 +414,7 @@ const lecturerFields = (body, needs = { subFee: true, percentage: true, hourRate
     phone: optionalString(body.phone, 'Phone', { max: 20 }),
     subject: requireString(body.subject, 'Subject', { max: 100 }),
     medium: validateMedium(body.medium),
+    modes: validateModes(body.modes),
     payType,
     ...bankFields(body),
   };
@@ -422,9 +475,15 @@ const createBatch = async (user, body) => {
 const updateBatchSettings = async (id, body) => {
   const batch = await findOrFail(LecturerBatch, id, 'Batch not found');
   batch.formula = await validateFormulaRef(body.formulaId, batch.faculty);
+  if (body.mediumFormulas && typeof body.mediumFormulas === 'object') {
+    batch.mediumFormulas = {
+      english: await validateFormulaRef(body.mediumFormulas.english, batch.faculty),
+      sinhala: await validateFormulaRef(body.mediumFormulas.sinhala, batch.faculty),
+    };
+  }
   batch.deductionPercent = 0; // the old deduction % setting is replaced by the formula
   await batch.save();
-  return { message: 'Batch formula updated', batch };
+  return { message: 'Batch formulas updated', batch };
 };
 
 const deleteBatch = async (id) => {
@@ -442,7 +501,7 @@ const getBatch = (id) => findOrFail(LecturerBatch, id, 'Batch not found');
 const addLecturer = async (user, batchId, body) => {
   const batch = await findOrFail(LecturerBatch, batchId, 'Batch not found');
   const formulaRef = await validateFormulaRef(body.formulaId, batch.faculty);
-  const needs = formulaNeeds(await resolveFormula(batch, { formula: formulaRef }, undefined));
+  const needs = await lecturerNeeds(batch, formulaRef);
   const fields = lecturerFields(body, needs);
   fields.formula = fields.payType === 'formula' ? formulaRef : undefined;
   if (fields.bankName) {
@@ -460,7 +519,7 @@ const updateLecturer = async (user, batchId, lecturerId, body) => {
   if (!lecturer) throw new ApiError(404, 'Lecturer not found');
 
   const formulaRef = await validateFormulaRef(body.formulaId, batch.faculty);
-  const needs = formulaNeeds(await resolveFormula(batch, { formula: formulaRef }, undefined));
+  const needs = await lecturerNeeds(batch, formulaRef);
   const fields = lecturerFields(body, needs);
   fields.formula = fields.payType === 'formula' ? formulaRef : undefined;
   if (bankChanged(lecturer, fields)) {
@@ -494,13 +553,14 @@ const buildSalaryValues = async (batch, lecturer, input) => {
     batchYear: batch.year,
     lecturerName: lecturer.name,
     subject: lecturer.subject,
-    mode: validateMode(input.mode),
+    mode: checkLecturerMode(validateMode(input.mode), lecturer),
+    medium: checkEntryMedium(input.medium, lecturer),
     type,
     note: optionalString(input.note, 'Note', { max: 200 }),
   };
 
   if (type === 'formula') {
-    const formula = await resolveFormula(batch, lecturer, input.formulaId);
+    const formula = await resolveFormula(batch, lecturer, input.formulaId, input.medium);
 
     // Range formula: the attendance (or the hours) picks the range, the range gives the amount.
     if (formula.kind === 'range') {
@@ -765,7 +825,7 @@ const listPeople = async () => {
       const key = personKey(l);
       const prev = people.get(key);
       if (!prev) {
-        people.set(key, { key, name: l.name, phone: l.phone, subject: l.subject, medium: l.medium, bankName: l.bankName, bankBranch: l.bankBranch, accountNumber: l.accountNumber, accountHolder: l.accountHolder, batches: 1 });
+        people.set(key, { key, name: l.name, phone: l.phone, subject: l.subject, medium: l.medium, modes: l.modes, bankName: l.bankName, bankBranch: l.bankBranch, accountNumber: l.accountNumber, accountHolder: l.accountHolder, batches: 1 });
       } else {
         prev.batches += 1;
         if (!prev.accountNumber && l.accountNumber) Object.assign(prev, { bankName: l.bankName, bankBranch: l.bankBranch, accountNumber: l.accountNumber, accountHolder: l.accountHolder });
@@ -798,7 +858,7 @@ const listPayments = async (query) => {
     const p = people.get(key);
     p.subjects.add(sal.subject);
     if (!p.bank && lec.accountNumber) p.bank = { bankName: lec.bankName, bankBranch: lec.bankBranch, accountNumber: lec.accountNumber, accountHolder: lec.accountHolder };
-    p.items.push({ _id: sal._id, faculty: sal.faculty, batchYear: sal.batchYear, mode: sal.mode, type: sal.type, amount: sal.amount, status: sal.status, note: sal.note });
+    p.items.push({ _id: sal._id, faculty: sal.faculty, batchYear: sal.batchYear, mode: sal.mode, medium: sal.medium, type: sal.type, amount: sal.amount, status: sal.status, note: sal.note });
     p.total += sal.amount;
     if (sal.status === 'verified') p.readyTotal += sal.amount;
     else if (sal.status === 'paid') { p.paidTotal += sal.amount; p.paidDate = sal.paidDate; p.paidByName = sal.paidByName; }
