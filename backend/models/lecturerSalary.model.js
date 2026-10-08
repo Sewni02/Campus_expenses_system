@@ -19,6 +19,8 @@ const lecturerSalarySchema = new mongoose.Schema(
     type: { type: String, enum: ['formula', 'fixed'], default: 'formula' },
     // Which part of the batch: online / physical / recording. One lecturer can be paid for all three.
     mode: { type: String, enum: ['online', 'physical', 'recording'] },
+    // Every part of a batch (online / physical / recording) has both mediums.
+    medium: { type: String, enum: ['english', 'sinhala'] },
     // The formula used (a COPY of its name + expression, so later edits never change this entry).
     formula: { type: mongoose.Schema.Types.ObjectId, ref: 'LecturerFormula' },
     formulaName: { type: String },
