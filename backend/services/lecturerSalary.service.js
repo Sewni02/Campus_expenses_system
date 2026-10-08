@@ -886,7 +886,7 @@ const listPayments = async (query) => {
     const p = people.get(key);
     p.subjects.add(sal.subject);
     if (!p.bank && lec.accountNumber) p.bank = { bankName: lec.bankName, bankBranch: lec.bankBranch, accountNumber: lec.accountNumber, accountHolder: lec.accountHolder };
-    p.items.push({ _id: sal._id, faculty: sal.faculty, batchYear: sal.batchYear, mode: sal.mode, medium: sal.medium, type: sal.type, amount: sal.amount, status: sal.status, note: sal.note });
+    p.items.push({ _id: sal._id, faculty: sal.faculty, batchYear: sal.batchYear, mode: sal.mode, medium: sal.medium, type: sal.type, amount: sal.amount, status: sal.status, note: sal.note, paidDate: sal.paidDate });
     p.total += sal.amount;
     if (sal.status === 'verified') p.readyTotal += sal.amount;
     else if (sal.status === 'paid') { p.paidTotal += sal.amount; p.paidDate = sal.paidDate; p.paidByName = sal.paidByName; }
@@ -904,8 +904,20 @@ const listPayments = async (query) => {
     .sort((a, b) => a.name.localeCompare(b.name));
 };
 
+// The date the money was paid (YYYY-MM-DD): today or an earlier day, not in the future.
+const validatePaymentDate = (value) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) throw new ApiError(400, 'Enter the payment date');
+  const date = new Date(`${value}T12:00:00.000Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw new ApiError(400, 'The payment date is not a real date');
+  const limit = new Date();
+  limit.setUTCDate(limit.getUTCDate() + 1); // allow for time zones ahead of UTC
+  if (date > limit) throw new ApiError(400, 'The payment date cannot be in the future');
+  if (date < new Date('2000-01-01T00:00:00Z')) throw new ApiError(400, 'The payment date is too old');
+  return date;
+};
+
 // Pay (or undo paying) ONE lecturer's whole month in a single payment. Super admin only.
-//   pay   : every VERIFIED entry of that person in that month becomes paid together
+//   pay   : every unpaid entry (draft / submitted / verified) of that person in that month becomes paid together
 //   unpay : every PAID entry of that person in that month goes back to verified
 const payLecturer = async (user, body) => {
   if (!isAdmin(user)) throw new ApiError(403, 'Only the Super Admin can do this');
@@ -919,16 +931,23 @@ const payLecturer = async (user, body) => {
   const name = await actorName(user);
 
   if (body.action === 'pay') {
-    const ready = mine.filter((s) => s.status === 'verified');
-    if (ready.length === 0) throw new ApiError(400, 'Nothing is verified for this lecturer yet, so there is nothing to pay');
+    // "Verify": the super admin checks the lecturer's whole month and pays it in one go - draft, submitted and
+    // verified entries all become paid, on the payment date that was typed in.
+    const paymentDate = validatePaymentDate(body.paymentDate);
+    const ready = mine.filter((s) => s.status !== 'paid');
+    if (ready.length === 0) throw new ApiError(400, 'There is nothing left to pay for this lecturer in this month');
     // Bank details the lecturer has RIGHT NOW stay with the payment record.
     const withBank = mine.map((s) => lecturerOf.get(s.lecturer.toString())).find((l) => l && l.accountNumber);
     const paymentId = new mongoose.Types.ObjectId();
     const now = new Date();
     for (const sal of ready) {
+      // entries that skipped the submit / verify steps are marked as checked by the super admin now
+      if (sal.status === 'pending') { sal.submittedAt = now; sal.submittedByName = name; }
+      if (sal.status !== 'verified') { sal.verifiedAt = now; sal.verifiedByName = name; }
+      sal.returnNote = undefined;
       sal.status = 'paid';
       sal.paymentId = paymentId;
-      sal.paidDate = now;
+      sal.paidDate = paymentDate;
       sal.paidByName = name;
       sal.paidBankName = withBank?.bankName;
       sal.paidBankBranch = withBank?.bankBranch;
