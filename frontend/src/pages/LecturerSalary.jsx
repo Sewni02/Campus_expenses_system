@@ -1695,6 +1695,77 @@ function SalaryList({ batchId, mode, medium, month, setMonth, refreshKey, reload
 }
 
 // ---------- Payments: one payment per lecturer per month, ALL their batches added together ----------
+// ---------- A printable report of ONE lecturer's month (opens in a new tab; "Save as PDF" in the print window) ----------
+const escapeHtml = (v) => String(v === undefined || v === null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const STATUS_TEXT = { pending: 'Draft', submitted: 'Awaiting verification', verified: 'Verified', paid: 'Paid' };
+const todayString = () => {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 10);
+};
+
+function openLecturerReport(p, month) {
+  const w = window.open('', '_blank');
+  if (!w) { window.alert('Please allow pop-ups for this site to open the report.'); return; }
+  const e = escapeHtml;
+  const groups = [['english', 'English medium'], ['sinhala', 'Sinhala medium'], ['', 'Medium not set']]
+    .map(([key, title]) => {
+      const items = p.items.filter((i) => (i.medium || '') === key);
+      return { title, items, total: round2(items.reduce((t, i) => t + i.amount, 0)) };
+    })
+    .filter((g) => g.items.length > 0);
+  const rows = groups.map((g) =>
+    `<tr class="grp"><td colspan="4">${e(g.title)}</td><td class="num">${e(formatMoney(g.total))}</td></tr>` +
+    g.items.map((i) =>
+      `<tr><td>${e(entryBatchText(i))}${i.note && i.note !== '-' ? `<br><small>${e(i.note)}</small>` : ''}</td>` +
+      `<td>${e(i.mode ? modeLabel(i.mode) : 'Not set')}${i.type === 'fixed' ? ' (fixed)' : ''}</td>` +
+      `<td>${e(i.medium ? entryMediumLabel(i.medium) : 'Not set')}</td>` +
+      `<td>${e(STATUS_TEXT[i.status] || i.status)}${i.status === 'paid' && i.paidDate ? ` · ${e(formatDate(i.paidDate))}` : ''}</td>` +
+      `<td class="num">${e(formatMoney(i.amount))}</td></tr>`).join('')
+  ).join('');
+  const bank = p.bank
+    ? `${e(p.bank.bankName)} · ${e(p.bank.accountNumber)}${p.bank.bankBranch ? ` · ${e(p.bank.bankBranch)}` : ''}${p.bank.accountHolder ? ` · ${e(p.bank.accountHolder)}` : ''}`
+    : 'Not added';
+  const unpaid = round2(p.readyTotal + p.notReadyTotal);
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Salary report — ${e(p.name)} — ${e(monthLabel(month))}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; color: #0A1F44; margin: 32px; font-size: 14px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 0 0 18px; color: #4A6288; font-weight: 600; }
+  .info { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; margin-bottom: 20px; }
+  .info b { color: #4A6288; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th, td { border: 1px solid #CBD6E8; padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: #EAF1FB; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
+  .num { text-align: right; white-space: nowrap; } .grp td { background: #F4F8FD; font-weight: 700; }
+  .total td { font-weight: 700; background: #F4F8FD; } small { color: #1E56C2; }
+  .sign { display: flex; justify-content: space-between; margin-top: 60px; } .sign div { width: 40%; border-top: 1px solid #0A1F44; padding-top: 6px; text-align: center; }
+  .foot { margin-top: 24px; font-size: 12px; color: #7C8FAD; }
+  @media print { body { margin: 14mm; } }
+</style></head><body>
+<h1>Lecturer salary report</h1>
+<h2>${e(monthLabel(month))}</h2>
+<div class="info">
+  <b>Lecturer</b><span>${e(p.name)}</span>
+  <b>Subject</b><span>${e(p.subjects.join(', '))}</span>
+  <b>Phone</b><span>${e(p.phone || '—')}</span>
+  <b>Bank</b><span>${bank}</span>
+  <b>Payment date</b><span>${p.paidDate ? e(formatDate(p.paidDate)) : '—'}${p.paidByName ? ` (paid by ${e(p.paidByName)})` : ''}</span>
+</div>
+<table>
+  <thead><tr><th>Degree / batch</th><th>Part</th><th>Medium</th><th>Status</th><th class="num">Amount</th></tr></thead>
+  <tbody>${rows}
+    <tr class="total"><td colspan="4">Total for the month</td><td class="num">${e(formatMoney(p.total))}</td></tr>
+    <tr><td colspan="4">Paid</td><td class="num">${e(formatMoney(p.paidTotal))}</td></tr>
+    <tr><td colspan="4">Still to be paid</td><td class="num">${e(formatMoney(unpaid))}</td></tr>
+  </tbody>
+</table>
+<div class="sign"><div>Prepared by</div><div>Received by (${e(p.name)})</div></div>
+<div class="foot">Generated on ${e(formatDate(new Date()))}</div>
+<script>window.onload = function () { setTimeout(function () { window.print(); }, 300); };</script>
+</body></html>`);
+  w.document.close();
+}
+
 function PaymentsSection({ isAdmin, courses }) {
   const [month, setMonth] = useState(currentMonthString());
   const [degree, setDegree] = useState(''); // '' = every degree
@@ -1702,6 +1773,8 @@ function PaymentsSection({ isAdmin, courses }) {
   const [people, setPeople] = useState(null);
   const [message, setMessage] = useState(null);
   const [busyKey, setBusyKey] = useState('');
+  const [verifyKey, setVerifyKey] = useState(''); // the lecturer whose "Verify" form is open
+  const [payDate, setPayDate] = useState(todayString());
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -1714,15 +1787,34 @@ function PaymentsSection({ isAdmin, courses }) {
     return () => { cancelled = true; };
   }, [month, refreshKey]);
 
-  const act = async (person, action) => {
-    const text = action === 'pay'
-      ? `Pay ${person.name} ${formatMoney(person.readyTotal)} now, for all their verified entries this month?`
-      : `Undo the payment of ${person.name}? Their entries go back to “Verified”.`;
-    if (!window.confirm(text)) return;
+  const openVerify = (person) => {
+    setMessage(null);
+    setPayDate(todayString());
+    setVerifyKey(person.key);
+  };
+
+  // Verify: the Super Admin checks the lecturer's month, picks the payment date and marks everything as paid.
+  const confirmPay = async (person) => {
     setMessage(null);
     setBusyKey(person.key);
     try {
-      const res = await axios.post('/api/lecturer-salary/payments', { month, personKey: person.key, action });
+      const res = await axios.post('/api/lecturer-salary/payments', { month, personKey: person.key, action: 'pay', paymentDate: payDate });
+      setMessage({ type: 'ok', text: res.data.message });
+      setVerifyKey('');
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      setMessage({ type: 'err', text: apiError(err, 'Could not verify this payment') });
+    } finally {
+      setBusyKey('');
+    }
+  };
+
+  const undo = async (person) => {
+    if (!window.confirm(`Undo the payment of ${person.name}? Their entries go back to “Verified”.`)) return;
+    setMessage(null);
+    setBusyKey(person.key);
+    try {
+      const res = await axios.post('/api/lecturer-salary/payments', { month, personKey: person.key, action: 'unpay' });
       setMessage({ type: 'ok', text: res.data.message });
       setRefreshKey((k) => k + 1);
     } catch (err) {
@@ -1743,7 +1835,7 @@ function PaymentsSection({ isAdmin, courses }) {
     .filter((p) => !search.trim() || p.name.toLowerCase().includes(search.trim().toLowerCase()));
   const totalOf = (items, status) => round2(items.filter((i) => !status || i.status === status).reduce((t, i) => t + i.amount, 0));
   const sumHere = (status) => round2(rows.reduce((t, p) => t + totalOf(p.here, status), 0));
-  const notVerifiedHere = round2(rows.reduce((t, p) => t + totalOf(p.here.filter((i) => i.status !== 'verified' && i.status !== 'paid')), 0));
+  const unpaidHere = round2(sumHere() - sumHere('paid'));
   const shown = rows;
 
   return (
@@ -1754,17 +1846,16 @@ function PaymentsSection({ isAdmin, courses }) {
       </div>
       <p style={{ margin: '0 0 14px', color: '#4A6288', fontSize: 13 }}>
         Salaries are listed degree by degree. A lecturer who teaches in more than one degree is still paid <strong>once</strong>:
-        the Pay button adds up all their verified salaries (every batch, degree and online / physical / recording part).
-        People are matched by phone number (or by name when there is no phone number).
+        the <strong>Verify</strong> button (Super Admin) shows their whole month (every batch, degree and online / physical / recording part), you enter the
+        payment date and confirm — all their entries become <strong>Paid</strong>, and a printable report is available. People are matched by phone number (or by name when there is no phone number).
       </p>
 
       {message && <div className={`pc-alert ${message.type}`}>{message.text}</div>}
 
       <div className="pc-cards">
         <div className="pc-card"><p>{active} — total salaries</p><h2>{formatMoney(sumHere())}</h2><small>{rows.length} lecturer{rows.length === 1 ? '' : 's'}</small></div>
-        <div className="pc-card"><p>Ready to pay (verified)</p><h2>{formatMoney(sumHere('verified'))}</h2></div>
+        <div className="pc-card spent"><p>Waiting to be paid</p><h2>{formatMoney(unpaidHere)}</h2></div>
         <div className="pc-card balance"><p>Paid</p><h2>{formatMoney(sumHere('paid'))}</h2></div>
-        <div className="pc-card spent"><p>Not verified yet</p><h2>{formatMoney(notVerifiedHere)}</h2></div>
       </div>
 
       <CourseTabs courses={courses} value={active} onChange={setDegree} />
@@ -1781,7 +1872,8 @@ function PaymentsSection({ isAdmin, courses }) {
       {people && courses.length > 0 && shown.length === 0 && <p className="pc-empty">No salary entries in {active} for this month.</p>}
 
       {shown.map((p) => {
-        const allPaid = p.paidTotal > 0 && p.readyTotal === 0 && p.notReadyTotal === 0;
+        const unpaid = round2(p.readyTotal + p.notReadyTotal);
+        const allPaid = p.paidTotal > 0 && unpaid === 0;
         return (
           <div key={p.key} className="pc-panel">
             <div className="pc-toolbar" style={{ marginBottom: 8 }}>
@@ -1799,8 +1891,64 @@ function PaymentsSection({ isAdmin, courses }) {
                 <div style={{ fontSize: 22, fontWeight: 700 }}>{formatMoney(totalOf(p.here))}</div>
                 <small style={{ color: '#4A6288' }}>{active} total for {monthLabel(month)}</small>
                 {p.others.length > 0 && <small style={{ display: 'block', color: '#4A6288' }}>All degrees together: <strong>{formatMoney(p.total)}</strong></small>}
+                {unpaid > 0 && isAdmin && verifyKey !== p.key && (
+                  <div style={{ marginTop: 8 }}>
+                    <button className="pc-btn" disabled={busyKey === p.key} onClick={() => openVerify(p)}>Verify</button>
+                  </div>
+                )}
+                {unpaid > 0 && !isAdmin && <small style={{ display: 'block', color: '#B7791F' }}>Waiting for the Super Admin to verify</small>}
               </div>
             </div>
+
+            {verifyKey === p.key && isAdmin && unpaid > 0 && (
+              <div className="pc-panel" style={{ background: '#F4F8FD', margin: '4px 0 14px' }}>
+                <h3 style={{ margin: '0 0 10px' }}>Verify salary — {p.name} · {monthLabel(month)}</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px 24px', fontSize: 14, marginBottom: 12 }}>
+                  <div><small style={{ color: '#4A6288' }}>Lecturer</small><br /><strong>{p.name}</strong></div>
+                  <div><small style={{ color: '#4A6288' }}>Subject</small><br />{p.subjects.join(', ')}</div>
+                  <div><small style={{ color: '#4A6288' }}>Phone</small><br />{p.phone || '—'}</div>
+                  <div><small style={{ color: '#4A6288' }}>Month</small><br />{monthLabel(month)}</div>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <small style={{ color: '#4A6288' }}>Bank</small><br />
+                    {p.bank
+                      ? `${p.bank.bankName} · ${p.bank.accountNumber}${p.bank.bankBranch ? ` · ${p.bank.bankBranch}` : ''}${p.bank.accountHolder ? ` · ${p.bank.accountHolder}` : ''}`
+                      : <span style={{ color: '#B7791F' }}>no bank details added yet</span>}
+                  </div>
+                </div>
+                <div className="pc-table-wrap">
+                  <table className="pc-table">
+                    <thead><tr><th>Degree / batch</th><th>Part</th><th>Medium</th><th>Status</th><th className="num">Amount</th></tr></thead>
+                    <tbody>
+                      {p.items.filter((i) => i.status !== 'paid').map((i) => (
+                        <tr key={i._id}>
+                          <td>{entryBatchText(i)}{i.note && i.note !== '-' && <><br /><small style={{ color: '#1E56C2' }}>{i.note}</small></>}</td>
+                          <td>{i.mode ? modeLabel(i.mode) : 'Not set'}{i.type === 'fixed' ? ' · fixed' : ''}</td>
+                          <td>{i.medium ? entryMediumLabel(i.medium) : 'Not set'}</td>
+                          <td><StatusBadge status={i.status} /></td>
+                          <td className="num">{formatMoney(i.amount)}</td>
+                        </tr>
+                      ))}
+                      <tr style={{ background: '#EAF1FB', fontWeight: 700 }}>
+                        <td colSpan="4">Total to be paid</td>
+                        <td className="num">{formatMoney(unpaid)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="pc-form" style={{ marginTop: 12, alignItems: 'flex-end' }}>
+                  <label className="pc-field">
+                    Payment date
+                    <input type="date" required max={todayString()} value={payDate} onChange={(e) => setPayDate(e.target.value)} />
+                  </label>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button className="pc-btn" disabled={busyKey === p.key || !payDate} onClick={() => confirmPay(p)}>
+                      {busyKey === p.key ? 'Saving…' : `Confirm — mark ${formatMoney(unpaid)} as paid`}
+                    </button>
+                    <button className="pc-btn-sm" disabled={busyKey === p.key} onClick={() => setVerifyKey('')}>Cancel</button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="pc-table-wrap">
               <table className="pc-table">
@@ -1839,25 +1987,17 @@ function PaymentsSection({ isAdmin, courses }) {
             )}
 
             <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              {p.readyTotal > 0 && isAdmin && (
-                <button className="pc-btn" disabled={busyKey === p.key} onClick={() => act(p, 'pay')}>
-                  {busyKey === p.key ? 'Paying…' : `Pay ${formatMoney(p.readyTotal)}`}
-                </button>
-              )}
-              {p.readyTotal > 0 && p.others.length > 0 && (
-                <small style={{ color: '#4A6288' }}>One payment for all degrees together{p.others.some((i) => i.status === 'verified') ? ' (includes verified salaries from the other degree)' : ''}.</small>
-              )}
-              {p.readyTotal > 0 && !isAdmin && <small>{formatMoney(p.readyTotal)} verified — waiting for the Super Admin to pay</small>}
-              {p.notReadyTotal > 0 && (
-                <small style={{ color: '#B7791F' }}>{formatMoney(p.notReadyTotal)} is not verified yet and is not included in the payment.</small>
-              )}
+              {unpaid > 0 && <small style={{ color: '#B7791F' }}>{formatMoney(unpaid)} is waiting to be paid.</small>}
               {p.paidTotal > 0 && (
                 <small style={{ color: '#0F7A6F' }}>
                   Paid {formatMoney(p.paidTotal)}{p.paidDate ? ` on ${formatDate(p.paidDate)}` : ''}{p.paidByName ? ` by ${p.paidByName}` : ''}
                 </small>
               )}
+              {p.paidTotal > 0 && (
+                <button className="pc-btn-sm" onClick={() => openLecturerReport(p, month)}>Report</button>
+              )}
               {p.paidTotal > 0 && isAdmin && (
-                <button className="pc-btn-sm pc-btn-danger" disabled={busyKey === p.key} onClick={() => act(p, 'unpay')}>
+                <button className="pc-btn-sm pc-btn-danger" disabled={busyKey === p.key} onClick={() => undo(p)}>
                   {allPaid ? 'Undo payment' : 'Undo paid part'}
                 </button>
               )}
