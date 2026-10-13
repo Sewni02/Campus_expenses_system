@@ -1695,6 +1695,310 @@ function SalaryList({ batchId, mode, medium, month, setMonth, refreshKey, reload
 }
 
 // ---------- Payments: one payment per lecturer per month, ALL their batches added together ----------
+// ---------- A printable report of ONE lecturer's month (opens in a new tab; "Save as PDF" in the print window) ----------
+const escapeHtml = (v) => String(v === undefined || v === null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const STATUS_TEXT = { pending: 'Draft', submitted: 'Awaiting verification', verified: 'Verified', paid: 'Paid' };
+const todayString = () => {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 10);
+};
+
+function openLecturerReport(p, month) {
+  const w = window.open('', '_blank');
+  if (!w) { window.alert('Please allow pop-ups for this site to open the report.'); return; }
+  const e = escapeHtml;
+  const groups = [['english', 'English medium'], ['sinhala', 'Sinhala medium'], ['', 'Medium not set']]
+    .map(([key, title]) => {
+      const items = p.items.filter((i) => (i.medium || '') === key);
+      return { title, items, total: round2(items.reduce((t, i) => t + i.amount, 0)) };
+    })
+    .filter((g) => g.items.length > 0);
+  const rows = groups.map((g) =>
+    `<tr class="grp"><td colspan="4">${e(g.title)}</td><td class="num">${e(formatMoney(g.total))}</td></tr>` +
+    g.items.map((i) =>
+      `<tr><td>${e(entryBatchText(i))}${i.note && i.note !== '-' ? `<br><small>${e(i.note)}</small>` : ''}</td>` +
+      `<td>${e(i.mode ? modeLabel(i.mode) : 'Not set')}${i.type === 'fixed' ? ' (fixed)' : ''}</td>` +
+      `<td>${e(i.medium ? entryMediumLabel(i.medium) : 'Not set')}</td>` +
+      `<td>${e(STATUS_TEXT[i.status] || i.status)}${i.status === 'paid' && i.paidDate ? ` · ${e(formatDate(i.paidDate))}` : ''}</td>` +
+      `<td class="num">${e(formatMoney(i.amount))}</td></tr>`).join('')
+  ).join('');
+  const bank = p.bank
+    ? `${e(p.bank.bankName)} · ${e(p.bank.accountNumber)}${p.bank.bankBranch ? ` · ${e(p.bank.bankBranch)}` : ''}${p.bank.accountHolder ? ` · ${e(p.bank.accountHolder)}` : ''}`
+    : 'Not added';
+  const unpaid = round2(p.readyTotal + p.notReadyTotal);
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Salary report — ${e(p.name)} — ${e(monthLabel(month))}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; color: #0A1F44; margin: 32px; font-size: 14px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 0 0 18px; color: #4A6288; font-weight: 600; }
+  .info { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; margin-bottom: 20px; }
+  .info b { color: #4A6288; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th, td { border: 1px solid #CBD6E8; padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: #EAF1FB; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
+  .num { text-align: right; white-space: nowrap; } .grp td { background: #F4F8FD; font-weight: 700; }
+  .total td { font-weight: 700; background: #F4F8FD; } small { color: #1E56C2; }
+  .sign { display: flex; justify-content: space-between; margin-top: 60px; } .sign div { width: 40%; border-top: 1px solid #0A1F44; padding-top: 6px; text-align: center; }
+  .foot { margin-top: 24px; font-size: 12px; color: #7C8FAD; }
+  @media print { body { margin: 14mm; } }
+</style></head><body>
+<h1>Lecturer salary report</h1>
+<h2>${e(monthLabel(month))}</h2>
+<div class="info">
+  <b>Lecturer</b><span>${e(p.name)}</span>
+  <b>Subject</b><span>${e(p.subjects.join(', '))}</span>
+  <b>Phone</b><span>${e(p.phone || '—')}</span>
+  <b>Bank</b><span>${bank}</span>
+  <b>Payment date</b><span>${p.paidDate ? e(formatDate(p.paidDate)) : '—'}${p.paidByName ? ` (paid by ${e(p.paidByName)})` : ''}</span>
+</div>
+<table>
+  <thead><tr><th>Degree / batch</th><th>Part</th><th>Medium</th><th>Status</th><th class="num">Amount</th></tr></thead>
+  <tbody>${rows}
+    <tr class="total"><td colspan="4">Total for the month</td><td class="num">${e(formatMoney(p.total))}</td></tr>
+    <tr><td colspan="4">Paid</td><td class="num">${e(formatMoney(p.paidTotal))}</td></tr>
+    <tr><td colspan="4">Still to be paid</td><td class="num">${e(formatMoney(unpaid))}</td></tr>
+  </tbody>
+</table>
+<div class="sign"><div>Prepared by</div><div>Received by (${e(p.name)})</div></div>
+<div class="foot">Generated on ${e(formatDate(new Date()))}</div>
+<script>window.onload = function () { setTimeout(function () { window.print(); }, 300); };</script>
+</body></html>`);
+  w.document.close();
+}
+
+// ---------- Slip + report of ONE degree and month (below the lecturers' list in the Payments tab) ----------
+// Opens the slip file in a new tab (goes through the API so the login token is sent).
+async function viewDegreeSlip(slip) {
+  const tab = window.open('', '_blank');
+  try {
+    const res = await axios.get(`/api/lecturer-salary/slips/${slip._id}/file`, { responseType: 'blob' });
+    const blobUrl = window.URL.createObjectURL(res.data);
+    if (tab) tab.location.href = blobUrl;
+    else window.open(blobUrl, '_blank');
+    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60000);
+  } catch (err) {
+    if (tab) tab.close();
+    let message = 'Could not open the slip. Please try again.';
+    try {
+      if (err.response?.data instanceof Blob) {
+        const parsed = JSON.parse(await err.response.data.text());
+        if (parsed?.message) message = parsed.message;
+      }
+    } catch { /* keep the default message */ }
+    window.alert(message);
+  }
+}
+
+const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(blob);
+});
+
+// The report of every lecturer paid in this degree in this month (a picture slip is printed at the end of it).
+async function openDegreeReport(degree, month, lecturers, slip) {
+  const w = window.open('', '_blank');
+  if (!w) { window.alert('Please allow pop-ups for this site to open the report.'); return; }
+  w.document.write('<p style="font-family:Arial;padding:24px">Preparing the report…</p>');
+
+  let slipHtml = '<p>No payment slip has been uploaded for this degree and month.</p>';
+  if (slip) {
+    slipHtml = `<p>File: ${escapeHtml(slip.slipFileName || 'payment slip')}${slip.uploadedByName ? ` · uploaded by ${escapeHtml(slip.uploadedByName)}` : ''}</p>`;
+    try {
+      const res = await axios.get(`/api/lecturer-salary/slips/${slip._id}/file`, { responseType: 'blob' });
+      if (String(res.data.type).startsWith('image/')) {
+        slipHtml += `<img class="slip" src="${await blobToDataUrl(res.data)}" alt="Payment slip">`;
+      } else {
+        slipHtml += '<p><small>The slip is a PDF file — keep it together with this report.</small></p>';
+      }
+    } catch { slipHtml += '<p><small>The slip image could not be loaded for this report.</small></p>'; }
+  }
+
+  const e = escapeHtml;
+  const sum = (items, status) => round2(items.filter((i) => !status || i.status === status).reduce((t, i) => t + i.amount, 0));
+  const people = lecturers.map((l) => {
+    const paidDates = l.here.filter((i) => i.status === 'paid' && i.paidDate).map((i) => new Date(i.paidDate).getTime());
+    return { ...l, total: sum(l.here), paid: sum(l.here, 'paid'), paidOn: paidDates.length ? new Date(Math.max(...paidDates)) : null };
+  });
+  const all = people.flatMap((l) => l.here);
+  const grandTotal = sum(all);
+  const grandPaid = sum(all, 'paid');
+  const bankText = (b) => (b ? `${e(b.bankName)} · ${e(b.accountNumber)}${b.bankBranch ? ` · ${e(b.bankBranch)}` : ''}${b.accountHolder ? ` · ${e(b.accountHolder)}` : ''}` : 'Not added');
+
+  const overview = people.map((l, n) =>
+    `<tr><td>${n + 1}</td><td>${e(l.name)}<br><small>${e(l.subjects.join(', '))}</small></td><td>${bankText(l.bank)}</td>` +
+    `<td>${l.paidOn ? e(formatDate(l.paidOn)) : '—'}</td><td class="num">${e(formatMoney(l.total))}</td><td class="num">${e(formatMoney(l.paid))}</td><td class="num">${e(formatMoney(round2(l.total - l.paid)))}</td></tr>`).join('');
+
+  const details = people.map((l) => {
+    const rows = [['english', 'English medium'], ['sinhala', 'Sinhala medium'], ['', 'Medium not set']].map(([key, title]) => {
+      const items = l.here.filter((i) => (i.medium || '') === key);
+      if (items.length === 0) return '';
+      return `<tr class="grp"><td colspan="4">${e(title)}</td><td class="num">${e(formatMoney(sum(items)))}</td></tr>` +
+        items.map((i) =>
+          `<tr><td>${e(entryBatchText(i))}</td><td>${e(i.mode ? modeLabel(i.mode) : 'Not set')}${i.type === 'fixed' ? ' (fixed)' : ''}</td>` +
+          `<td>${e(i.medium ? entryMediumLabel(i.medium) : 'Not set')}</td>` +
+          `<td>${e(STATUS_TEXT[i.status] || i.status)}${i.status === 'paid' && i.paidDate ? ` · ${e(formatDate(i.paidDate))}` : ''}</td>` +
+          `<td class="num">${e(formatMoney(i.amount))}</td></tr>`).join('');
+    }).join('');
+    return `<h3>${e(l.name)} <small>${e(l.subjects.join(', '))}</small></h3>
+<table><thead><tr><th>Batch</th><th>Part</th><th>Medium</th><th>Status</th><th class="num">Amount</th></tr></thead><tbody>${rows}
+<tr class="total"><td colspan="4">Total for ${e(l.name)}</td><td class="num">${e(formatMoney(l.total))}</td></tr></tbody></table>`;
+  }).join('');
+
+  w.document.open();
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${e(degree)} salary report — ${e(monthLabel(month))}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; color: #0A1F44; margin: 32px; font-size: 13px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 0 0 18px; color: #4A6288; font-weight: 600; }
+  h3 { font-size: 14px; margin: 22px 0 4px; page-break-after: avoid; } h3 small { color: #4A6288; font-weight: 400; }
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  th, td { border: 1px solid #CBD6E8; padding: 6px 9px; text-align: left; vertical-align: top; }
+  th { background: #EAF1FB; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+  .num { text-align: right; white-space: nowrap; } .grp td { background: #F4F8FD; font-weight: 700; }
+  .total td { font-weight: 700; background: #F4F8FD; } small { color: #4A6288; }
+  .cards { display: flex; gap: 12px; margin: 0 0 8px; } .card { flex: 1; border: 1px solid #CBD6E8; border-radius: 6px; padding: 8px 12px; }
+  .card b { display: block; font-size: 18px; margin-top: 2px; } tr { page-break-inside: avoid; }
+  .slip { max-width: 100%; max-height: 520px; border: 1px solid #CBD6E8; margin-top: 8px; }
+  .sign { display: flex; justify-content: space-between; margin-top: 50px; } .sign div { width: 40%; border-top: 1px solid #0A1F44; padding-top: 6px; text-align: center; }
+  .foot { margin-top: 20px; font-size: 11px; color: #7C8FAD; }
+  @media print { body { margin: 12mm; } }
+</style></head><body>
+<h1>${e(degree)} — lecturer payment report</h1>
+<h2>${e(monthLabel(month))}</h2>
+<div class="cards">
+  <div class="card">Lecturers<b>${people.length}</b></div>
+  <div class="card">Total salaries<b>${e(formatMoney(grandTotal))}</b></div>
+  <div class="card">Paid<b>${e(formatMoney(grandPaid))}</b></div>
+  <div class="card">Waiting to be paid<b>${e(formatMoney(round2(grandTotal - grandPaid)))}</b></div>
+</div>
+<h3>Overview</h3>
+<table><thead><tr><th>#</th><th>Lecturer</th><th>Bank</th><th>Payment date</th><th class="num">Total</th><th class="num">Paid</th><th class="num">Waiting</th></tr></thead>
+<tbody>${overview}<tr class="total"><td colspan="4">Total — ${e(degree)}</td><td class="num">${e(formatMoney(grandTotal))}</td><td class="num">${e(formatMoney(grandPaid))}</td><td class="num">${e(formatMoney(round2(grandTotal - grandPaid)))}</td></tr></tbody></table>
+<h3>Payments by lecturer</h3>
+${details}
+<h3>Payment slip</h3>
+${slipHtml}
+<div class="sign"><div>Prepared by</div><div>Approved by</div></div>
+<div class="foot">Generated on ${e(formatDate(new Date()))}</div>
+<script>window.onload = function () { setTimeout(function () { window.print(); }, 400); };</script>
+</body></html>`);
+  w.document.close();
+}
+
+function DegreePaymentPanel({ degree, month, lecturers, isAdmin }) {
+  const [slips, setSlips] = useState([]);
+  const [file, setFile] = useState(null);
+  const [fileKey, setFileKey] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(null);
+  const [reporting, setReporting] = useState(false);
+
+  const slip = slips.find((x) => x.faculty === degree) || null;
+  const loadSlips = () =>
+    axios.get('/api/lecturer-salary/slips', { params: { month } }).then((res) => setSlips(res.data)).catch(() => setSlips([]));
+  useEffect(() => { setMessage(null); loadSlips(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [month]);
+
+  const pick = (e) => {
+    const chosen = e.target.files[0] || null;
+    if (chosen && chosen.size > 5 * 1024 * 1024) {
+      setMessage({ type: 'err', text: 'The file is bigger than 5 MB. Choose a smaller JPG, PNG or PDF.' });
+      setFileKey((k) => k + 1);
+      setFile(null);
+      return;
+    }
+    setMessage(null);
+    setFile(chosen);
+  };
+
+  const upload = async () => {
+    if (!file) return;
+    setMessage(null);
+    setBusy(true);
+    try {
+      const form = new FormData();
+      form.append('faculty', degree);
+      form.append('month', month);
+      form.append('slip', file);
+      const res = await axios.post('/api/lecturer-salary/slips', form);
+      setMessage({ type: 'ok', text: res.data.message });
+      setFile(null);
+      setFileKey((k) => k + 1);
+      await loadSlips();
+    } catch (err) {
+      setMessage({ type: 'err', text: apiError(err, 'Could not upload the slip') });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!window.confirm(`Remove the ${degree} payment slip of ${monthLabel(month)}?`)) return;
+    setMessage(null);
+    setBusy(true);
+    try {
+      const res = await axios.delete(`/api/lecturer-salary/slips/${slip._id}`);
+      setMessage({ type: 'ok', text: res.data.message });
+      await loadSlips();
+    } catch (err) {
+      setMessage({ type: 'err', text: apiError(err, 'Could not remove the slip') });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const report = async () => {
+    setReporting(true);
+    try { await openDegreeReport(degree, month, lecturers, slip); } finally { setReporting(false); }
+  };
+
+  const all = lecturers.flatMap((l) => l.here);
+  const total = round2(all.reduce((t, i) => t + i.amount, 0));
+  const paid = round2(all.filter((i) => i.status === 'paid').reduce((t, i) => t + i.amount, 0));
+
+  return (
+    <div className="pc-panel" style={{ marginTop: 18 }}>
+      <h3 style={{ marginTop: 0 }}>{degree} — payment slip &amp; report · {monthLabel(month)}</h3>
+      <p style={{ margin: '0 0 12px', color: '#4A6288', fontSize: 13 }}>
+        {lecturers.length} lecturer{lecturers.length === 1 ? '' : 's'} · total <strong>{formatMoney(total)}</strong> · paid <strong>{formatMoney(paid)}</strong> · waiting <strong>{formatMoney(round2(total - paid))}</strong>.
+        One bank slip is kept for all {degree} lecturers of this month.
+      </p>
+      {message && <div className={`pc-alert ${message.type}`}>{message.text}</div>}
+
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+        {slip ? (
+          <>
+            <span>Payment slip: <strong>{slip.slipFileName || 'uploaded'}</strong>
+              <small style={{ color: '#4A6288' }}>{slip.uploadedByName ? ` · by ${slip.uploadedByName}` : ''} · {formatDate(slip.updatedAt || slip.createdAt)}</small>
+            </span>
+            <button className="pc-btn-sm" onClick={() => viewDegreeSlip(slip)}>View slip</button>
+            {isAdmin && <button className="pc-btn-sm pc-btn-danger" disabled={busy} onClick={remove}>Remove</button>}
+          </>
+        ) : (
+          <span style={{ color: '#B7791F' }}>No payment slip uploaded for {degree} yet.</span>
+        )}
+      </div>
+
+      {isAdmin && (
+        <div className="pc-form" style={{ alignItems: 'flex-end', marginBottom: 14 }}>
+          <label className="pc-field">
+            {slip ? 'Replace the slip' : 'Upload the payment slip'} (JPG, PNG or PDF, up to 5 MB)
+            <input key={fileKey} type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" onChange={pick} />
+          </label>
+          <div>
+            <button className="pc-btn" disabled={!file || busy} onClick={upload}>{busy ? 'Uploading…' : slip ? 'Replace slip' : 'Upload slip'}</button>
+          </div>
+        </div>
+      )}
+
+      <button className="pc-btn" disabled={reporting || lecturers.length === 0} onClick={report}>
+        {reporting ? 'Preparing…' : `Download ${degree} report`}
+      </button>
+      <small style={{ marginLeft: 10, color: '#4A6288' }}>All {degree} lecturers of {monthLabel(month)}, with the payment slip. Opens a print window — choose “Save as PDF”.</small>
+    </div>
+  );
+}
+
 function PaymentsSection({ isAdmin, courses }) {
   const [month, setMonth] = useState(currentMonthString());
   const [degree, setDegree] = useState(''); // '' = every degree
@@ -1702,6 +2006,8 @@ function PaymentsSection({ isAdmin, courses }) {
   const [people, setPeople] = useState(null);
   const [message, setMessage] = useState(null);
   const [busyKey, setBusyKey] = useState('');
+  const [verifyKey, setVerifyKey] = useState(''); // the lecturer whose "Verify" form is open
+  const [payDate, setPayDate] = useState(todayString());
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -1714,15 +2020,34 @@ function PaymentsSection({ isAdmin, courses }) {
     return () => { cancelled = true; };
   }, [month, refreshKey]);
 
-  const act = async (person, action) => {
-    const text = action === 'pay'
-      ? `Pay ${person.name} ${formatMoney(person.readyTotal)} now, for all their verified entries this month?`
-      : `Undo the payment of ${person.name}? Their entries go back to “Verified”.`;
-    if (!window.confirm(text)) return;
+  const openVerify = (person) => {
+    setMessage(null);
+    setPayDate(todayString());
+    setVerifyKey(person.key);
+  };
+
+  // Verify: the Super Admin checks the lecturer's month, picks the payment date and marks everything as paid.
+  const confirmPay = async (person) => {
     setMessage(null);
     setBusyKey(person.key);
     try {
-      const res = await axios.post('/api/lecturer-salary/payments', { month, personKey: person.key, action });
+      const res = await axios.post('/api/lecturer-salary/payments', { month, personKey: person.key, action: 'pay', paymentDate: payDate });
+      setMessage({ type: 'ok', text: res.data.message });
+      setVerifyKey('');
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      setMessage({ type: 'err', text: apiError(err, 'Could not verify this payment') });
+    } finally {
+      setBusyKey('');
+    }
+  };
+
+  const undo = async (person) => {
+    if (!window.confirm(`Undo the payment of ${person.name}? Their entries go back to “Verified”.`)) return;
+    setMessage(null);
+    setBusyKey(person.key);
+    try {
+      const res = await axios.post('/api/lecturer-salary/payments', { month, personKey: person.key, action: 'unpay' });
       setMessage({ type: 'ok', text: res.data.message });
       setRefreshKey((k) => k + 1);
     } catch (err) {
@@ -1743,8 +2068,12 @@ function PaymentsSection({ isAdmin, courses }) {
     .filter((p) => !search.trim() || p.name.toLowerCase().includes(search.trim().toLowerCase()));
   const totalOf = (items, status) => round2(items.filter((i) => !status || i.status === status).reduce((t, i) => t + i.amount, 0));
   const sumHere = (status) => round2(rows.reduce((t, p) => t + totalOf(p.here, status), 0));
-  const notVerifiedHere = round2(rows.reduce((t, p) => t + totalOf(p.here.filter((i) => i.status !== 'verified' && i.status !== 'paid')), 0));
+  const unpaidHere = round2(sumHere() - sumHere('paid'));
   const shown = rows;
+  // every lecturer who has entries in this degree (the search box does not change the report)
+  const inDegree = (people || [])
+    .map((p) => ({ ...p, here: p.items.filter((i) => i.faculty === active) }))
+    .filter((p) => p.here.length > 0);
 
   return (
     <>
@@ -1754,17 +2083,16 @@ function PaymentsSection({ isAdmin, courses }) {
       </div>
       <p style={{ margin: '0 0 14px', color: '#4A6288', fontSize: 13 }}>
         Salaries are listed degree by degree. A lecturer who teaches in more than one degree is still paid <strong>once</strong>:
-        the Pay button adds up all their verified salaries (every batch, degree and online / physical / recording part).
-        People are matched by phone number (or by name when there is no phone number).
+        the <strong>Verify</strong> button (Super Admin) shows their whole month (every batch, degree and online / physical / recording part), you enter the
+        payment date and confirm — all their entries become <strong>Paid</strong>, and a printable report is available. People are matched by phone number (or by name when there is no phone number).
       </p>
 
       {message && <div className={`pc-alert ${message.type}`}>{message.text}</div>}
 
       <div className="pc-cards">
         <div className="pc-card"><p>{active} — total salaries</p><h2>{formatMoney(sumHere())}</h2><small>{rows.length} lecturer{rows.length === 1 ? '' : 's'}</small></div>
-        <div className="pc-card"><p>Ready to pay (verified)</p><h2>{formatMoney(sumHere('verified'))}</h2></div>
+        <div className="pc-card spent"><p>Waiting to be paid</p><h2>{formatMoney(unpaidHere)}</h2></div>
         <div className="pc-card balance"><p>Paid</p><h2>{formatMoney(sumHere('paid'))}</h2></div>
-        <div className="pc-card spent"><p>Not verified yet</p><h2>{formatMoney(notVerifiedHere)}</h2></div>
       </div>
 
       <CourseTabs courses={courses} value={active} onChange={setDegree} />
@@ -1781,7 +2109,8 @@ function PaymentsSection({ isAdmin, courses }) {
       {people && courses.length > 0 && shown.length === 0 && <p className="pc-empty">No salary entries in {active} for this month.</p>}
 
       {shown.map((p) => {
-        const allPaid = p.paidTotal > 0 && p.readyTotal === 0 && p.notReadyTotal === 0;
+        const unpaid = round2(p.readyTotal + p.notReadyTotal);
+        const allPaid = p.paidTotal > 0 && unpaid === 0;
         return (
           <div key={p.key} className="pc-panel">
             <div className="pc-toolbar" style={{ marginBottom: 8 }}>
@@ -1799,8 +2128,64 @@ function PaymentsSection({ isAdmin, courses }) {
                 <div style={{ fontSize: 22, fontWeight: 700 }}>{formatMoney(totalOf(p.here))}</div>
                 <small style={{ color: '#4A6288' }}>{active} total for {monthLabel(month)}</small>
                 {p.others.length > 0 && <small style={{ display: 'block', color: '#4A6288' }}>All degrees together: <strong>{formatMoney(p.total)}</strong></small>}
+                {unpaid > 0 && isAdmin && verifyKey !== p.key && (
+                  <div style={{ marginTop: 8 }}>
+                    <button className="pc-btn" disabled={busyKey === p.key} onClick={() => openVerify(p)}>Verify</button>
+                  </div>
+                )}
+                {unpaid > 0 && !isAdmin && <small style={{ display: 'block', color: '#B7791F' }}>Waiting for the Super Admin to verify</small>}
               </div>
             </div>
+
+            {verifyKey === p.key && isAdmin && unpaid > 0 && (
+              <div className="pc-panel" style={{ background: '#F4F8FD', margin: '4px 0 14px' }}>
+                <h3 style={{ margin: '0 0 10px' }}>Verify salary — {p.name} · {monthLabel(month)}</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px 24px', fontSize: 14, marginBottom: 12 }}>
+                  <div><small style={{ color: '#4A6288' }}>Lecturer</small><br /><strong>{p.name}</strong></div>
+                  <div><small style={{ color: '#4A6288' }}>Subject</small><br />{p.subjects.join(', ')}</div>
+                  <div><small style={{ color: '#4A6288' }}>Phone</small><br />{p.phone || '—'}</div>
+                  <div><small style={{ color: '#4A6288' }}>Month</small><br />{monthLabel(month)}</div>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <small style={{ color: '#4A6288' }}>Bank</small><br />
+                    {p.bank
+                      ? `${p.bank.bankName} · ${p.bank.accountNumber}${p.bank.bankBranch ? ` · ${p.bank.bankBranch}` : ''}${p.bank.accountHolder ? ` · ${p.bank.accountHolder}` : ''}`
+                      : <span style={{ color: '#B7791F' }}>no bank details added yet</span>}
+                  </div>
+                </div>
+                <div className="pc-table-wrap">
+                  <table className="pc-table">
+                    <thead><tr><th>Degree / batch</th><th>Part</th><th>Medium</th><th>Status</th><th className="num">Amount</th></tr></thead>
+                    <tbody>
+                      {p.items.filter((i) => i.status !== 'paid').map((i) => (
+                        <tr key={i._id}>
+                          <td>{entryBatchText(i)}{i.note && i.note !== '-' && <><br /><small style={{ color: '#1E56C2' }}>{i.note}</small></>}</td>
+                          <td>{i.mode ? modeLabel(i.mode) : 'Not set'}{i.type === 'fixed' ? ' · fixed' : ''}</td>
+                          <td>{i.medium ? entryMediumLabel(i.medium) : 'Not set'}</td>
+                          <td><StatusBadge status={i.status} /></td>
+                          <td className="num">{formatMoney(i.amount)}</td>
+                        </tr>
+                      ))}
+                      <tr style={{ background: '#EAF1FB', fontWeight: 700 }}>
+                        <td colSpan="4">Total to be paid</td>
+                        <td className="num">{formatMoney(unpaid)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="pc-form" style={{ marginTop: 12, alignItems: 'flex-end' }}>
+                  <label className="pc-field">
+                    Payment date
+                    <input type="date" required max={todayString()} value={payDate} onChange={(e) => setPayDate(e.target.value)} />
+                  </label>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button className="pc-btn" disabled={busyKey === p.key || !payDate} onClick={() => confirmPay(p)}>
+                      {busyKey === p.key ? 'Saving…' : `Confirm — mark ${formatMoney(unpaid)} as paid`}
+                    </button>
+                    <button className="pc-btn-sm" disabled={busyKey === p.key} onClick={() => setVerifyKey('')}>Cancel</button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="pc-table-wrap">
               <table className="pc-table">
@@ -1839,25 +2224,17 @@ function PaymentsSection({ isAdmin, courses }) {
             )}
 
             <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              {p.readyTotal > 0 && isAdmin && (
-                <button className="pc-btn" disabled={busyKey === p.key} onClick={() => act(p, 'pay')}>
-                  {busyKey === p.key ? 'Paying…' : `Pay ${formatMoney(p.readyTotal)}`}
-                </button>
-              )}
-              {p.readyTotal > 0 && p.others.length > 0 && (
-                <small style={{ color: '#4A6288' }}>One payment for all degrees together{p.others.some((i) => i.status === 'verified') ? ' (includes verified salaries from the other degree)' : ''}.</small>
-              )}
-              {p.readyTotal > 0 && !isAdmin && <small>{formatMoney(p.readyTotal)} verified — waiting for the Super Admin to pay</small>}
-              {p.notReadyTotal > 0 && (
-                <small style={{ color: '#B7791F' }}>{formatMoney(p.notReadyTotal)} is not verified yet and is not included in the payment.</small>
-              )}
+              {unpaid > 0 && <small style={{ color: '#B7791F' }}>{formatMoney(unpaid)} is waiting to be paid.</small>}
               {p.paidTotal > 0 && (
                 <small style={{ color: '#0F7A6F' }}>
                   Paid {formatMoney(p.paidTotal)}{p.paidDate ? ` on ${formatDate(p.paidDate)}` : ''}{p.paidByName ? ` by ${p.paidByName}` : ''}
                 </small>
               )}
+              {p.paidTotal > 0 && (
+                <button className="pc-btn-sm" onClick={() => openLecturerReport(p, month)}>Report</button>
+              )}
               {p.paidTotal > 0 && isAdmin && (
-                <button className="pc-btn-sm pc-btn-danger" disabled={busyKey === p.key} onClick={() => act(p, 'unpay')}>
+                <button className="pc-btn-sm pc-btn-danger" disabled={busyKey === p.key} onClick={() => undo(p)}>
                   {allPaid ? 'Undo payment' : 'Undo paid part'}
                 </button>
               )}
@@ -1865,6 +2242,10 @@ function PaymentsSection({ isAdmin, courses }) {
           </div>
         );
       })}
+
+      {people && courses.length > 0 && inDegree.length > 0 && (
+        <DegreePaymentPanel degree={active} month={month} lecturers={inDegree} isAdmin={isAdmin} />
+      )}
     </>
   );
 }

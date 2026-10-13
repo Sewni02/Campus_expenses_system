@@ -3,6 +3,8 @@ const LecturerBatch = require('../models/lecturerBatch.model');
 const LecturerSalary = require('../models/lecturerSalary.model');
 const LecturerFormula = require('../models/lecturerFormula.model');
 const Course = require('../models/course.model');
+const LecturerPaymentSlip = require('../models/lecturerPaymentSlip.model');
+const cloudinary = require('../config/cloudinary');
 const { FormulaError, parseFormula, evaluateFormula } = require('../utils/lecturerFormula');
 const User = require('../models/user.model');
 const { ApiError, findOrFail } = require('../utils/ApiError');
@@ -886,7 +888,7 @@ const listPayments = async (query) => {
     const p = people.get(key);
     p.subjects.add(sal.subject);
     if (!p.bank && lec.accountNumber) p.bank = { bankName: lec.bankName, bankBranch: lec.bankBranch, accountNumber: lec.accountNumber, accountHolder: lec.accountHolder };
-    p.items.push({ _id: sal._id, faculty: sal.faculty, batchYear: sal.batchYear, mode: sal.mode, medium: sal.medium, type: sal.type, amount: sal.amount, status: sal.status, note: sal.note });
+    p.items.push({ _id: sal._id, faculty: sal.faculty, batchYear: sal.batchYear, mode: sal.mode, medium: sal.medium, type: sal.type, amount: sal.amount, status: sal.status, note: sal.note, paidDate: sal.paidDate });
     p.total += sal.amount;
     if (sal.status === 'verified') p.readyTotal += sal.amount;
     else if (sal.status === 'paid') { p.paidTotal += sal.amount; p.paidDate = sal.paidDate; p.paidByName = sal.paidByName; }
@@ -904,8 +906,20 @@ const listPayments = async (query) => {
     .sort((a, b) => a.name.localeCompare(b.name));
 };
 
+// The date the money was paid (YYYY-MM-DD): today or an earlier day, not in the future.
+const validatePaymentDate = (value) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) throw new ApiError(400, 'Enter the payment date');
+  const date = new Date(`${value}T12:00:00.000Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw new ApiError(400, 'The payment date is not a real date');
+  const limit = new Date();
+  limit.setUTCDate(limit.getUTCDate() + 1); // allow for time zones ahead of UTC
+  if (date > limit) throw new ApiError(400, 'The payment date cannot be in the future');
+  if (date < new Date('2000-01-01T00:00:00Z')) throw new ApiError(400, 'The payment date is too old');
+  return date;
+};
+
 // Pay (or undo paying) ONE lecturer's whole month in a single payment. Super admin only.
-//   pay   : every VERIFIED entry of that person in that month becomes paid together
+//   pay   : every unpaid entry (draft / submitted / verified) of that person in that month becomes paid together
 //   unpay : every PAID entry of that person in that month goes back to verified
 const payLecturer = async (user, body) => {
   if (!isAdmin(user)) throw new ApiError(403, 'Only the Super Admin can do this');
@@ -919,16 +933,23 @@ const payLecturer = async (user, body) => {
   const name = await actorName(user);
 
   if (body.action === 'pay') {
-    const ready = mine.filter((s) => s.status === 'verified');
-    if (ready.length === 0) throw new ApiError(400, 'Nothing is verified for this lecturer yet, so there is nothing to pay');
+    // "Verify": the super admin checks the lecturer's whole month and pays it in one go - draft, submitted and
+    // verified entries all become paid, on the payment date that was typed in.
+    const paymentDate = validatePaymentDate(body.paymentDate);
+    const ready = mine.filter((s) => s.status !== 'paid');
+    if (ready.length === 0) throw new ApiError(400, 'There is nothing left to pay for this lecturer in this month');
     // Bank details the lecturer has RIGHT NOW stay with the payment record.
     const withBank = mine.map((s) => lecturerOf.get(s.lecturer.toString())).find((l) => l && l.accountNumber);
     const paymentId = new mongoose.Types.ObjectId();
     const now = new Date();
     for (const sal of ready) {
+      // entries that skipped the submit / verify steps are marked as checked by the super admin now
+      if (sal.status === 'pending') { sal.submittedAt = now; sal.submittedByName = name; }
+      if (sal.status !== 'verified') { sal.verifiedAt = now; sal.verifiedByName = name; }
+      sal.returnNote = undefined;
       sal.status = 'paid';
       sal.paymentId = paymentId;
-      sal.paidDate = now;
+      sal.paidDate = paymentDate;
       sal.paidByName = name;
       sal.paidBankName = withBank?.bankName;
       sal.paidBankBranch = withBank?.bankBranch;
@@ -988,7 +1009,118 @@ const batchSummary = async (id, query) => {
   };
 };
 
+
+// ---------- Payment slip: ONE bank slip per degree and month ----------
+// Splits a stored Cloudinary URL into the pieces Cloudinary's signed API needs.
+const parseCloudinaryUrl = (url) => {
+  const match = /\/(image|video|raw)\/(upload|authenticated|private)\/(?:v\d+\/)?([^?#]+)/.exec(url || '');
+  if (!match) return null;
+  const [, resourceType, type, rawPath] = match;
+  const path = decodeURIComponent(rawPath);
+  if (resourceType === 'raw') return { resourceType, type, publicId: path, format: '' };
+  const dot = path.lastIndexOf('.');
+  if (dot === -1) return { resourceType, type, publicId: path, format: '' };
+  return { resourceType, type, publicId: path.slice(0, dot), format: path.slice(dot + 1) };
+};
+
+// Best effort - never throws (a Cloudinary hiccup must not block replacing / removing a slip).
+const removeSlipFromStorage = async (slipUrl) => {
+  const parsed = parseCloudinaryUrl(slipUrl);
+  if (!parsed) return;
+  try {
+    await cloudinary.uploader.destroy(parsed.publicId, { resource_type: parsed.resourceType, type: parsed.type });
+  } catch (err) {
+    console.error('Could not remove slip from storage:', err.message);
+  }
+};
+
+// The slips of one month (no file addresses are sent to the browser - the file is streamed through the API).
+const listSlips = async (query) => {
+  const month = validateMonth(query.month);
+  const slips = await LecturerPaymentSlip.find({ month });
+  return slips.map((x) => ({
+    _id: x._id, faculty: x.faculty, month: x.month, slipFileName: x.slipFileName,
+    uploadedByName: x.uploadedByName, createdAt: x.createdAt, updatedAt: x.updatedAt,
+  }));
+};
+
+// Super admin uploads the slip (file = what multer / Cloudinary stored). Uploading again replaces the old one.
+const saveSlip = async (user, body, file) => {
+  if (!isAdmin(user)) throw new ApiError(403, 'Only the Super Admin can do this');
+  const course = await findCourseByName(requireString(body.faculty, 'Degree', { max: 60 }));
+  if (!course) throw new ApiError(400, 'Degree not found');
+  const month = validateMonth(body.month);
+  if (!file || !file.path) throw new ApiError(400, 'Choose the payment slip file (JPG, PNG or PDF)');
+
+  const name = await actorName(user);
+  const fields = { slipUrl: file.path, slipFileName: file.originalname, uploadedBy: user.id, uploadedByName: name };
+  const existing = await LecturerPaymentSlip.findOne({ faculty: course.name, month });
+  let slip;
+  if (existing) {
+    const oldUrl = existing.slipUrl;
+    Object.assign(existing, fields);
+    slip = await existing.save();
+    await removeSlipFromStorage(oldUrl);
+  } else {
+    slip = await LecturerPaymentSlip.create({ faculty: course.name, month, ...fields });
+  }
+  return { message: `Payment slip saved for ${course.name} — ${month}`, slip: { _id: slip._id, faculty: slip.faculty, month: slip.month, slipFileName: slip.slipFileName, uploadedByName: slip.uploadedByName, createdAt: slip.createdAt, updatedAt: slip.updatedAt } };
+};
+
+const deleteSlip = async (user, id) => {
+  if (!isAdmin(user)) throw new ApiError(403, 'Only the Super Admin can do this');
+  const slip = await findOrFail(LecturerPaymentSlip, id, 'Payment slip not found');
+  const url = slip.slipUrl;
+  await slip.deleteOne();
+  await removeSlipFromStorage(url);
+  return { message: 'Payment slip removed' };
+};
+
+// Fetches the bytes of a slip so the controller can stream them to the browser.
+const resolveSlipDownload = async (id) => {
+  const slip = await findOrFail(LecturerPaymentSlip, id, 'Payment slip not found');
+  const candidates = [];
+  const parsed = parseCloudinaryUrl(slip.slipUrl);
+  if (parsed) {
+    try {
+      candidates.push(
+        cloudinary.utils.private_download_url(parsed.publicId, parsed.format, {
+          resource_type: parsed.resourceType,
+          type: parsed.type,
+          attachment: true,
+          expires_at: Math.floor(Date.now() / 1000) + 300,
+        })
+      );
+    } catch (err) {
+      console.error('Could not build signed Cloudinary URL:', err.message);
+    }
+  }
+  candidates.push(slip.slipUrl);
+
+  let upstream = null;
+  let lastStatus = null;
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url);
+      if (response.ok && response.body) { upstream = response; break; }
+      lastStatus = response.status;
+    } catch (err) {
+      console.error('Slip download: could not reach storage:', err.message);
+    }
+  }
+  if (!upstream) throw new ApiError(502, `Could not fetch the slip from storage${lastStatus ? ` (status ${lastStatus})` : ''}. Please try again.`);
+
+  const urlExt = (slip.slipUrl.split('?')[0].match(/\.([A-Za-z0-9]{2,5})$/) || [])[1];
+  let fileName = (slip.slipFileName || '').trim() || `${slip.faculty}-${slip.month}-slip`;
+  if (!/\.[A-Za-z0-9]{2,5}$/.test(fileName) && urlExt) fileName += `.${urlExt}`;
+  return { upstream, fileName };
+};
+
 module.exports = {
+  listSlips,
+  saveSlip,
+  deleteSlip,
+  resolveSlipDownload,
   batchSummary,
   listPeople,
   listPayments,
