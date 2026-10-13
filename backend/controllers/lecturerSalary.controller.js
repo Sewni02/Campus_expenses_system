@@ -1,5 +1,7 @@
 const asyncHandler = require('../utils/asyncHandler');
 const service = require('../services/lecturerSalary.service');
+const { Readable } = require('stream');
+const { pipeline } = require('stream/promises');
 
 // GET /api/lecturer-salary/formulas
 const getFormulas = asyncHandler(async (req, res) => {
@@ -111,6 +113,10 @@ const renameCourse = asyncHandler(async (req, res) => {
 const deleteCourse = asyncHandler(async (req, res) => {
   res.json(await service.deleteCourse(req.params.id));
 });
+// GET /api/lecturer-salary/batches/:id/summary?month=2026-10|all   every lecturer's total in one batch
+const getBatchSummary = asyncHandler(async (req, res) => {
+  res.json(await service.batchSummary(req.params.id, req.query));
+});
 // GET /api/lecturer-salary/people   every distinct lecturer over all batches
 const getPeople = asyncHandler(async (req, res) => {
   res.json(await service.listPeople());
@@ -124,7 +130,36 @@ const payLecturer = asyncHandler(async (req, res) => {
   res.json(await service.payLecturer(req.user, req.body));
 });
 
+// GET /api/lecturer-salary/slips?month=2026-10   the payment slips (one per degree) of a month
+const getSlips = asyncHandler(async (req, res) => {
+  res.json(await service.listSlips(req.query));
+});
+// POST /api/lecturer-salary/slips   multipart { faculty, month, slip(file) }   (super admin)
+// If this throws, the central error handler (server.js) deletes the uploaded file.
+const uploadSlip = asyncHandler(async (req, res) => {
+  res.status(201).json(await service.saveSlip(req.user, req.body, req.file));
+});
+// GET /api/lecturer-salary/slips/:id/file   streams the slip back to the browser
+const streamSlip = asyncHandler(async (req, res) => {
+  const { upstream, fileName } = await service.resolveSlipDownload(req.params.id);
+  const asciiName = fileName.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+  res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `inline; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+  const length = upstream.headers.get('content-length');
+  if (length) res.setHeader('Content-Length', length);
+  await pipeline(Readable.fromWeb(upstream.body), res);
+});
+// DELETE /api/lecturer-salary/slips/:id   (super admin)
+const deleteSlip = asyncHandler(async (req, res) => {
+  res.json(await service.deleteSlip(req.user, req.params.id));
+});
+
 module.exports = {
+  getSlips,
+  uploadSlip,
+  streamSlip,
+  deleteSlip,
+  getBatchSummary,
   getPeople,
   getPayments,
   payLecturer,
