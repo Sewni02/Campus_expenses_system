@@ -29,7 +29,7 @@ const paymentSchema = new mongoose.Schema({
   status: { type: String, enum: ['pending', 'paid'], default: 'pending' },
   invoiceDate: { type: Date, default: Date.now }, // when the invoice was raised
 
-  // Only populated once the invoice has actually been paid (see payInvoice)
+  
   paymentDate: { type: Date },
   referenceNo: { type: String },
   accountNumber: { type: String },
