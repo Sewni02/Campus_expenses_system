@@ -3,6 +3,8 @@ const LecturerBatch = require('../models/lecturerBatch.model');
 const LecturerSalary = require('../models/lecturerSalary.model');
 const LecturerFormula = require('../models/lecturerFormula.model');
 const Course = require('../models/course.model');
+const LecturerPaymentSlip = require('../models/lecturerPaymentSlip.model');
+const cloudinary = require('../config/cloudinary');
 const { FormulaError, parseFormula, evaluateFormula } = require('../utils/lecturerFormula');
 const User = require('../models/user.model');
 const { ApiError, findOrFail } = require('../utils/ApiError');
@@ -1007,7 +1009,118 @@ const batchSummary = async (id, query) => {
   };
 };
 
+
+// ---------- Payment slip: ONE bank slip per degree and month ----------
+// Splits a stored Cloudinary URL into the pieces Cloudinary's signed API needs.
+const parseCloudinaryUrl = (url) => {
+  const match = /\/(image|video|raw)\/(upload|authenticated|private)\/(?:v\d+\/)?([^?#]+)/.exec(url || '');
+  if (!match) return null;
+  const [, resourceType, type, rawPath] = match;
+  const path = decodeURIComponent(rawPath);
+  if (resourceType === 'raw') return { resourceType, type, publicId: path, format: '' };
+  const dot = path.lastIndexOf('.');
+  if (dot === -1) return { resourceType, type, publicId: path, format: '' };
+  return { resourceType, type, publicId: path.slice(0, dot), format: path.slice(dot + 1) };
+};
+
+// Best effort - never throws (a Cloudinary hiccup must not block replacing / removing a slip).
+const removeSlipFromStorage = async (slipUrl) => {
+  const parsed = parseCloudinaryUrl(slipUrl);
+  if (!parsed) return;
+  try {
+    await cloudinary.uploader.destroy(parsed.publicId, { resource_type: parsed.resourceType, type: parsed.type });
+  } catch (err) {
+    console.error('Could not remove slip from storage:', err.message);
+  }
+};
+
+// The slips of one month (no file addresses are sent to the browser - the file is streamed through the API).
+const listSlips = async (query) => {
+  const month = validateMonth(query.month);
+  const slips = await LecturerPaymentSlip.find({ month });
+  return slips.map((x) => ({
+    _id: x._id, faculty: x.faculty, month: x.month, slipFileName: x.slipFileName,
+    uploadedByName: x.uploadedByName, createdAt: x.createdAt, updatedAt: x.updatedAt,
+  }));
+};
+
+// Super admin uploads the slip (file = what multer / Cloudinary stored). Uploading again replaces the old one.
+const saveSlip = async (user, body, file) => {
+  if (!isAdmin(user)) throw new ApiError(403, 'Only the Super Admin can do this');
+  const course = await findCourseByName(requireString(body.faculty, 'Degree', { max: 60 }));
+  if (!course) throw new ApiError(400, 'Degree not found');
+  const month = validateMonth(body.month);
+  if (!file || !file.path) throw new ApiError(400, 'Choose the payment slip file (JPG, PNG or PDF)');
+
+  const name = await actorName(user);
+  const fields = { slipUrl: file.path, slipFileName: file.originalname, uploadedBy: user.id, uploadedByName: name };
+  const existing = await LecturerPaymentSlip.findOne({ faculty: course.name, month });
+  let slip;
+  if (existing) {
+    const oldUrl = existing.slipUrl;
+    Object.assign(existing, fields);
+    slip = await existing.save();
+    await removeSlipFromStorage(oldUrl);
+  } else {
+    slip = await LecturerPaymentSlip.create({ faculty: course.name, month, ...fields });
+  }
+  return { message: `Payment slip saved for ${course.name} — ${month}`, slip: { _id: slip._id, faculty: slip.faculty, month: slip.month, slipFileName: slip.slipFileName, uploadedByName: slip.uploadedByName, createdAt: slip.createdAt, updatedAt: slip.updatedAt } };
+};
+
+const deleteSlip = async (user, id) => {
+  if (!isAdmin(user)) throw new ApiError(403, 'Only the Super Admin can do this');
+  const slip = await findOrFail(LecturerPaymentSlip, id, 'Payment slip not found');
+  const url = slip.slipUrl;
+  await slip.deleteOne();
+  await removeSlipFromStorage(url);
+  return { message: 'Payment slip removed' };
+};
+
+// Fetches the bytes of a slip so the controller can stream them to the browser.
+const resolveSlipDownload = async (id) => {
+  const slip = await findOrFail(LecturerPaymentSlip, id, 'Payment slip not found');
+  const candidates = [];
+  const parsed = parseCloudinaryUrl(slip.slipUrl);
+  if (parsed) {
+    try {
+      candidates.push(
+        cloudinary.utils.private_download_url(parsed.publicId, parsed.format, {
+          resource_type: parsed.resourceType,
+          type: parsed.type,
+          attachment: true,
+          expires_at: Math.floor(Date.now() / 1000) + 300,
+        })
+      );
+    } catch (err) {
+      console.error('Could not build signed Cloudinary URL:', err.message);
+    }
+  }
+  candidates.push(slip.slipUrl);
+
+  let upstream = null;
+  let lastStatus = null;
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url);
+      if (response.ok && response.body) { upstream = response; break; }
+      lastStatus = response.status;
+    } catch (err) {
+      console.error('Slip download: could not reach storage:', err.message);
+    }
+  }
+  if (!upstream) throw new ApiError(502, `Could not fetch the slip from storage${lastStatus ? ` (status ${lastStatus})` : ''}. Please try again.`);
+
+  const urlExt = (slip.slipUrl.split('?')[0].match(/\.([A-Za-z0-9]{2,5})$/) || [])[1];
+  let fileName = (slip.slipFileName || '').trim() || `${slip.faculty}-${slip.month}-slip`;
+  if (!/\.[A-Za-z0-9]{2,5}$/.test(fileName) && urlExt) fileName += `.${urlExt}`;
+  return { upstream, fileName };
+};
+
 module.exports = {
+  listSlips,
+  saveSlip,
+  deleteSlip,
+  resolveSlipDownload,
   batchSummary,
   listPeople,
   listPayments,
