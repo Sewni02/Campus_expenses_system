@@ -3145,11 +3145,6 @@ function Contractors() {
 }
 
 // ---------- Sub-section: Payments wrapper ----------
-// Holds two payment displays side by side as inner tabs:
-//   - Construction Payments: general/site payments (existing behaviour)
-//   - Contractor Payments: every contractor's invoices, aggregated across
-//     all contractors (this was previously not shown anywhere in the UI,
-//     even though the backend has always supported it).
 function PaymentsSection() {
   const [payTab, setPayTab] = useTabState('paysec', 'construction'); // 'construction' | 'contractor'
 
@@ -3184,10 +3179,7 @@ function PaymentsSection() {
 function ConstructionPayments() {
   const [projectNames, refetchProjectNames] = useProjectNames();
 
-  // Construction payments now go through an "invoice first" flow, same as
-  // contractor and hardware payments: an invoice is raised (status
-  // 'pending') and only gets its bank/payment details once finance
-  // actually settles it (status flips to 'paid').
+  
   const [payments, setPayments] = useState([]);
   const [invoiceTab, setInvoiceTab] = useTabState('inv', 'pending'); // 'pending' | 'paid'
 
@@ -3245,7 +3237,6 @@ function ConstructionPayments() {
   };
 
   // STEP 1: raise an invoice for a general construction payment. No
-  // payment/bank details are collected here - the invoice is created as
   // 'pending' and only gets paid details once it's actually settled.
   const handleCreateInvoice = async (e) => {
     e.preventDefault();
@@ -3794,10 +3785,6 @@ function ConstructionPayments() {
 }
 
 // ---------- Sub-section: Contractor Payments ----------
-// Contractor invoices live inside each Contractor document
-// (contractor.payments[], status 'pending' | 'paid' - see
-// backend/models/contractor.model.js). This view flattens every
-// contractor's invoices into one list so pending/paid contractor
 // payments can be reviewed and settled from the Payments tab, using the
 // exact same "raise invoice -> mark as paid" flow already used for
 // Construction Payments and Hardware invoices.
@@ -3956,11 +3943,7 @@ function ContractorPayments() {
     }
   };
 
-  // Open the "record payment" form for a specific pending invoice.
-  // Bank details are auto-filled: use the invoice's own bank details if it
-  // already has some (e.g. re-opening after an edit), otherwise fall back
-  // to the contractor's own registered bank details - same fallback the
-  // backend already applies when saving (see payInvoice in
+  
   // contractor.controller.js).
   const startPayingInvoice = (invoice) => {
     resetPayForm();
@@ -3975,9 +3958,7 @@ function ContractorPayments() {
     setPayBankBranch(invoice.bankBranch || contractor?.bankBranch || '');
   };
 
-  // STEP 2: record the actual bank payment made against a pending invoice.
-  // This attaches the payment/bank details to that invoice and flips its
-  // status from 'pending' to 'paid'.
+ 
   const handlePayInvoice = async (e) => {
     e.preventDefault();
     if (!payingInvoice || isPaySubmitting) return;
