@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import useTabState from '../hooks/useTabState';
+import { getSavedUser, saveUser, logout } from '../utils/session';
 import { sectionsForUser } from '../config/permissionSections';
 import PettyCashPanel from './PettyCashPanel';
 import StaffSalary from './StaffSalary';
@@ -13,7 +14,7 @@ import './UserDashboard.css';
 // user in User Management - nothing is hard-coded per person or per job title.
 function Dashboard() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('user')));
+  const [user, setUser] = useState(getSavedUser);
   const [activeTab, setActiveTab] = useTabState('tab', 'overview');
 
   // Re-read the user from the server so a permission the super admin just
@@ -22,7 +23,7 @@ function Dashboard() {
     axios
       .get('/api/auth/me')
       .then((res) => {
-        localStorage.setItem('user', JSON.stringify(res.data));
+        saveUser(res.data);
         setUser(res.data);
       })
       .catch(() => {});
@@ -33,9 +34,8 @@ function Dashboard() {
   // If the tab in the URL is not one this user may open (or was just revoked), show the overview.
   const tab = active ? active.key : 'overview';
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+  const handleLogout = async () => {
+    await logout();
     navigate('/login', { replace: true });
   };
 

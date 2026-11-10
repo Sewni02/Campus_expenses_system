@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { saveUser } from '../utils/session';
 import './Login.css';
 
 function Login() {
@@ -22,8 +23,10 @@ function Login() {
         password,
       });
 
-      localStorage.setItem('token', res.data.token);
-      localStorage.setItem('user', JSON.stringify(res.data.user));
+      // The server puts the login token in an httpOnly cookie by itself.
+      // Only the profile is kept here, and any old token from earlier versions is removed.
+      localStorage.removeItem('token');
+      saveUser(res.data.user);
 
       const { role, status } = res.data.user;
 

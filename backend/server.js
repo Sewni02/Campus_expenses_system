@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
 // Fail fast with a clear message instead of crashing deep inside some
@@ -15,7 +16,20 @@ if (missingEnvVars.length > 0) {
   process.exit(1);
 }
 
+// A short JWT_SECRET can be guessed offline: anyone who gets one login token could
+// then forge tokens for any user (including a super admin). Make this impossible
+// to forget. Generate one with:
+//   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+const { MIN_JWT_SECRET_LENGTH } = require('./config/auth');
+if (process.env.JWT_SECRET.length < MIN_JWT_SECRET_LENGTH) {
+  console.error(`❌ JWT_SECRET is too short (${process.env.JWT_SECRET.length} characters). Use at least ${MIN_JWT_SECRET_LENGTH}.`);
+  console.error('   Generate one with: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"');
+  process.exit(1);
+}
+
 const connectDB = require('./config/db');
+const { requireTrustedOrigin } = require('./middleware/originCheck.middleware');
+const { auditRequests } = require('./middleware/audit.middleware');
 const { removeUploadedFiles } = require('./utils/cleanupUploads');
 const authRoutes = require('./routes/auth.routes');
 const adminRoutes = require('./routes/admin.routes');
@@ -46,6 +60,10 @@ if (Number.isInteger(trustProxyHops) && trustProxyHops > 0) {
 app.use(helmet());
 app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
+// Reads the httpOnly login cookie into req.cookies (used by middleware/auth.middleware.js).
+app.use(cookieParser());
+// Blocks create/edit/delete requests that a different website made on the user's behalf (CSRF).
+app.use(requireTrustedOrigin);
 
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
@@ -77,6 +95,9 @@ app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/signup', authLimiter);
 app.use('/api/auth/reset-password', authLimiter);
 app.use('/api/auth/forgot-password', forgotPasswordLimiter);
+
+// --- Audit trail: logs every create / edit / delete made by a logged-in user ---
+app.use('/api', auditRequests);
 
 // --- Routes ---
 app.use('/api/auth', authRoutes);

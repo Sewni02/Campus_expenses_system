@@ -1,4 +1,5 @@
 import { Navigate, useLocation } from 'react-router-dom';
+import { getSavedUser } from '../utils/session';
 
 // Wrap any <Route> element with this to require login (and optionally a
 // specific role) before it renders. Keeps unauthenticated / unauthorized
@@ -16,11 +17,11 @@ import { Navigate, useLocation } from 'react-router-dom';
 //   } />
 function ProtectedRoute({ children, allowedRoles }) {
   const location = useLocation();
-  const token = localStorage.getItem('token');
-  const userRaw = localStorage.getItem('user');
-  const user = userRaw ? JSON.parse(userRaw) : null;
+  // The login itself is an httpOnly cookie the page can't see. If it has
+  // expired, the first API call returns 401 and axiosConfig sends the user to /login.
+  const user = getSavedUser();
 
-  if (!token || !user) {
+  if (!user) {
     const next = encodeURIComponent(location.pathname + location.search);
     return <Navigate to={`/login?next=${next}`} replace />;
   }
