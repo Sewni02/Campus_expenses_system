@@ -13,19 +13,15 @@ axios.defaults.baseURL = API_BASE_URL;
 // upload, but still gives the user a clear error instead of an endless wait.
 axios.defaults.timeout = 30000;
 
-// Every axios call anywhere in the app will now automatically include
-// the logged-in user's token in the Authorization header.
-axios.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+// The login token is stored in an httpOnly cookie (set by the server on login).
+// `withCredentials` makes the browser send that cookie with every request,
+// including to the API's own domain/port. No token is read or attached here
+// any more, so nothing in the page's JavaScript can leak it.
+axios.defaults.withCredentials = true;
 
-// If the backend says the token is missing/expired (401), log the user
-// out on the frontend too and send them back to the login page - keeping
-// a note of the page + tab they were on so login can return them there.
+// If the backend says the login is missing/expired (401), forget the saved
+// profile on the frontend too and send the user back to the login page -
+// keeping a note of the page + tab they were on so login can return them there.
 axios.interceptors.response.use(
   (response) => response,
   (error) => {

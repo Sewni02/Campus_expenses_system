@@ -1,3 +1,4 @@
+import { logout } from '../utils/session';
 import './WaitingApproval.css';
 
 function WaitingApproval() {
@@ -11,8 +12,8 @@ function WaitingApproval() {
       </p>
       <button
         className="wa-back-btn"
-        onClick={() => {
-          localStorage.clear();
+        onClick={async () => {
+          await logout();
           window.location.href = '/login';
         }}
       >
