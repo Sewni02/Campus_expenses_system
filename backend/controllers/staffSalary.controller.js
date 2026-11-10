@@ -1,6 +1,17 @@
 const asyncHandler = require('../utils/asyncHandler');
 const staffSalaryService = require('../services/staffSalary.service');
 
+// GET /api/staff-salary/allowance-types   (the shared allowance list; the 6 defaults are created on first use)
+const getAllowanceTypes = asyncHandler(async (req, res) => {
+  res.json(await staffSalaryService.getAllowanceTypes());
+});
+
+// POST /api/staff-salary/allowance-types   { name }   (a new allowance for every employee)
+const addAllowanceType = asyncHandler(async (req, res) => {
+  const result = await staffSalaryService.addAllowanceType(req.body);
+  res.status(201).json(result);
+});
+
 // GET /api/staff-salary/locations
 const getLocations = asyncHandler(async (req, res) => {
   res.json(await staffSalaryService.getLocations());
@@ -43,7 +54,7 @@ const getSalaries = asyncHandler(async (req, res) => {
   res.json(await staffSalaryService.getSalaries(req.query));
 });
 
-// POST /api/staff-salary/salaries   { staffId, month, allowances: [{ name, amount }], deductions: [{ name, amount }], note }
+// POST /api/staff-salary/salaries   { staffId, month, allowances: [{ name, amount }] (names from the allowance list, 0 = not added), deductions: [{ name, amount }], note }
 const createSalary = asyncHandler(async (req, res) => {
   const result = await staffSalaryService.createSalary(req.body, req.user.id);
   res.status(201).json(result);
@@ -60,6 +71,8 @@ const deleteSalary = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  getAllowanceTypes,
+  addAllowanceType,
   getLocations,
   addLocation,
   deleteLocation,

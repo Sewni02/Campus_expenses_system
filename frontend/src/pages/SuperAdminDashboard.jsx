@@ -6,6 +6,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import PettyCashAdmin from './PettyCashAdmin';
 import LecturerSalary from './LecturerSalary';
+import StaffSalary from './StaffSalary';
 import './SuperAdminDashboard.css';
 
 // Sidebar icons: inline SVG (Lucide-style line icons). They take the colour of the
@@ -45,6 +46,12 @@ const SIDEBAR_ICONS = {
     <>
       <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
       <path d="M6 12v5c3 3 9 3 12 0v-5" />
+    </>
+  ),
+  'staff-salary': (
+    <>
+      <rect x="2" y="7" width="20" height="14" rx="2" />
+      <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
     </>
   ),
   'section-c': (
@@ -277,6 +284,12 @@ const PERMISSION_GROUPS = [
     ],
   },
   {
+    category: 'Staff Salary',
+    options: [
+      { key: 'staff_salary_manage', label: 'Manage Staff Salary (Accountant)' },
+    ],
+  },
+  {
     category: 'Academic / Non-Academic Staff',
     options: [
       { key: 'staff_view_salary_receipts', label: 'View Salary Receipts' },
@@ -293,6 +306,7 @@ function SuperAdminDashboard() {
     { key: 'E', label: 'Office Expenses', icon: 'office-expenses' },
     { key: 'P', label: 'Petty Cash', icon: 'petty-cash' },
     { key: 'L', label: 'Lecturer Salary', icon: 'lecturer-salary' },
+    { key: 'S', label: 'Staff Salary', icon: 'staff-salary' },
     { key: 'C', label: 'Section C', icon: 'section-c' },
     { key: 'D', label: 'Section D', icon: 'section-d' },
   ];
@@ -333,6 +347,7 @@ function SuperAdminDashboard() {
         </div>
         {activeTab === 'P' && <PettyCashAdmin />}
         {activeTab === 'L' && <LecturerSalary />}
+        {activeTab === 'S' && <StaffSalary />}
         {activeTab === 'C' && <ComingSoon label="Section C" />}
         {activeTab === 'D' && <ComingSoon label="Section D" />}
       </div>
@@ -3145,6 +3160,11 @@ function Contractors() {
 }
 
 // ---------- Sub-section: Payments wrapper ----------
+// Holds two payment displays side by side as inner tabs:
+//   - Construction Payments: general/site payments (existing behaviour)
+//   - Contractor Payments: every contractor's invoices, aggregated across
+//     all contractors (this was previously not shown anywhere in the UI,
+//     even though the backend has always supported it).
 function PaymentsSection() {
   const [payTab, setPayTab] = useTabState('paysec', 'construction'); // 'construction' | 'contractor'
 
@@ -3179,7 +3199,10 @@ function PaymentsSection() {
 function ConstructionPayments() {
   const [projectNames, refetchProjectNames] = useProjectNames();
 
-  
+  // Construction payments now go through an "invoice first" flow, same as
+  // contractor and hardware payments: an invoice is raised (status
+  // 'pending') and only gets its bank/payment details once finance
+  // actually settles it (status flips to 'paid').
   const [payments, setPayments] = useState([]);
   const [invoiceTab, setInvoiceTab] = useTabState('inv', 'pending'); // 'pending' | 'paid'
 
@@ -3237,6 +3260,7 @@ function ConstructionPayments() {
   };
 
   // STEP 1: raise an invoice for a general construction payment. No
+  // payment/bank details are collected here - the invoice is created as
   // 'pending' and only gets paid details once it's actually settled.
   const handleCreateInvoice = async (e) => {
     e.preventDefault();
@@ -3785,6 +3809,10 @@ function ConstructionPayments() {
 }
 
 // ---------- Sub-section: Contractor Payments ----------
+// Contractor invoices live inside each Contractor document
+// (contractor.payments[], status 'pending' | 'paid' - see
+// backend/models/contractor.model.js). This view flattens every
+// contractor's invoices into one list so pending/paid contractor
 // payments can be reviewed and settled from the Payments tab, using the
 // exact same "raise invoice -> mark as paid" flow already used for
 // Construction Payments and Hardware invoices.
@@ -3943,7 +3971,11 @@ function ContractorPayments() {
     }
   };
 
-  
+  // Open the "record payment" form for a specific pending invoice.
+  // Bank details are auto-filled: use the invoice's own bank details if it
+  // already has some (e.g. re-opening after an edit), otherwise fall back
+  // to the contractor's own registered bank details - same fallback the
+  // backend already applies when saving (see payInvoice in
   // contractor.controller.js).
   const startPayingInvoice = (invoice) => {
     resetPayForm();
@@ -3958,7 +3990,9 @@ function ContractorPayments() {
     setPayBankBranch(invoice.bankBranch || contractor?.bankBranch || '');
   };
 
- 
+  // STEP 2: record the actual bank payment made against a pending invoice.
+  // This attaches the payment/bank details to that invoice and flips its
+  // status from 'pending' to 'paid'.
   const handlePayInvoice = async (e) => {
     e.preventDefault();
     if (!payingInvoice || isPaySubmitting) return;
