@@ -18,6 +18,13 @@ export const PERMISSION_SECTIONS = [
     permissions: [{ key: 'lecturer_salary_manage', label: 'Manage Lecturer Salary (Accountant)' }],
   },
   {
+    key: 'staff-salary',
+    label: 'Staff Salary',
+    kind: 'staff-salary',
+    description: 'Add staff by location and create their monthly salaries (allowances and deductions).',
+    permissions: [{ key: 'staff_salary_manage', label: 'Manage Staff Salary (Accountant)' }],
+  },
+  {
     key: 'petty-cash',
     label: 'Petty Cash',
     kind: 'petty-cash',

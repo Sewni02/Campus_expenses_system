@@ -21,7 +21,9 @@ const ALLOWED_PERMISSIONS = [
   'staff_view_salary_receipts',
   // Petty Cash (accountant: records petty cash spending + issues vouchers)
   'petty_cash_manage',
-    'lecturer_salary_manage',
+  'lecturer_salary_manage',
+  // Staff Salary (accountant: adds locations + staff and creates the monthly salaries)
+  'staff_salary_manage',
 ];
 
 module.exports = { ALLOWED_PERMISSIONS };

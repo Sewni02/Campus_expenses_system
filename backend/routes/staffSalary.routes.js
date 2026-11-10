@@ -1,12 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const { protect, requireApproved, requireRole } = require('../middleware/auth.middleware');
+const { protect, requireApproved } = require('../middleware/auth.middleware');
+const { requirePermission } = require('../middleware/permission.middleware');
 const c = require('../controllers/staffSalary.controller');
 
-// Staff details (NIC, mobile, salaries) are sensitive, so this whole section is
-// super admin only. (To let an accountant use it later, add a permission key the
-// same way "lecturer_salary_manage" is done and swap requireRole for requirePermission.)
-router.use(protect, requireApproved, requireRole('super_admin'));
+// Staff details (NIC, mobile, salaries) are sensitive: only super admins, and users the
+// super admin ticked "Manage Staff Salary (Accountant)" for in User Management, can use this.
+router.use(protect, requireApproved, requirePermission('staff_salary_manage'));
+
+// Allowance types (Skill Allowance, Performance, ATT ...) - one list shared by every employee
+router.get('/allowance-types', c.getAllowanceTypes);
+router.post('/allowance-types', c.addAllowanceType);
 
 // Locations (Head Office, Kelani Hostel ...)
 router.get('/locations', c.getLocations);
