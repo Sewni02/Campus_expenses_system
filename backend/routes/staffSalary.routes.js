@@ -12,6 +12,10 @@ router.use(protect, requireApproved, requirePermission('staff_salary_manage'));
 router.get('/allowance-types', c.getAllowanceTypes);
 router.post('/allowance-types', c.addAllowanceType);
 
+// Deduction types (EPF, ETF, No-Pay Leave, Advances, Loans ...) - one list shared by every employee
+router.get('/deduction-types', c.getDeductionTypes);
+router.post('/deduction-types', c.addDeductionType);
+
 // Locations (Head Office, Kelani Hostel ...)
 router.get('/locations', c.getLocations);
 router.post('/locations', c.addLocation);

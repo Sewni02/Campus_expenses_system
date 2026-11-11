@@ -1,13 +1,15 @@
 const mongoose = require('mongoose');
 
 // One allowance or one deduction line, e.g. { name: 'Transport', amount: 5000 }.
-// The Holiday Payments line also keeps how it was worked out: amount = days x daySalary.
+// Lines that are worked out also keep how: Holiday Payments / No-Pay Leave = days x daySalary,
+// EPF / ETF = basic salary x rate %.
 const lineSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true, maxlength: 60 },
     amount: { type: Number, required: true, min: 0 },
     days: { type: Number, min: 0 },
     daySalary: { type: Number, min: 0 },
+    rate: { type: Number, min: 0, max: 100 }, // EPF / ETF: the % of the basic salary used
   },
   { _id: false }
 );
