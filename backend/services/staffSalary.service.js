@@ -3,6 +3,7 @@ const StaffLocation = require('../models/staffLocation.model');
 const StaffMember = require('../models/staffMember.model');
 const StaffSalary = require('../models/staffSalary.model');
 const AllowanceType = require('../models/allowanceType.model');
+const DeductionType = require('../models/deductionType.model');
 const { ApiError, findOrFail } = require('../utils/ApiError');
 const { requireString, optionalString, validateAmount, validateQuantity } = require('../utils/validators');
 const { exactRegex } = require('../utils/escapeRegex');
@@ -13,8 +14,6 @@ const MOBILE_PATTERN = /^0\d{9}$/;
 // Letters of any language, spaces, dots (initials), hyphens, apostrophes. \p{M} (combining marks) and
 // ‍ (joiner) are needed for Sinhala / Tamil names - their vowel signs and conjuncts are not "letters".
 const NAME_PATTERN = /^[\p{L}][\p{L}\p{M}‍ .'-]*$/u;
-// Safety limit so one request cannot store hundreds of lines.
-const MAX_LINES = 30;
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
@@ -226,27 +225,30 @@ const readAllowanceAmount = (value, field) => {
 const HOLIDAY_ALLOWANCE = 'Holiday Payments';
 const MAX_HOLIDAY_DAYS = 31;
 
-const readHolidayDays = (value) => {
-  const days = Math.round(validateQuantity(value, 'Holiday days') * 10) / 10; // half days are fine
-  if (days <= 0) throw new ApiError(400, 'Holiday days must be more than 0');
-  if (days > MAX_HOLIDAY_DAYS) throw new ApiError(400, `Holiday days cannot be more than ${MAX_HOLIDAY_DAYS}`);
+// { days, daySalary } -> days x day salary. Used by Holiday Payments and No-Pay Leave.
+const readDays = (value, label) => {
+  const days = Math.round(validateQuantity(value, `${label} days`) * 10) / 10; // half days are fine
+  if (days <= 0) throw new ApiError(400, `${label} days must be more than 0`);
+  if (days > MAX_HOLIDAY_DAYS) throw new ApiError(400, `${label} days cannot be more than ${MAX_HOLIDAY_DAYS}`);
   return days;
 };
 
-// { days, daySalary } -> the line. The amount sent by the client is never used.
-// Neither days nor day salary = "not added" (only an amount of 0 is accepted then).
-const readHolidayLine = (row) => {
+// The amount sent by the client is never used. Neither days nor day salary = "not added"
+// (only an amount of 0 is accepted then).
+const readDaysLine = (row, label) => {
   const blank = (v) => v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
   if (blank(row.days) && blank(row.daySalary)) {
-    if (readAllowanceAmount(row.amount, `${HOLIDAY_ALLOWANCE} amount`) !== 0) {
-      throw new ApiError(400, `${HOLIDAY_ALLOWANCE} needs the holiday days and the day salary`);
+    if (readAllowanceAmount(row.amount, `${label} amount`) !== 0) {
+      throw new ApiError(400, `${label} needs the ${label.toLowerCase()} days and the day salary`);
     }
     return { amount: 0 };
   }
-  const days = readHolidayDays(row.days);
+  const days = readDays(row.days, label);
   const daySalary = validateAmount(row.daySalary, 'Day salary');
   return { amount: round2(days * daySalary), days, daySalary };
 };
+
+const readHolidayLine = (row) => readDaysLine(row, 'Holiday');
 
 // Allowance rows from the form: [{ name, amount }]. Names must be in the allowance list.
 // `keepNames` are names already stored on the record being edited (they stay editable even
@@ -272,20 +274,92 @@ const readAllowances = (value, typeNames, keepNames = []) => {
   return allowedNames.map((name) => ({ name, ...(given.get(name) || { amount: 0 }) }));
 };
 
-// The deduction rows: [{ name, amount }] (free text). `label` is 'Deduction'.
-const readLines = (value, label) => {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) throw new ApiError(400, `${label}s must be a list`);
-  if (value.length > MAX_LINES) {
-    throw new ApiError(400, `At most ${MAX_LINES} ${label.toLowerCase()}s can be added`);
+// ---------------------------------------------------------------------------
+// Deduction types (one shared list for every employee)
+// ---------------------------------------------------------------------------
+// Same idea as the allowances: every monthly salary shows EVERY deduction type, Yes / No for each
+// ("No" is saved as 0), and a type added here shows up for every employee.
+//   EPF 8% / ETF 3%  -> worked out from the BASIC salary (not from basic + allowances)
+//   No-Pay Leave     -> no-pay days x day salary
+//   Advances, Loans  -> typed in
+// The total of all deductions is taken off the gross salary (basic + allowances) to give the net salary.
+
+const DEFAULT_DEDUCTION_TYPES = [
+  { name: 'EPF', kind: 'percent', rate: 8 },
+  { name: 'ETF', kind: 'percent', rate: 3 },
+  { name: 'No-Pay Leave', kind: 'days' },
+  { name: 'Advances', kind: 'amount' },
+  { name: 'Loans', kind: 'amount' },
+];
+const MAX_DEDUCTION_TYPES = 40;
+
+const ensureDefaultDeductionTypes = async () => {
+  if (await DeductionType.exists({})) return;
+  for (const type of DEFAULT_DEDUCTION_TYPES) {
+    try {
+      await DeductionType.create(type);
+    } catch (err) {
+      if (err.code !== 11000) throw err;
+    }
   }
-  return value.map((item, i) => {
+};
+
+const getDeductionTypes = async () => {
+  await ensureDefaultDeductionTypes();
+  return DeductionType.find().sort({ _id: 1 }).lean();
+};
+
+// New deduction types are always "typed in" amounts (like Advances / Loans).
+const addDeductionType = async (body = {}) => {
+  const name = requireString(body.name, 'Deduction name', { max: 60 });
+  await ensureDefaultDeductionTypes();
+
+  if (await DeductionType.exists({ name: exactRegex(name) })) {
+    throw new ApiError(409, 'This deduction already exists');
+  }
+  if ((await DeductionType.countDocuments()) >= MAX_DEDUCTION_TYPES) {
+    throw new ApiError(400, `At most ${MAX_DEDUCTION_TYPES} deduction types can be added`);
+  }
+
+  const deductionType = await DeductionType.create({ name, kind: 'amount' });
+  return { message: `${name} added for every employee`, deductionType };
+};
+
+// Deduction rows from the form. `types` = the deduction list; `keepNames` = names already stored on
+// the record being edited that are not in the list (e.g. free-text rows from an earlier version).
+// Row shapes:  percent -> { name, apply: true|false }   days -> { name, days, daySalary }   amount -> { name, amount }
+// The result has ONE line per deduction type, in list order; any that were not sent are 0.
+const readDeductions = (value, types, basicSalary, keepNames = []) => {
+  if (value !== undefined && value !== null && !Array.isArray(value)) {
+    throw new ApiError(400, 'Deductions must be a list');
+  }
+  const all = [
+    ...types,
+    ...keepNames.filter((n) => !types.some((t) => t.name === n)).map((name) => ({ name, kind: 'amount' })),
+  ];
+
+  const given = new Map();
+  (value || []).forEach((item, i) => {
     const row = item && typeof item === 'object' ? item : {};
-    return {
-      name: requireString(row.name, `${label} name (row ${i + 1})`, { max: 60 }),
-      amount: validateAmount(row.amount, `${label} amount (row ${i + 1})`),
-    };
+    const name = requireString(row.name, `Deduction name (row ${i + 1})`, { max: 60 });
+    const type = all.find((t) => t.name === name);
+    if (!type) throw new ApiError(400, `"${name}" is not in the deduction list. Add it as a new deduction first.`);
+    if (given.has(name)) throw new ApiError(400, `"${name}" is listed twice`);
+
+    if (type.kind === 'percent') {
+      if (row.apply !== undefined && typeof row.apply !== 'boolean') {
+        throw new ApiError(400, `${name}: apply must be true or false`);
+      }
+      // The rate always comes from the deduction list - the client cannot choose it.
+      given.set(name, row.apply ? { amount: round2((basicSalary * type.rate) / 100), rate: type.rate } : { amount: 0 });
+    } else if (type.kind === 'days') {
+      given.set(name, readDaysLine(row, name));
+    } else {
+      given.set(name, { amount: readAllowanceAmount(row.amount, `${name} amount`) });
+    }
   });
+
+  return all.map((t) => ({ name: t.name, ...(given.get(t.name) || { amount: 0 }) }));
 };
 
 const sumLines = (lines) => round2(lines.reduce((total, line) => total + line.amount, 0));
@@ -318,7 +392,7 @@ const createSalary = async (body = {}, userId) => {
 
   const typeNames = (await getAllowanceTypes()).map((t) => t.name);
   const allowances = readAllowances(body.allowances, typeNames);
-  const deductions = readLines(body.deductions, 'Deduction');
+  const deductions = readDeductions(body.deductions, await getDeductionTypes(), staff.basicSalary);
   const note = optionalString(body.note, 'Note', { max: 300 });
   const totals = workOutTotals(staff.basicSalary, allowances, deductions);
 
@@ -351,7 +425,7 @@ const updateSalary = async (salaryId, body = {}) => {
 
   const typeNames = (await getAllowanceTypes()).map((t) => t.name);
   const allowances = readAllowances(body.allowances, typeNames, salary.allowances.map((l) => l.name));
-  const deductions = readLines(body.deductions, 'Deduction');
+  const deductions = readDeductions(body.deductions, await getDeductionTypes(), salary.basicSalary, salary.deductions.map((l) => l.name));
   const note = optionalString(body.note, 'Note', { max: 300 });
   const totals = workOutTotals(salary.basicSalary, allowances, deductions);
 
@@ -373,6 +447,8 @@ const deleteSalary = async (salaryId) => {
 module.exports = {
   getAllowanceTypes,
   addAllowanceType,
+  getDeductionTypes,
+  addDeductionType,
   getLocations,
   addLocation,
   deleteLocation,

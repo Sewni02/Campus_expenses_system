@@ -21,15 +21,6 @@ const cleanAmount = (v) => {
   return c;
 };
 
-// Allowance / deduction rows are { name, amount } with the amount kept as typed text.
-const sumRows = (rows) => round2(rows.reduce((total, r) => total + toNumber(r.amount), 0));
-// Rows left completely empty are ignored; the server checks the rest.
-const cleanRows = (rows) =>
-  rows.filter((r) => r.name.trim() !== '' || r.amount !== '').map((r) => ({ name: r.name.trim(), amount: r.amount }));
-
-// Deduction names offered while typing (any other name can still be typed).
-const DEDUCTION_SUGGESTIONS = ['EPF (employee 8%)', 'Salary advance', 'Loan instalment', 'Welfare', 'No-pay leave', 'Tax (APIT)'];
-
 const infoBox = { background: '#F4F8FD', border: '1px solid #DCE6F4', borderRadius: 10, padding: '12px 16px', fontSize: 14 };
 const actionsCell = { display: 'flex', gap: 8, justifyContent: 'flex-end' };
 
@@ -402,61 +393,10 @@ function SummaryLine({ label, value, strong = false, color }) {
   );
 }
 
-// The rows of the Deductions mini tab: a name and an amount, as many as needed.
-function LineItems({ rows, onChange, suggestions, listId, nounLabel }) {
-  const update = (index, key, value) => onChange(rows.map((r, i) => (i === index ? { ...r, [key]: value } : r)));
-  const remove = (index) => onChange(rows.filter((_, i) => i !== index));
+const LINE_GRID = 'minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.2fr)';
 
-  return (
-    <div>
-      <datalist id={listId}>
-        {suggestions.map((s) => <option key={s} value={s} />)}
-      </datalist>
-
-      {rows.length === 0 && (
-        <p style={{ margin: '0 0 12px', color: '#7C8FAD', fontSize: 14 }}>
-          No {nounLabel.toLowerCase()}s added. Click “+ Add {nounLabel.toLowerCase()}” if this employee has any.
-        </p>
-      )}
-
-      {rows.map((r, i) => (
-        <div key={i} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr) auto', gap: 10, alignItems: 'center', marginBottom: 10 }}>
-          <div className="pc-field">
-            <input
-              type="text"
-              list={listId}
-              maxLength={60}
-              placeholder={`${nounLabel} name`}
-              aria-label={`${nounLabel} name ${i + 1}`}
-              value={r.name}
-              onChange={(e) => update(i, 'name', e.target.value)}
-            />
-          </div>
-          <div className="pc-field">
-            <input
-              type="text"
-              inputMode="decimal"
-              placeholder="Amount (Rs.)"
-              aria-label={`${nounLabel} amount ${i + 1}`}
-              value={r.amount}
-              onChange={(e) => update(i, 'amount', cleanAmount(e.target.value))}
-            />
-          </div>
-          <button className="pc-btn-sm pc-btn-danger" type="button" onClick={() => remove(i)}>Remove</button>
-        </div>
-      ))}
-
-      <button className="pc-btn-sm" type="button" onClick={() => onChange([...rows, { name: '', amount: '' }])}>
-        + Add {nounLabel.toLowerCase()}
-      </button>
-    </div>
-  );
-}
-
-const ALLOWANCE_GRID = 'minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.2fr)';
-
-// Holiday Payments is not typed in: it is holiday days x day salary. The day salary starts at
-// basic salary / 30 and can be changed. (The server works the amount out again when saving.)
+// "Days x day salary" lines (Holiday Payments, No-Pay Leave): the day salary starts at basic salary / 30
+// and can be changed. (The server works the amount out again when saving.)
 const HOLIDAY_ALLOWANCE = 'Holiday Payments';
 const DAYS_PER_MONTH = 30;
 const cleanDays = (v) => {
@@ -465,21 +405,30 @@ const cleanDays = (v) => {
   if (dot !== -1) c = c.slice(0, dot + 1) + c.slice(dot + 1).replace(/\./g, '').slice(0, 1); // half days: 1 decimal
   return c;
 };
-const holidayAmount = (days, daySalary) => round2(toNumber(days) * toNumber(daySalary));
+const daysLabelOf = (name) => (name === HOLIDAY_ALLOWANCE ? 'Holiday days' : `${name} days`);
 
-// The allowances of the selected employee: EVERY allowance in the shared list, each with a
-// Yes / No select. "No" means 0 (the amount is locked to 0); "Yes" lets you type the amount.
-function AllowanceRows({ rows, onToggle, onAmount, onHoliday }) {
+// How a line is worked out:
+//   'amount'  -> typed in
+//   'days'    -> days x day salary
+//   'percent' -> basic salary x rate % (EPF, ETF - no typing at all)
+const lineKindOfAllowance = (name) => (name === HOLIDAY_ALLOWANCE ? 'days' : 'amount');
+
+// The rows of one mini tab (Allowances or Deductions) for the selected employee: EVERY item in the
+// shared list, each with a Yes / No select. "No" means 0; "Yes" unlocks the amount (or days / day salary).
+function LineRows({ rows, itemLabel, onToggle, onAmount, onDays }) {
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: ALLOWANCE_GRID, gap: 10, marginBottom: 6, fontSize: 12, fontWeight: 600, color: '#7C8FAD' }}>
-        <span>Allowance</span>
-        <span>Add to this employee?</span>
+      <div style={{ display: 'grid', gridTemplateColumns: LINE_GRID, gap: 10, marginBottom: 6, fontSize: 12, fontWeight: 600, color: '#7C8FAD' }}>
+        <span>{itemLabel}</span>
+        <span>{itemLabel === 'Allowance' ? 'Add to this employee?' : 'Deduct from this employee?'}</span>
         <span>Amount (Rs.)</span>
       </div>
       {rows.map((r) => (
-        <div key={r.name} style={{ display: 'grid', gridTemplateColumns: ALLOWANCE_GRID, gap: 10, alignItems: 'center', marginBottom: 10 }}>
-          <span style={{ fontWeight: 500, overflowWrap: 'anywhere' }}>{r.name}</span>
+        <div key={r.name} style={{ display: 'grid', gridTemplateColumns: LINE_GRID, gap: 10, alignItems: 'center', marginBottom: 10 }}>
+          <span style={{ fontWeight: 500, overflowWrap: 'anywhere' }}>
+            {r.name}
+            {r.kind === 'percent' && <span style={{ display: 'block', fontWeight: 400, fontSize: 12, color: '#7C8FAD' }}>{r.rate}% of the basic salary</span>}
+          </span>
           <div className="pc-field">
             <select aria-label={`${r.name} added`} value={r.on ? 'yes' : 'no'} onChange={(e) => onToggle(r.name, e.target.value === 'yes')}>
               <option value="no">No</option>
@@ -492,24 +441,24 @@ function AllowanceRows({ rows, onToggle, onAmount, onHoliday }) {
               inputMode="decimal"
               aria-label={`${r.name} amount`}
               placeholder="Amount"
-              disabled={!r.on || r.name === HOLIDAY_ALLOWANCE}
-              required={r.on && r.name !== HOLIDAY_ALLOWANCE}
+              disabled={!r.on || r.kind !== 'amount'}
+              required={r.on && r.kind === 'amount'}
               value={r.amount}
               onChange={(e) => onAmount(r.name, cleanAmount(e.target.value))}
             />
           </div>
-          {r.name === HOLIDAY_ALLOWANCE && r.on && (
+          {r.kind === 'days' && r.on && (
             <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10, padding: '10px 12px', background: '#F4F8FD', border: '1px solid #DCE6F4', borderRadius: 10 }}>
               <label className="pc-field">
-                Holiday days
-                <input type="text" inputMode="decimal" required placeholder="e.g. 2" value={r.days} onChange={(e) => onHoliday('days', cleanDays(e.target.value))} />
+                {daysLabelOf(r.name)}
+                <input type="text" inputMode="decimal" required placeholder="e.g. 2" value={r.days} onChange={(e) => onDays(r.name, 'days', cleanDays(e.target.value))} />
               </label>
               <label className="pc-field">
                 Day salary (Rs.)
-                <input type="text" inputMode="decimal" required value={r.daySalary} onChange={(e) => onHoliday('daySalary', cleanAmount(e.target.value))} />
+                <input type="text" inputMode="decimal" required value={r.daySalary} onChange={(e) => onDays(r.name, 'daySalary', cleanAmount(e.target.value))} />
               </label>
               <p style={{ gridColumn: '1 / -1', margin: 0, fontSize: 12, color: '#4A6288' }}>
-                Holiday payment = holiday days × day salary. The day salary starts at basic salary ÷ {DAYS_PER_MONTH}; you can change it.
+                {r.name} = {daysLabelOf(r.name).toLowerCase()} × day salary. The day salary starts at basic salary ÷ {DAYS_PER_MONTH}; you can change it.
               </p>
             </div>
           )}
@@ -518,6 +467,76 @@ function AllowanceRows({ rows, onToggle, onAmount, onHoliday }) {
     </div>
   );
 }
+
+// "+ New allowance" / "+ New deduction": a new item for EVERY employee (saved in the shared list).
+// onAdd(name) saves it and returns the message to show; it throws if the server refuses.
+function NewTypeControl({ noun, onAdd }) {
+  const [name, setName] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const add = async () => {
+    setMsg(null);
+    setBusy(true);
+    try {
+      const text = await onAdd(name);
+      setName('');
+      setAdding(false);
+      setMsg({ type: 'ok', text });
+    } catch (err) {
+      setMsg({ type: 'err', text: apiError(err, `Could not add the ${noun}`) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px dashed #DCE6F4' }}>
+      {adding ? (
+        // not a <form>: this sits inside the salary form, and Enter must add the item, not save the salary
+        <div className="pc-add-degree">
+          <input
+            type="text"
+            autoFocus
+            maxLength={60}
+            aria-label={`New ${noun} name`}
+            placeholder={`New ${noun} name`}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (!busy) add();
+              }
+            }}
+          />
+          <button className="pc-btn-sm" type="button" disabled={busy} onClick={add}>Add</button>
+          <button className="pc-btn-sm" type="button" onClick={() => { setAdding(false); setName(''); setMsg(null); }}>Cancel</button>
+        </div>
+      ) : (
+        <button className="pc-btn-sm" type="button" onClick={() => { setAdding(true); setMsg(null); }}>+ New {noun}</button>
+      )}
+      <p style={{ margin: '8px 0 0', fontSize: 12, color: '#7C8FAD' }}>A new {noun} is added to the list for every employee.</p>
+      {msg && <div className={`pc-alert ${msg.type}`} style={{ marginTop: 8 }}>{msg.text}</div>}
+    </div>
+  );
+}
+
+// What was saved on a record -> the form values { [name]: { on, amount, days, daySalary } }.
+// A "days" line saved without days (an older record) is shown as 1 day x that amount, so nothing is lost.
+const valuesFromLines = (lines) => {
+  const values = {};
+  (lines || []).forEach((l) => {
+    values[l.name] = {
+      on: l.amount > 0,
+      amount: String(l.amount),
+      days: l.days ? String(l.days) : l.amount > 0 ? '1' : '',
+      daySalary: l.daySalary ? String(l.daySalary) : l.amount > 0 ? String(l.amount) : '',
+    };
+  });
+  return values;
+};
 
 // The salary FORM for one month + that month's salaries.
 function MonthWorkspace({ month, locations }) {
@@ -538,11 +557,9 @@ function MonthWorkspace({ month, locations }) {
   // An allowance with no entry is "No" / 0.
   const [allowanceTypes, setAllowanceTypes] = useState(null);
   const [allowValues, setAllowValues] = useState({});
-  const [newType, setNewType] = useState('');
-  const [addingType, setAddingType] = useState(false);
-  const [typeBusy, setTypeBusy] = useState(false);
-  const [typeMsg, setTypeMsg] = useState(null);
-  const [deductions, setDeductions] = useState([]);
+  // Same for deductions (EPF 8%, ETF 3%, No-Pay Leave, Advances, Loans ...).
+  const [deductionTypes, setDeductionTypes] = useState(null);
+  const [deductValues, setDeductValues] = useState({});
   const [lineTab, setLineTab] = useState('allowances'); // the mini tab: 'allowances' | 'deductions'
   const [note, setNote] = useState('');
   const staffRequest = useRef(0); // ignores an old answer if another location was picked meanwhile
@@ -560,9 +577,14 @@ function MonthWorkspace({ month, locations }) {
       .get('/api/staff-salary/allowance-types')
       .then((res) => setAllowanceTypes(res.data))
       .catch((err) => setMessage({ type: 'err', text: apiError(err, 'Could not load the allowance list') }));
+  const loadDeductionTypes = () =>
+    axios
+      .get('/api/staff-salary/deduction-types')
+      .then((res) => setDeductionTypes(res.data))
+      .catch((err) => setMessage({ type: 'err', text: apiError(err, 'Could not load the deduction list') }));
   // Loads once per month (this component is remounted whenever the month changes).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadRecords(); loadAllowanceTypes(); }, []);
+  useEffect(() => { loadRecords(); loadAllowanceTypes(); loadDeductionTypes(); }, []);
 
   // Picking a location loads its employees into the dropdown.
   const pickLocation = async (id) => {
@@ -570,6 +592,7 @@ function MonthWorkspace({ month, locations }) {
     setLocationId(id);
     setStaffId('');
     setAllowValues({});
+    setDeductValues({});
     setStaffList([]);
     if (!id) {
       setStaffLoading(false);
@@ -590,13 +613,14 @@ function MonthWorkspace({ month, locations }) {
   const pickEmployee = (id) => {
     setStaffId(id);
     setAllowValues({});
+    setDeductValues({});
   };
 
   const resetForm = () => {
     setEditing(null);
     setStaffId('');
     setAllowValues({});
-    setDeductions([]);
+    setDeductValues({});
     setNote('');
     setLineTab('allowances');
   };
@@ -613,41 +637,28 @@ function MonthWorkspace({ month, locations }) {
     setLocationId(rec.location);
     setStaffList([]);
     setStaffId(rec.staff);
-    const values = {};
-    (rec.allowances || []).forEach((l) => {
-      if (l.name === HOLIDAY_ALLOWANCE && l.amount > 0) {
-        // a holiday payment saved before days / day salary existed: show it as 1 day x that amount, so nothing is lost
-        values[l.name] = { on: true, amount: String(l.amount), days: l.days ? String(l.days) : '1', daySalary: l.daySalary ? String(l.daySalary) : String(l.amount) };
-      } else {
-        values[l.name] = { on: l.amount > 0, amount: String(l.amount) };
-      }
-    });
-    setAllowValues(values);
-    setDeductions((rec.deductions || []).map((l) => ({ name: l.name, amount: String(l.amount) })));
+    setAllowValues(valuesFromLines(rec.allowances));
+    setDeductValues(valuesFromLines(rec.deductions));
     setNote(rec.note || '');
     setLineTab('allowances');
     setMessage(null);
     formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const setAllowanceAmount = (name, amount) => setAllowValues((v) => ({ ...v, [name]: { on: true, amount } }));
+  const setAllowanceAmount = (name, amount) => setAllowValues((v) => ({ ...v, [name]: { ...(v[name] || {}), on: true, amount } }));
+  const setDeductionAmount = (name, amount) => setDeductValues((v) => ({ ...v, [name]: { ...(v[name] || {}), on: true, amount } }));
 
-  // A NEW allowance for everyone: it is saved in the shared list, so it shows up in every
+  // A NEW allowance / deduction for everyone: it is saved in the shared list, so it shows up in every
   // employee's form (and in every month) straight away.
-  const addAllowanceType = async () => {
-    setTypeMsg(null);
-    setTypeBusy(true);
-    try {
-      const res = await axios.post('/api/staff-salary/allowance-types', { name: newType });
-      setAllowanceTypes((list) => [...(list || []), res.data.allowanceType]);
-      setNewType('');
-      setAddingType(false);
-      setTypeMsg({ type: 'ok', text: res.data.message });
-    } catch (err) {
-      setTypeMsg({ type: 'err', text: apiError(err, 'Could not add the allowance') });
-    } finally {
-      setTypeBusy(false);
-    }
+  const addAllowanceType = async (name) => {
+    const res = await axios.post('/api/staff-salary/allowance-types', { name });
+    setAllowanceTypes((list) => [...(list || []), res.data.allowanceType]);
+    return res.data.message;
+  };
+  const addDeductionType = async (name) => {
+    const res = await axios.post('/api/staff-salary/deduction-types', { name });
+    setDeductionTypes((list) => [...(list || []), res.data.deductionType]);
+    return res.data.message;
   };
 
   // The basic salary comes from the employee's profile (read-only here). When editing, it is the
@@ -655,30 +666,45 @@ function MonthWorkspace({ month, locations }) {
   const staffMember = staffList.find((s) => s._id === staffId);
   const basic = editing ? editing.basicSalary : staffMember ? staffMember.basicSalary : null;
 
-  // Every allowance in the list, in order. Names saved on the record being edited that are not in the
-  // list (free text from an earlier version) stay editable, so nothing is lost.
-  const typeNames = (allowanceTypes || []).map((t) => t.name);
-  const extraNames = editing ? (editing.allowances || []).map((l) => l.name).filter((n) => !typeNames.includes(n)) : [];
-  const allowanceRows = [...typeNames, ...extraNames].map((name) => {
-    const v = allowValues[name] || { on: false, amount: '0' };
-    // Holiday Payments: the amount is days x day salary
-    return name === HOLIDAY_ALLOWANCE && v.on ? { name, ...v, amount: String(holidayAmount(v.days, v.daySalary)) } : { name, ...v };
-  });
-  // "Yes" unlocks the amount. For Holiday Payments it also starts the day salary at basic / 30.
-  const toggleAllowance = (name, on) =>
-    setAllowValues((v) => ({
+  // Every item in a list, in order, with how it is worked out. Names saved on the record being edited that are
+  // not in the list (free text from an earlier version) stay editable, so nothing is lost.
+  const buildRows = (types, savedLines, values, kindOf, rateOf) => {
+    const names = (types || []).map((t) => t.name);
+    const extra = editing ? (savedLines || []).map((l) => l.name).filter((n) => !names.includes(n)) : [];
+    return [...names, ...extra].map((name) => {
+      const v = values[name] || { on: false, amount: '0' };
+      const kind = kindOf(name);
+      const row = { name, kind, rate: rateOf(name), ...v, days: v.days || '', daySalary: v.daySalary || '' };
+      if (!v.on) return { ...row, amount: '0' };
+      if (kind === 'days') return { ...row, amount: String(round2(toNumber(v.days) * toNumber(v.daySalary))) };
+      if (kind === 'percent') return { ...row, amount: String(round2(((basic || 0) * row.rate) / 100)) };
+      return row;
+    });
+  };
+  const allowanceRows = buildRows(allowanceTypes, editing?.allowances, allowValues, lineKindOfAllowance, () => null);
+  const deductionById = new Map((deductionTypes || []).map((t) => [t.name, t]));
+  const deductionKindOf = (name) => deductionById.get(name)?.kind || 'amount';
+  const deductionRows = buildRows(deductionTypes, editing?.deductions, deductValues, deductionKindOf, (name) => deductionById.get(name)?.rate ?? null);
+
+  // "Yes" unlocks the amount; for a days line it also starts the day salary at basic / 30.
+  const toggleLine = (setValues, kindOf) => (name, on) =>
+    setValues((v) => ({
       ...v,
-      [name]: name === HOLIDAY_ALLOWANCE
-        ? { on, amount: '0', days: '', daySalary: on ? String(round2((basic || 0) / DAYS_PER_MONTH)) : '' }
-        : { on, amount: on ? '' : '0' },
+      [name]:
+        kindOf(name) === 'days'
+          ? { on, amount: '0', days: '', daySalary: on ? String(round2((basic || 0) / DAYS_PER_MONTH)) : '' }
+          : { on, amount: on ? '' : '0' },
     }));
-  const setHoliday = (field, value) =>
-    setAllowValues((v) => ({ ...v, [HOLIDAY_ALLOWANCE]: { ...(v[HOLIDAY_ALLOWANCE] || {}), on: true, amount: '0', [field]: value } }));
+  const toggleAllowance = toggleLine(setAllowValues, lineKindOfAllowance);
+  const toggleDeduction = toggleLine(setDeductValues, deductionKindOf);
+  const setDays = (setValues) => (name, field, value) =>
+    setValues((v) => ({ ...v, [name]: { ...(v[name] || {}), on: true, amount: '0', [field]: value } }));
   const showAllowances = Boolean(editing || staffId);
-  const totalAllowances = round2(allowanceRows.reduce((total, r) => total + (r.on ? toNumber(r.amount) : 0), 0));
-  const totalDeductions = sumRows(deductions);
+  const sumOn = (rows) => round2(rows.reduce((total, r) => total + (r.on ? toNumber(r.amount) : 0), 0));
+  const totalAllowances = sumOn(allowanceRows);
+  const totalDeductions = sumOn(deductionRows);
   const gross = round2((basic || 0) + totalAllowances);
-  const net = round2(gross - totalDeductions);
+  const net = round2(gross - totalDeductions); // the total deductions are taken off basic + allowances
   // Employees who already have a salary this month cannot be picked again (edit it in the list below).
   const doneIds = new Set((records || []).map((r) => r.staff));
 
@@ -689,29 +715,29 @@ function MonthWorkspace({ month, locations }) {
       setMessage({ type: 'err', text: 'Select a location and an employee first' });
       return;
     }
-    if (allowanceTypes === null) {
-      setMessage({ type: 'err', text: 'The allowance list has not loaded. Refresh the page and try again.' });
+    if (allowanceTypes === null || deductionTypes === null) {
+      setMessage({ type: 'err', text: 'The allowance / deduction list has not loaded. Refresh the page and try again.' });
       return;
     }
     if (net < 0) {
       setMessage({ type: 'err', text: 'The deductions are more than the gross salary' });
       return;
     }
-    const holiday = allowanceRows.find((r) => r.name === HOLIDAY_ALLOWANCE && r.on);
-    if (holiday && (toNumber(holiday.days) <= 0 || toNumber(holiday.daySalary) <= 0)) {
-      setMessage({ type: 'err', text: 'Holiday Payments: enter the holiday days and the day salary (both more than 0), or choose No' });
+    const badDays = [...allowanceRows, ...deductionRows].find((r) => r.kind === 'days' && r.on && (toNumber(r.days) <= 0 || toNumber(r.daySalary) <= 0));
+    if (badDays) {
+      setMessage({ type: 'err', text: `${badDays.name}: enter the ${daysLabelOf(badDays.name).toLowerCase()} and the day salary (both more than 0), or choose No` });
       return;
     }
     setSaving(true);
     try {
-      // every allowance is sent; one that is not added to this employee is 0.
-      // Holiday Payments is sent as days + day salary (the server works out the amount).
-      const allowances = allowanceRows.map((r) =>
-        r.name === HOLIDAY_ALLOWANCE && r.on
-          ? { name: r.name, days: r.days, daySalary: r.daySalary }
-          : { name: r.name, amount: r.on ? r.amount : '0' }
-      );
-      const body = { allowances, deductions: cleanRows(deductions), note };
+      // Every allowance and deduction is sent; one that is not added to this employee is 0.
+      // Days lines are sent as days + day salary and EPF / ETF as apply Yes / No (the server works the amount out).
+      const toLine = (r) => {
+        if (r.kind === 'days' && r.on) return { name: r.name, days: r.days, daySalary: r.daySalary };
+        if (r.kind === 'percent') return { name: r.name, apply: r.on };
+        return { name: r.name, amount: r.on ? r.amount : '0' };
+      };
+      const body = { allowances: allowanceRows.map(toLine), deductions: deductionRows.map(toLine), note };
       const res = editing
         ? await axios.put(`/api/staff-salary/salaries/${editing._id}`, body)
         : await axios.post('/api/staff-salary/salaries', { ...body, staffId, month });
@@ -745,7 +771,7 @@ function MonthWorkspace({ month, locations }) {
   const lineSummary = (lines) =>
     (lines || [])
       .filter((l) => l.amount > 0)
-      .map((l) => `${l.name}: ${formatMoney(l.amount)}${l.days ? ` (${l.days} day${l.days === 1 ? '' : 's'} × ${formatMoney(l.daySalary)})` : ''}`)
+      .map((l) => `${l.name}: ${formatMoney(l.amount)}${l.days ? ` (${l.days} day${l.days === 1 ? '' : 's'} × ${formatMoney(l.daySalary)})` : ''}${l.rate ? ` (${l.rate}% of basic)` : ''}`)
       .join('\n');
 
   const emptyListText = records && records.length > 0 ? 'No salaries for this location in this month.' : `No salaries created for ${monthLabel(month)} yet.`;
@@ -802,7 +828,7 @@ function MonthWorkspace({ month, locations }) {
                 Allowances{totalAllowances > 0 ? ` · ${formatMoney(totalAllowances)}` : ''}
               </button>
               <button type="button" className={`pc-tab ${lineTab === 'deductions' ? 'active' : ''}`} onClick={() => setLineTab('deductions')}>
-                Deductions{deductions.length > 0 ? ` · ${formatMoney(totalDeductions)}` : ''}
+                Deductions{totalDeductions > 0 ? ` · ${formatMoney(totalDeductions)}` : ''}
               </button>
             </div>
 
@@ -817,41 +843,28 @@ function MonthWorkspace({ month, locations }) {
                     <p style={{ margin: '0 0 12px', color: '#4A6288', fontSize: 13 }}>
                       Choose <strong>Yes</strong> for the allowances this employee gets and type the amount. <strong>No</strong> is saved as 0.
                     </p>
-                    <AllowanceRows rows={allowanceRows} onToggle={toggleAllowance} onAmount={setAllowanceAmount} onHoliday={setHoliday} />
+                    <LineRows rows={allowanceRows} itemLabel="Allowance" onToggle={toggleAllowance} onAmount={setAllowanceAmount} onDays={setDays(setAllowValues)} />
                   </>
                 )}
-
-                <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px dashed #DCE6F4' }}>
-                  {addingType ? (
-                    // not a <form>: this sits inside the salary form, and Enter must add the allowance, not save the salary
-                    <div className="pc-add-degree">
-                      <input
-                        type="text"
-                        autoFocus
-                        maxLength={60}
-                        aria-label="New allowance name"
-                        placeholder="New allowance name"
-                        value={newType}
-                        onChange={(e) => setNewType(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            if (!typeBusy) addAllowanceType();
-                          }
-                        }}
-                      />
-                      <button className="pc-btn-sm" type="button" disabled={typeBusy} onClick={addAllowanceType}>Add</button>
-                      <button className="pc-btn-sm" type="button" onClick={() => { setAddingType(false); setNewType(''); setTypeMsg(null); }}>Cancel</button>
-                    </div>
-                  ) : (
-                    <button className="pc-btn-sm" type="button" onClick={() => { setAddingType(true); setTypeMsg(null); }}>+ New allowance</button>
-                  )}
-                  <p style={{ margin: '8px 0 0', fontSize: 12, color: '#7C8FAD' }}>A new allowance is added to the list for every employee.</p>
-                  {typeMsg && <div className={`pc-alert ${typeMsg.type}`} style={{ marginTop: 8 }}>{typeMsg.text}</div>}
-                </div>
+                <NewTypeControl noun="allowance" onAdd={addAllowanceType} />
               </div>
             ) : (
-              <LineItems rows={deductions} onChange={setDeductions} suggestions={DEDUCTION_SUGGESTIONS} listId="staff-deduction-names" nounLabel="Deduction" />
+              <div>
+                {!showAllowances ? (
+                  <p style={{ margin: '0 0 12px', color: '#7C8FAD', fontSize: 14 }}>Select an employee to see the deductions.</p>
+                ) : deductionTypes === null ? (
+                  <p style={{ margin: '0 0 12px', color: '#7C8FAD', fontSize: 14 }}>Loading the deductions...</p>
+                ) : (
+                  <>
+                    <p style={{ margin: '0 0 12px', color: '#4A6288', fontSize: 13 }}>
+                      Choose <strong>Yes</strong> for the deductions that apply. EPF and ETF are taken from the <strong>basic salary</strong>. The total of all
+                      deductions is taken off the gross salary (basic + allowances) to give the net salary. <strong>No</strong> is saved as 0.
+                    </p>
+                    <LineRows rows={deductionRows} itemLabel="Deduction" onToggle={toggleDeduction} onAmount={setDeductionAmount} onDays={setDays(setDeductValues)} />
+                  </>
+                )}
+                <NewTypeControl noun="deduction" onAdd={addDeductionType} />
+              </div>
             )}
           </div>
 
@@ -870,7 +883,7 @@ function MonthWorkspace({ month, locations }) {
           </div>
 
           <div className="wide" style={{ display: 'flex', gap: 8 }}>
-            <button className="pc-btn" type="submit" disabled={saving || net < 0 || allowanceTypes === null}>
+            <button className="pc-btn" type="submit" disabled={saving || net < 0 || allowanceTypes === null || deductionTypes === null}>
               {saving ? 'Saving...' : editing ? 'Save changes' : 'Save salary'}
             </button>
             {editing && <button className="pc-btn-sm" type="button" onClick={cancelEdit}>Cancel</button>}

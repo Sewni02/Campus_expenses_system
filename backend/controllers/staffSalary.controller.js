@@ -12,6 +12,17 @@ const addAllowanceType = asyncHandler(async (req, res) => {
   res.status(201).json(result);
 });
 
+// GET /api/staff-salary/deduction-types   (EPF 8%, ETF 3%, No-Pay Leave, Advances, Loans are created on first use)
+const getDeductionTypes = asyncHandler(async (req, res) => {
+  res.json(await staffSalaryService.getDeductionTypes());
+});
+
+// POST /api/staff-salary/deduction-types   { name }   (a new deduction for every employee)
+const addDeductionType = asyncHandler(async (req, res) => {
+  const result = await staffSalaryService.addDeductionType(req.body);
+  res.status(201).json(result);
+});
+
 // GET /api/staff-salary/locations
 const getLocations = asyncHandler(async (req, res) => {
   res.json(await staffSalaryService.getLocations());
@@ -54,7 +65,7 @@ const getSalaries = asyncHandler(async (req, res) => {
   res.json(await staffSalaryService.getSalaries(req.query));
 });
 
-// POST /api/staff-salary/salaries   { staffId, month, allowances: [{ name, amount }] (names from the allowance list, 0 = not added), deductions: [{ name, amount }], note }
+// POST /api/staff-salary/salaries   { staffId, month, allowances: [{ name, amount }] (names from the allowance list, 0 = not added), deductions: [{ name, apply | days+daySalary | amount }] (one per deduction type, 0 = not applied), note }
 const createSalary = asyncHandler(async (req, res) => {
   const result = await staffSalaryService.createSalary(req.body, req.user.id);
   res.status(201).json(result);
@@ -73,6 +84,8 @@ const deleteSalary = asyncHandler(async (req, res) => {
 module.exports = {
   getAllowanceTypes,
   addAllowanceType,
+  getDeductionTypes,
+  addDeductionType,
   getLocations,
   addLocation,
   deleteLocation,
