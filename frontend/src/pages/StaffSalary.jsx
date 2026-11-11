@@ -410,7 +410,7 @@ const daysLabelOf = (name) => (name === HOLIDAY_ALLOWANCE ? 'Holiday days' : `${
 // How a line is worked out:
 //   'amount'  -> typed in
 //   'days'    -> days x day salary
-//   'percent' -> basic salary x rate % (EPF, ETF - no typing at all)
+//   'percent' -> (basic salary + this month's Holiday Payments, if any) x rate % (EPF, ETF - no typing at all)
 const lineKindOfAllowance = (name) => (name === HOLIDAY_ALLOWANCE ? 'days' : 'amount');
 
 // The rows of one mini tab (Allowances or Deductions) for the selected employee: EVERY item in the
@@ -427,7 +427,11 @@ function LineRows({ rows, itemLabel, onToggle, onAmount, onDays }) {
         <div key={r.name} style={{ display: 'grid', gridTemplateColumns: LINE_GRID, gap: 10, alignItems: 'center', marginBottom: 10 }}>
           <span style={{ fontWeight: 500, overflowWrap: 'anywhere' }}>
             {r.name}
-            {r.kind === 'percent' && <span style={{ display: 'block', fontWeight: 400, fontSize: 12, color: '#7C8FAD' }}>{r.rate}% of the basic salary</span>}
+            {r.kind === 'percent' && (
+              <span style={{ display: 'block', fontWeight: 400, fontSize: 12, color: '#7C8FAD' }}>
+                {r.rate}% of {formatMoney(r.base || 0)}{r.baseHasHoliday ? ' (basic + holiday payments)' : ' (basic salary)'}
+              </span>
+            )}
           </span>
           <div className="pc-field">
             <select aria-label={`${r.name} added`} value={r.on ? 'yes' : 'no'} onChange={(e) => onToggle(r.name, e.target.value === 'yes')}>
@@ -668,23 +672,28 @@ function MonthWorkspace({ month, locations }) {
 
   // Every item in a list, in order, with how it is worked out. Names saved on the record being edited that are
   // not in the list (free text from an earlier version) stay editable, so nothing is lost.
-  const buildRows = (types, savedLines, values, kindOf, rateOf) => {
+  const buildRows = (types, savedLines, values, kindOf, rateOf, percentBase = 0, baseHasHoliday = false) => {
     const names = (types || []).map((t) => t.name);
     const extra = editing ? (savedLines || []).map((l) => l.name).filter((n) => !names.includes(n)) : [];
     return [...names, ...extra].map((name) => {
       const v = values[name] || { on: false, amount: '0' };
       const kind = kindOf(name);
-      const row = { name, kind, rate: rateOf(name), ...v, days: v.days || '', daySalary: v.daySalary || '' };
+      const row = { name, kind, rate: rateOf(name), base: percentBase, baseHasHoliday, ...v, days: v.days || '', daySalary: v.daySalary || '' };
       if (!v.on) return { ...row, amount: '0' };
       if (kind === 'days') return { ...row, amount: String(round2(toNumber(v.days) * toNumber(v.daySalary))) };
-      if (kind === 'percent') return { ...row, amount: String(round2(((basic || 0) * row.rate) / 100)) };
+      if (kind === 'percent') return { ...row, amount: String(round2((percentBase * row.rate) / 100)) };
       return row;
     });
   };
   const allowanceRows = buildRows(allowanceTypes, editing?.allowances, allowValues, lineKindOfAllowance, () => null);
   const deductionById = new Map((deductionTypes || []).map((t) => [t.name, t]));
   const deductionKindOf = (name) => deductionById.get(name)?.kind || 'amount';
-  const deductionRows = buildRows(deductionTypes, editing?.deductions, deductValues, deductionKindOf, (name) => deductionById.get(name)?.rate ?? null);
+  // EPF / ETF base: basic salary + this month's Holiday Payments (when Holiday Payments is "Yes" with an amount).
+  // No holiday payment this month = basic salary only. Other allowances are not part of it.
+  const holidayRow = allowanceRows.find((r) => r.name === HOLIDAY_ALLOWANCE && r.on);
+  const holidayAmount = holidayRow ? toNumber(holidayRow.amount) : 0;
+  const epfBase = round2((basic || 0) + holidayAmount);
+  const deductionRows = buildRows(deductionTypes, editing?.deductions, deductValues, deductionKindOf, (name) => deductionById.get(name)?.rate ?? null, epfBase, holidayAmount > 0);
 
   // "Yes" unlocks the amount; for a days line it also starts the day salary at basic / 30.
   const toggleLine = (setValues, kindOf) => (name, on) =>
@@ -771,7 +780,7 @@ function MonthWorkspace({ month, locations }) {
   const lineSummary = (lines) =>
     (lines || [])
       .filter((l) => l.amount > 0)
-      .map((l) => `${l.name}: ${formatMoney(l.amount)}${l.days ? ` (${l.days} day${l.days === 1 ? '' : 's'} × ${formatMoney(l.daySalary)})` : ''}${l.rate ? ` (${l.rate}% of basic)` : ''}`)
+      .map((l) => `${l.name}: ${formatMoney(l.amount)}${l.days ? ` (${l.days} day${l.days === 1 ? '' : 's'} × ${formatMoney(l.daySalary)})` : ''}${l.rate ? ` (${l.rate}% of ${l.base ? formatMoney(l.base) : 'basic'})` : ''}`)
       .join('\n');
 
   const emptyListText = records && records.length > 0 ? 'No salaries for this location in this month.' : `No salaries created for ${monthLabel(month)} yet.`;
@@ -857,7 +866,7 @@ function MonthWorkspace({ month, locations }) {
                 ) : (
                   <>
                     <p style={{ margin: '0 0 12px', color: '#4A6288', fontSize: 13 }}>
-                      Choose <strong>Yes</strong> for the deductions that apply. EPF and ETF are taken from the <strong>basic salary</strong>. The total of all
+                      Choose <strong>Yes</strong> for the deductions that apply. EPF and ETF are taken from the <strong>basic salary</strong>; if this month has a <strong>Holiday Payments</strong> amount, it is added to the basic salary first. The total of all
                       deductions is taken off the gross salary (basic + allowances) to give the net salary. <strong>No</strong> is saved as 0.
                     </p>
                     <LineRows rows={deductionRows} itemLabel="Deduction" onToggle={toggleDeduction} onAmount={setDeductionAmount} onDays={setDays(setDeductValues)} />

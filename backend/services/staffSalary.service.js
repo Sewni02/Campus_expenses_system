@@ -3,7 +3,7 @@ const StaffLocation = require('../models/staffLocation.model');
 const StaffMember = require('../models/staffMember.model');
 const StaffSalary = require('../models/staffSalary.model');
 const AllowanceType = require('../models/allowanceType.model');
-const DeductionType = require('../models/deductionType.model');
+const DeductionType = require('../models/deductiontype.model');
 const { ApiError, findOrFail } = require('../utils/ApiError');
 const { requireString, optionalString, validateAmount, validateQuantity } = require('../utils/validators');
 const { exactRegex } = require('../utils/escapeRegex');
@@ -279,7 +279,10 @@ const readAllowances = (value, typeNames, keepNames = []) => {
 // ---------------------------------------------------------------------------
 // Same idea as the allowances: every monthly salary shows EVERY deduction type, Yes / No for each
 // ("No" is saved as 0), and a type added here shows up for every employee.
-//   EPF 8% / ETF 3%  -> worked out from the BASIC salary (not from basic + allowances)
+//   EPF 8% / ETF 3%  -> worked out from the BASIC salary. If this month has a Holiday Payments
+//                       amount, that amount is added to the basic salary first (basic + holiday
+//                       payments). No holiday payment that month = basic salary only.
+//                       Other allowances (Transport, ATT ...) are never included.
 //   No-Pay Leave     -> no-pay days x day salary
 //   Advances, Loans  -> typed in
 // The total of all deductions is taken off the gross salary (basic + allowances) to give the net salary.
@@ -329,7 +332,7 @@ const addDeductionType = async (body = {}) => {
 // the record being edited that are not in the list (e.g. free-text rows from an earlier version).
 // Row shapes:  percent -> { name, apply: true|false }   days -> { name, days, daySalary }   amount -> { name, amount }
 // The result has ONE line per deduction type, in list order; any that were not sent are 0.
-const readDeductions = (value, types, basicSalary, keepNames = []) => {
+const readDeductions = (value, types, percentBase, keepNames = []) => {
   if (value !== undefined && value !== null && !Array.isArray(value)) {
     throw new ApiError(400, 'Deductions must be a list');
   }
@@ -351,7 +354,8 @@ const readDeductions = (value, types, basicSalary, keepNames = []) => {
         throw new ApiError(400, `${name}: apply must be true or false`);
       }
       // The rate always comes from the deduction list - the client cannot choose it.
-      given.set(name, row.apply ? { amount: round2((basicSalary * type.rate) / 100), rate: type.rate } : { amount: 0 });
+      // percentBase = basic salary (+ this month's Holiday Payments, if any) - see epfBaseOf().
+      given.set(name, row.apply ? { amount: round2((percentBase * type.rate) / 100), rate: type.rate, base: percentBase } : { amount: 0 });
     } else if (type.kind === 'days') {
       given.set(name, readDaysLine(row, name));
     } else {
@@ -360,6 +364,15 @@ const readDeductions = (value, types, basicSalary, keepNames = []) => {
   });
 
   return all.map((t) => ({ name: t.name, ...(given.get(t.name) || { amount: 0 }) }));
+};
+
+// The amount EPF / ETF are worked out from:
+//   month WITH a Holiday Payments amount  -> basic salary + Holiday Payments
+//   month WITHOUT one                     -> basic salary only
+// (only Holiday Payments is added - Transport, ATT, Performance ... are not part of the base)
+const epfBaseOf = (basicSalary, allowances) => {
+  const holiday = allowances.find((line) => line.name === HOLIDAY_ALLOWANCE);
+  return round2(basicSalary + (holiday ? holiday.amount : 0));
 };
 
 const sumLines = (lines) => round2(lines.reduce((total, line) => total + line.amount, 0));
@@ -392,7 +405,7 @@ const createSalary = async (body = {}, userId) => {
 
   const typeNames = (await getAllowanceTypes()).map((t) => t.name);
   const allowances = readAllowances(body.allowances, typeNames);
-  const deductions = readDeductions(body.deductions, await getDeductionTypes(), staff.basicSalary);
+  const deductions = readDeductions(body.deductions, await getDeductionTypes(), epfBaseOf(staff.basicSalary, allowances));
   const note = optionalString(body.note, 'Note', { max: 300 });
   const totals = workOutTotals(staff.basicSalary, allowances, deductions);
 
@@ -425,7 +438,7 @@ const updateSalary = async (salaryId, body = {}) => {
 
   const typeNames = (await getAllowanceTypes()).map((t) => t.name);
   const allowances = readAllowances(body.allowances, typeNames, salary.allowances.map((l) => l.name));
-  const deductions = readDeductions(body.deductions, await getDeductionTypes(), salary.basicSalary, salary.deductions.map((l) => l.name));
+  const deductions = readDeductions(body.deductions, await getDeductionTypes(), epfBaseOf(salary.basicSalary, allowances), salary.deductions.map((l) => l.name));
   const note = optionalString(body.note, 'Note', { max: 300 });
   const totals = workOutTotals(salary.basicSalary, allowances, deductions);
 
