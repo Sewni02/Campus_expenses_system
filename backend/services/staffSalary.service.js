@@ -5,7 +5,7 @@ const StaffSalary = require('../models/staffSalary.model');
 const AllowanceType = require('../models/allowanceType.model');
 const DeductionType = require('../models/deductiontype.model');
 const { ApiError, findOrFail } = require('../utils/ApiError');
-const { requireString, optionalString, validateAmount, validateQuantity } = require('../utils/validators');
+const { requireString, optionalString, validateAmount } = require('../utils/validators');
 const { exactRegex } = require('../utils/escapeRegex');
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -220,35 +220,75 @@ const readAllowanceAmount = (value, field) => {
   return validateAmount(value, field);
 };
 
-// Holiday Payments is not typed in as an amount: it is worked out as holiday days x day salary.
-// (The form starts the day salary at basic / 30 and lets the accountant change it.)
+// Holiday Payments and No-Pay Leave are not typed in as an amount: they are worked out from days.
+// Every "days" line is made of PARTS, and each part has FULL days, HALF days and its own day salary:
+//     part amount = (full days + half days x 0.5) x day salary
+//   Holiday Payments -> two parts: Normal holiday + Poya. The Holiday Payments amount is the TOTAL of both
+//                       (so EPF / ETF see one Holiday Payments amount - see epfBaseOf below).
+//   No-Pay Leave (and any other "days" deduction) -> one part.
+// (The day salary of every part is typed in by the accountant - it is not taken from the basic salary.)
 const HOLIDAY_ALLOWANCE = 'Holiday Payments';
-const MAX_HOLIDAY_DAYS = 31;
+const MAX_HOLIDAY_DAYS = 31; // in total for the line (full days + half days x 0.5, all parts together)
 
-// { days, daySalary } -> days x day salary. Used by Holiday Payments and No-Pay Leave.
-const readDays = (value, label) => {
-  const days = Math.round(validateQuantity(value, `${label} days`) * 10) / 10; // half days are fine
-  if (days <= 0) throw new ApiError(400, `${label} days must be more than 0`);
-  if (days > MAX_HOLIDAY_DAYS) throw new ApiError(400, `${label} days cannot be more than ${MAX_HOLIDAY_DAYS}`);
-  return days;
+const HOLIDAY_PARTS = [
+  { key: 'normal', label: 'Normal holiday' },
+  { key: 'poya', label: 'Poya' },
+];
+const SINGLE_PART = [{ key: 'main', label: '' }];
+const partsOf = (name) => (name === HOLIDAY_ALLOWANCE ? HOLIDAY_PARTS : SINGLE_PART);
+
+// A number of full days or half days: a whole number, 0 or more. Blank = 0.
+const readCount = (value, field) => {
+  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) return 0;
+  const number = typeof value === 'number' ? value : typeof value === 'string' && /^\d+$/.test(value.trim()) ? Number(value.trim()) : NaN;
+  if (!Number.isInteger(number) || number < 0) throw new ApiError(400, `${field} must be a whole number (0 or more)`);
+  if (number > MAX_HOLIDAY_DAYS * 2) throw new ApiError(400, `${field} is too large`);
+  return number;
 };
 
-// The amount sent by the client is never used. Neither days nor day salary = "not added"
-// (only an amount of 0 is accepted then).
-const readDaysLine = (row, label) => {
-  const blank = (v) => v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
-  if (blank(row.days) && blank(row.daySalary)) {
+// Row from the form: { name, parts: [{ key, fullDays, halfDays, daySalary }] }.
+// The amount sent by the client is never used. No days at all = "not added" (only an amount of 0 is accepted then).
+const readDaysLine = (row, label, name = label) => {
+  if (row.parts !== undefined && row.parts !== null && !Array.isArray(row.parts)) {
+    throw new ApiError(400, `${label}: parts must be a list`);
+  }
+  const defs = partsOf(name);
+
+  const given = new Map();
+  (row.parts || []).forEach((item) => {
+    const part = item && typeof item === 'object' ? item : {};
+    if (!defs.some((d) => d.key === part.key)) throw new ApiError(400, `${label}: unknown part "${part.key}"`);
+    if (given.has(part.key)) throw new ApiError(400, `${label}: "${part.key}" is listed twice`);
+    given.set(part.key, part);
+  });
+
+  const parts = [];
+  let totalDays = 0;
+  defs.forEach((def) => {
+    const part = given.get(def.key);
+    if (!part) return;
+    const what = def.label ? `${label} (${def.label})` : label;
+    const fullDays = readCount(part.fullDays, `${what} full days`);
+    const halfDays = readCount(part.halfDays, `${what} half days`);
+    const days = fullDays + halfDays * 0.5;
+    if (days === 0) return; // nothing entered for this part
+    const daySalary = validateAmount(part.daySalary, `${what} day salary`);
+    totalDays += days;
+    parts.push({ key: def.key, label: def.label, fullDays, halfDays, daySalary, amount: round2(days * daySalary) });
+  });
+
+  if (parts.length === 0) {
     if (readAllowanceAmount(row.amount, `${label} amount`) !== 0) {
-      throw new ApiError(400, `${label} needs the ${label.toLowerCase()} days and the day salary`);
+      throw new ApiError(400, `${label} needs the days (full or half) and the day salary`);
     }
     return { amount: 0 };
   }
-  const days = readDays(row.days, label);
-  const daySalary = validateAmount(row.daySalary, 'Day salary');
-  return { amount: round2(days * daySalary), days, daySalary };
+  if (totalDays > MAX_HOLIDAY_DAYS) throw new ApiError(400, `${label} days cannot be more than ${MAX_HOLIDAY_DAYS} in total`);
+
+  return { amount: round2(parts.reduce((total, part) => total + part.amount, 0)), days: totalDays, parts };
 };
 
-const readHolidayLine = (row) => readDaysLine(row, 'Holiday');
+const readHolidayLine = (row) => readDaysLine(row, 'Holiday', HOLIDAY_ALLOWANCE);
 
 // Allowance rows from the form: [{ name, amount }]. Names must be in the allowance list.
 // `keepNames` are names already stored on the record being edited (they stay editable even
@@ -280,10 +320,10 @@ const readAllowances = (value, typeNames, keepNames = []) => {
 // Same idea as the allowances: every monthly salary shows EVERY deduction type, Yes / No for each
 // ("No" is saved as 0), and a type added here shows up for every employee.
 //   EPF 8% / ETF 3%  -> worked out from the BASIC salary. If this month has a Holiday Payments
-//                       amount, that amount is added to the basic salary first (basic + holiday
-//                       payments). No holiday payment that month = basic salary only.
+//                       amount (Normal holiday + Poya together), that amount is added to the basic
+//                       salary first (basic + holiday payments). No holiday payment that month = basic salary only.
 //                       Other allowances (Transport, ATT ...) are never included.
-//   No-Pay Leave     -> no-pay days x day salary
+//   No-Pay Leave     -> (full days + half days x 0.5) x day salary
 //   Advances, Loans  -> typed in
 // The total of all deductions is taken off the gross salary (basic + allowances) to give the net salary.
 
@@ -330,7 +370,7 @@ const addDeductionType = async (body = {}) => {
 
 // Deduction rows from the form. `types` = the deduction list; `keepNames` = names already stored on
 // the record being edited that are not in the list (e.g. free-text rows from an earlier version).
-// Row shapes:  percent -> { name, apply: true|false }   days -> { name, days, daySalary }   amount -> { name, amount }
+// Row shapes:  percent -> { name, apply: true|false }   days -> { name, parts: [{ key, fullDays, halfDays, daySalary }] }   amount -> { name, amount }
 // The result has ONE line per deduction type, in list order; any that were not sent are 0.
 const readDeductions = (value, types, percentBase, keepNames = []) => {
   if (value !== undefined && value !== null && !Array.isArray(value)) {

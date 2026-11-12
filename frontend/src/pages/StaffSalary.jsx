@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import useTabState from '../hooks/useTabState';
+import StaffAttendance from './StaffAttendance';
 import { formatMoney, formatDate, monthLabel, currentMonthString } from '../utils/pettyCash';
 import './PettyCash.css'; // re-uses the same cards / tables / buttons / tabs as Petty Cash
 
@@ -32,6 +33,8 @@ const actionsCell = { display: 'flex', gap: 8, justifyContent: 'flex-end' };
 //                              name, NIC, mobile, date joined and the BASIC SALARY.
 //   Tab "Monthly Salary"    -> pick the month, the location and the employee (the basic salary
 //                              fills in by itself), then add Allowances and Deductions.
+//   Tab "Attendance"       -> the monthly attendance sheet: a permanent employee list, and for each month the
+//                              normal days and the extra-work days of every employee (see StaffAttendance.jsx).
 // The selected tab ("ssec") and location ("sloc") live in the URL, so a refresh or the
 // browser back button keeps you where you were.
 // ---------------------------------------------------------------------------
@@ -59,16 +62,18 @@ function StaffSalary() {
         <h1 className="sa-page-title" style={{ margin: 0 }}>Staff Salary</h1>
       </div>
       <div className="pc-tabs">
-        {[['staff', 'Staff & Locations'], ['salaries', 'Monthly Salary']].map(([key, label]) => (
+        {[['staff', 'Staff & Locations'], ['salaries', 'Monthly Salary'], ['attendance', 'Attendance']].map(([key, label]) => (
           <button key={key} className={`pc-tab ${section === key ? 'active' : ''}`} onClick={() => setSection(key)}>
             {label}
           </button>
         ))}
       </div>
 
-      {loadError && <div className="pc-alert err">{loadError}</div>}
+      {loadError && section !== 'attendance' && <div className="pc-alert err">{loadError}</div>}
 
-      {locations === null ? (
+      {section === 'attendance' ? (
+        <StaffAttendance />
+      ) : locations === null ? (
         <p style={{ color: '#7C8FAD' }}>Loading...</p>
       ) : section === 'staff' ? (
         <StaffSection locations={locations} onLocationsChanged={loadLocations} />
@@ -395,21 +400,25 @@ function SummaryLine({ label, value, strong = false, color }) {
 
 const LINE_GRID = 'minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.2fr)';
 
-// "Days x day salary" lines (Holiday Payments, No-Pay Leave): the day salary starts at basic salary / 30
-// and can be changed. (The server works the amount out again when saving.)
+// "Days" lines (Holiday Payments, No-Pay Leave) are worked out in PARTS. Every part has full days, half days
+// and its OWN day salary, typed in for each part (it is not taken from the basic salary):
+//     part amount = (full days + half days x 0.5) x day salary
+//   Holiday Payments -> two parts, Normal holiday + Poya (the line amount is the total of both)
+//   No-Pay Leave     -> one part
+// (The server works the amounts out again when saving.)
 const HOLIDAY_ALLOWANCE = 'Holiday Payments';
-const DAYS_PER_MONTH = 30;
-const cleanDays = (v) => {
-  let c = v.replace(/[^0-9.]/g, '');
-  const dot = c.indexOf('.');
-  if (dot !== -1) c = c.slice(0, dot + 1) + c.slice(dot + 1).replace(/\./g, '').slice(0, 1); // half days: 1 decimal
-  return c;
-};
-const daysLabelOf = (name) => (name === HOLIDAY_ALLOWANCE ? 'Holiday days' : `${name} days`);
+const MAX_LINE_DAYS = 31; // in total for one line
+const HOLIDAY_PARTS = [
+  { key: 'normal', label: 'Normal holiday' },
+  { key: 'poya', label: 'Poya' },
+];
+const SINGLE_PART = [{ key: 'main', label: '' }];
+const partDefsOf = (name) => (name === HOLIDAY_ALLOWANCE ? HOLIDAY_PARTS : SINGLE_PART);
+const cleanCount = (v) => v.replace(/[^0-9]/g, '').slice(0, 2); // whole numbers only (full days / half days)
 
 // How a line is worked out:
 //   'amount'  -> typed in
-//   'days'    -> days x day salary
+//   'days'    -> (full days + half days x 0.5) x day salary, per part (Holiday Payments: Normal holiday + Poya)
 //   'percent' -> (basic salary + this month's Holiday Payments, if any) x rate % (EPF, ETF - no typing at all)
 const lineKindOfAllowance = (name) => (name === HOLIDAY_ALLOWANCE ? 'days' : 'amount');
 
@@ -452,17 +461,34 @@ function LineRows({ rows, itemLabel, onToggle, onAmount, onDays }) {
             />
           </div>
           {r.kind === 'days' && r.on && (
-            <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10, padding: '10px 12px', background: '#F4F8FD', border: '1px solid #DCE6F4', borderRadius: 10 }}>
-              <label className="pc-field">
-                {daysLabelOf(r.name)}
-                <input type="text" inputMode="decimal" required placeholder="e.g. 2" value={r.days} onChange={(e) => onDays(r.name, 'days', cleanDays(e.target.value))} />
-              </label>
-              <label className="pc-field">
-                Day salary (Rs.)
-                <input type="text" inputMode="decimal" required value={r.daySalary} onChange={(e) => onDays(r.name, 'daySalary', cleanAmount(e.target.value))} />
-              </label>
-              <p style={{ gridColumn: '1 / -1', margin: 0, fontSize: 12, color: '#4A6288' }}>
-                {r.name} = {daysLabelOf(r.name).toLowerCase()} × day salary. The day salary starts at basic salary ÷ {DAYS_PER_MONTH}; you can change it.
+            <div style={{ gridColumn: '1 / -1', display: 'grid', gap: 12, padding: '10px 12px', background: '#F4F8FD', border: '1px solid #DCE6F4', borderRadius: 10 }}>
+              {r.partRows.map((p) => (
+                <div key={p.key}>
+                  {p.label && <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6, color: '#1F3C6B' }}>{p.label}</div>}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                    <label className="pc-field">
+                      Full days
+                      <input type="text" inputMode="numeric" placeholder="0" value={p.fullDays} onChange={(e) => onDays(r.name, p.key, 'fullDays', cleanCount(e.target.value))} />
+                    </label>
+                    <label className="pc-field">
+                      Half days
+                      <input type="text" inputMode="numeric" placeholder="0" value={p.halfDays} onChange={(e) => onDays(r.name, p.key, 'halfDays', cleanCount(e.target.value))} />
+                    </label>
+                    <label className="pc-field">
+                      Day salary (Rs.)
+                      <input type="text" inputMode="decimal" placeholder="Enter day salary" value={p.daySalary} onChange={(e) => onDays(r.name, p.key, 'daySalary', cleanAmount(e.target.value))} />
+                    </label>
+                  </div>
+                  <p style={{ margin: '6px 0 0', fontSize: 12, color: '#4A6288' }}>
+                    {p.days > 0
+                      ? `${p.fullDays || 0} full + ${p.halfDays || 0} half = ${p.days} day${p.days === 1 ? '' : 's'} × ${formatMoney(toNumber(p.daySalary))} = ${formatMoney(p.amount)}`
+                      : 'No days entered'}
+                  </p>
+                </div>
+              ))}
+              <p style={{ margin: 0, fontSize: 12, color: '#4A6288' }}>
+                {r.name} = (full days + half days × ½) × day salary{r.partRows.length > 1 ? `, added together (${r.partRows.map((p) => p.label).join(' + ')})` : ''}. Type the day salary for each part separately.
+                {r.partRows.length > 1 ? ` Total: ${formatMoney(toNumber(r.amount))}` : ''}
               </p>
             </div>
           )}
@@ -532,12 +558,22 @@ function NewTypeControl({ noun, onAdd }) {
 const valuesFromLines = (lines) => {
   const values = {};
   (lines || []).forEach((l) => {
-    values[l.name] = {
-      on: l.amount > 0,
-      amount: String(l.amount),
-      days: l.days ? String(l.days) : l.amount > 0 ? '1' : '',
-      daySalary: l.daySalary ? String(l.daySalary) : l.amount > 0 ? String(l.amount) : '',
-    };
+    const on = l.amount > 0;
+    const parts = {};
+    if (l.parts && l.parts.length > 0) {
+      l.parts.forEach((p) => {
+        parts[p.key] = { fullDays: p.fullDays ? String(p.fullDays) : '', halfDays: p.halfDays ? String(p.halfDays) : '', daySalary: String(p.daySalary) };
+      });
+    } else if (on && l.days) {
+      // saved by an older version (days x day salary, no parts): show it as full days (+ one half day for .5)
+      const daySalary = l.daySalary || l.amount / l.days;
+      parts[partDefsOf(l.name)[0].key] = {
+        fullDays: String(Math.floor(l.days)),
+        halfDays: l.days % 1 >= 0.5 ? '1' : '',
+        daySalary: String(daySalary),
+      };
+    }
+    values[l.name] = { on, amount: String(l.amount), parts };
   });
   return values;
 };
@@ -678,9 +714,25 @@ function MonthWorkspace({ month, locations }) {
     return [...names, ...extra].map((name) => {
       const v = values[name] || { on: false, amount: '0' };
       const kind = kindOf(name);
-      const row = { name, kind, rate: rateOf(name), base: percentBase, baseHasHoliday, ...v, days: v.days || '', daySalary: v.daySalary || '' };
+      const row = { name, kind, rate: rateOf(name), base: percentBase, baseHasHoliday, ...v };
       if (!v.on) return { ...row, amount: '0' };
-      if (kind === 'days') return { ...row, amount: String(round2(toNumber(v.days) * toNumber(v.daySalary))) };
+      if (kind === 'days') {
+        // one block per part (Holiday Payments: Normal holiday + Poya); the line amount is the total of the parts
+        const partRows = partDefsOf(name).map((def) => {
+          const p = (v.parts && v.parts[def.key]) || {};
+          const fullDays = p.fullDays || '';
+          const halfDays = p.halfDays || '';
+          const daySalary = p.daySalary || '';
+          const days = toNumber(fullDays) + toNumber(halfDays) * 0.5;
+          return { ...def, fullDays, halfDays, daySalary, days, amount: round2(days * toNumber(daySalary)) };
+        });
+        return {
+          ...row,
+          partRows,
+          days: round2(partRows.reduce((total, p) => total + p.days, 0)),
+          amount: String(round2(partRows.reduce((total, p) => total + p.amount, 0))),
+        };
+      }
       if (kind === 'percent') return { ...row, amount: String(round2((percentBase * row.rate) / 100)) };
       return row;
     });
@@ -695,19 +747,30 @@ function MonthWorkspace({ month, locations }) {
   const epfBase = round2((basic || 0) + holidayAmount);
   const deductionRows = buildRows(deductionTypes, editing?.deductions, deductValues, deductionKindOf, (name) => deductionById.get(name)?.rate ?? null, epfBase, holidayAmount > 0);
 
-  // "Yes" unlocks the amount; for a days line it also starts the day salary at basic / 30.
+  // "Yes" unlocks the amount; for a days line it shows the days + day salary boxes (every day salary is typed in).
   const toggleLine = (setValues, kindOf) => (name, on) =>
     setValues((v) => ({
       ...v,
       [name]:
         kindOf(name) === 'days'
-          ? { on, amount: '0', days: '', daySalary: on ? String(round2((basic || 0) / DAYS_PER_MONTH)) : '' }
+          ? {
+              on,
+              amount: '0',
+              parts: on
+                ? Object.fromEntries(partDefsOf(name).map((d) => [d.key, { fullDays: '', halfDays: '', daySalary: '' }]))
+                : {},
+            }
           : { on, amount: on ? '' : '0' },
     }));
   const toggleAllowance = toggleLine(setAllowValues, lineKindOfAllowance);
   const toggleDeduction = toggleLine(setDeductValues, deductionKindOf);
-  const setDays = (setValues) => (name, field, value) =>
-    setValues((v) => ({ ...v, [name]: { ...(v[name] || {}), on: true, amount: '0', [field]: value } }));
+  // one field (fullDays / halfDays / daySalary) of one part of a days line
+  const setDays = (setValues) => (name, partKey, field, value) =>
+    setValues((v) => {
+      const line = v[name] || {};
+      const parts = line.parts || {};
+      return { ...v, [name]: { ...line, on: true, amount: '0', parts: { ...parts, [partKey]: { ...(parts[partKey] || {}), [field]: value } } } };
+    });
   const showAllowances = Boolean(editing || staffId);
   const sumOn = (rows) => round2(rows.reduce((total, r) => total + (r.on ? toNumber(r.amount) : 0), 0));
   const totalAllowances = sumOn(allowanceRows);
@@ -732,17 +795,24 @@ function MonthWorkspace({ month, locations }) {
       setMessage({ type: 'err', text: 'The deductions are more than the gross salary' });
       return;
     }
-    const badDays = [...allowanceRows, ...deductionRows].find((r) => r.kind === 'days' && r.on && (toNumber(r.days) <= 0 || toNumber(r.daySalary) <= 0));
+    const badDays = [...allowanceRows, ...deductionRows].find(
+      (r) => r.kind === 'days' && r.on && (r.days <= 0 || r.days > MAX_LINE_DAYS || r.partRows.some((p) => p.days > 0 && toNumber(p.daySalary) <= 0))
+    );
     if (badDays) {
-      setMessage({ type: 'err', text: `${badDays.name}: enter the ${daysLabelOf(badDays.name).toLowerCase()} and the day salary (both more than 0), or choose No` });
+      setMessage({ type: 'err', text: `${badDays.name}: enter the days (full and / or half) with a day salary more than 0 (at most ${MAX_LINE_DAYS} days in total), or choose No` });
       return;
     }
     setSaving(true);
     try {
       // Every allowance and deduction is sent; one that is not added to this employee is 0.
-      // Days lines are sent as days + day salary and EPF / ETF as apply Yes / No (the server works the amount out).
+      // Days lines are sent as parts (full days, half days, day salary) and EPF / ETF as apply Yes / No (the server works the amount out).
       const toLine = (r) => {
-        if (r.kind === 'days' && r.on) return { name: r.name, days: r.days, daySalary: r.daySalary };
+        if (r.kind === 'days' && r.on) {
+          return {
+            name: r.name,
+            parts: r.partRows.filter((p) => p.days > 0).map((p) => ({ key: p.key, fullDays: p.fullDays || '0', halfDays: p.halfDays || '0', daySalary: p.daySalary })),
+          };
+        }
         if (r.kind === 'percent') return { name: r.name, apply: r.on };
         return { name: r.name, amount: r.on ? r.amount : '0' };
       };
@@ -776,11 +846,25 @@ function MonthWorkspace({ month, locations }) {
 
   const shown = (records || []).filter((r) => !listLocation || r.location === listLocation);
   const sum = (key) => round2(shown.reduce((total, r) => total + (r[key] || 0), 0));
+  // "Normal holiday: 2 days + 1 half day × Rs. 1,000.00; Poya: 1 day × Rs. 1,000.00" (lines saved before parts existed: "2 days × Rs. ...")
+  const daysText = (l) => {
+    if (l.parts && l.parts.length > 0) {
+      const text = l.parts
+        .map((p) => {
+          const full = p.fullDays ? `${p.fullDays} day${p.fullDays === 1 ? '' : 's'}` : '';
+          const half = p.halfDays ? `${p.halfDays} half day${p.halfDays === 1 ? '' : 's'}` : '';
+          return `${p.label ? `${p.label}: ` : ''}${[full, half].filter(Boolean).join(' + ')} × ${formatMoney(p.daySalary)}`;
+        })
+        .join('; ');
+      return ` (${text})`;
+    }
+    return l.days ? ` (${l.days} day${l.days === 1 ? '' : 's'} × ${formatMoney(l.daySalary)})` : '';
+  };
   // the hover text of the Allowances / Deductions cells (allowances that are 0 are left out)
   const lineSummary = (lines) =>
     (lines || [])
       .filter((l) => l.amount > 0)
-      .map((l) => `${l.name}: ${formatMoney(l.amount)}${l.days ? ` (${l.days} day${l.days === 1 ? '' : 's'} × ${formatMoney(l.daySalary)})` : ''}${l.rate ? ` (${l.rate}% of ${l.base ? formatMoney(l.base) : 'basic'})` : ''}`)
+      .map((l) => `${l.name}: ${formatMoney(l.amount)}${daysText(l)}${l.rate ? ` (${l.rate}% of ${l.base ? formatMoney(l.base) : 'basic'})` : ''}`)
       .join('\n');
 
   const emptyListText = records && records.length > 0 ? 'No salaries for this location in this month.' : `No salaries created for ${monthLabel(month)} yet.`;
@@ -866,7 +950,7 @@ function MonthWorkspace({ month, locations }) {
                 ) : (
                   <>
                     <p style={{ margin: '0 0 12px', color: '#4A6288', fontSize: 13 }}>
-                      Choose <strong>Yes</strong> for the deductions that apply. EPF and ETF are taken from the <strong>basic salary</strong>; if this month has a <strong>Holiday Payments</strong> amount, it is added to the basic salary first. The total of all
+                      Choose <strong>Yes</strong> for the deductions that apply. EPF and ETF are taken from the <strong>basic salary</strong>; if this month has a <strong>Holiday Payments</strong> amount (Normal holiday + Poya together), it is added to the basic salary first. The total of all
                       deductions is taken off the gross salary (basic + allowances) to give the net salary. <strong>No</strong> is saved as 0.
                     </p>
                     <LineRows rows={deductionRows} itemLabel="Deduction" onToggle={toggleDeduction} onAmount={setDeductionAmount} onDays={setDays(setDeductValues)} />

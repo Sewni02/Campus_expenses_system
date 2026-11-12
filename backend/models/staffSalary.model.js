@@ -1,26 +1,29 @@
 const mongoose = require('mongoose');
+const partSchema = new mongoose.Schema(
+  {
+    key: { type: String, required: true, maxlength: 20 },
+    label: { type: String, maxlength: 40 },
+    fullDays: { type: Number, min: 0, default: 0 },
+    halfDays: { type: Number, min: 0, default: 0 },
+    daySalary: { type: Number, required: true, min: 0 },
+    amount: { type: Number, required: true, min: 0 },
+  },
+  { _id: false }
+);
 
-// One allowance or one deduction line, e.g. { name: 'Transport', amount: 5000 }.
-// Lines that are worked out also keep how: Holiday Payments / No-Pay Leave = days x daySalary,
-// EPF / ETF = (basic salary + Holiday Payments of that month, if any) x rate %.
 const lineSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true, maxlength: 60 },
     amount: { type: Number, required: true, min: 0 },
-    days: { type: Number, min: 0 },
-    daySalary: { type: Number, min: 0 },
+    days: { type: Number, min: 0 }, // total days of all parts (a half day counts as 0.5)
+    daySalary: { type: Number, min: 0 }, // only on lines saved by an older version (before parts)
+    parts: [partSchema],
     rate: { type: Number, min: 0, max: 100 }, // EPF / ETF: the % used
     base: { type: Number, min: 0 }, // EPF / ETF: the amount the % was taken from (basic, or basic + holiday payments)
   },
   { _id: false }
 );
 
-// One monthly salary for one staff member.
-//   gross = basic salary + allowances
-//   net   = gross - deductions
-// The staff member's name / NIC / location / basic salary are COPIED into the record,
-// so changing the profile later (or deleting the person) never changes a salary
-// that was already created.
 const staffSalarySchema = new mongoose.Schema(
   {
     month: { type: String, required: true, match: /^\d{4}-(0[1-9]|1[0-2])$/ },
