@@ -14,7 +14,7 @@ const NIC_PATTERN = /^(\d{9}[VX]|\d{12})$/;
 const MOBILE_PATTERN = /^0\d{9}$/;
 const EMPLOYEE_NO_PATTERN = /^[A-Za-z0-9][A-Za-z0-9/_-]*$/;
 // Letters of any language, spaces, dots (initials), hyphens, apostrophes. \p{M} (combining marks) and
-// ‍ (joiner) are needed for Sinhala / Tamil names - their vowel signs and conjuncts are not "letters".
+// ‍ (zero-width joiner) are needed for Sinhala / Tamil names - their vowel signs and conjuncts are not "letters".
 const NAME_PATTERN = /^[\p{L}][\p{L}\p{M}‍ .'-]*$/u;
 
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -457,6 +457,16 @@ const getSalaries = async ({ month, location } = {}) => {
   return StaffSalary.find(filter).sort({ locationName: 1, staffName: 1 }).lean();
 };
 
+// Every month that has salaries saved (newest first), with how many salaries and the total net salary.
+// Used for the "Saved months" list, so an old month can be opened (and downloaded) any time.
+const getSalaryMonths = async () => {
+  const rows = await StaffSalary.aggregate([
+    { $group: { _id: '$month', count: { $sum: 1 }, totalNet: { $sum: '$netSalary' } } },
+    { $sort: { _id: -1 } },
+  ]);
+  return rows.map((r) => ({ month: r._id, count: r.count, totalNet: round2(r.totalNet) }));
+};
+
 // The BASIC SALARY always comes from the staff profile (never from the request), so the form
 // cannot be used to change it - the profile is the one place it is edited.
 const createSalary = async (body = {}, userId) => {
@@ -537,6 +547,7 @@ module.exports = {
   addStaff,
   updateStaff,
   deleteStaff,
+  getSalaryMonths,
   getSalaries,
   createSalary,
   updateSalary,

@@ -44,13 +44,13 @@ const getStaff = asyncHandler(async (req, res) => {
   res.json(await staffSalaryService.getStaff(req.query));
 });
 
-// POST /api/staff-salary/staff   { locationId, name, nic, mobile, joinedDate: 'YYYY-MM-DD', basicSalary }
+// POST /api/staff-salary/staff   { locationId, employeeNo, name, nic, mobile, joinedDate: 'YYYY-MM-DD', basicSalary }
 const addStaff = asyncHandler(async (req, res) => {
   const result = await staffSalaryService.addStaff(req.body);
   res.status(201).json(result);
 });
 
-// PUT /api/staff-salary/staff/:id   { name, nic, mobile, joinedDate, basicSalary }   (this is also how the basic salary is changed)
+// PUT /api/staff-salary/staff/:id   { employeeNo, name, nic, mobile, joinedDate, basicSalary }   (this is also how the basic salary is changed)
 const updateStaff = asyncHandler(async (req, res) => {
   res.json(await staffSalaryService.updateStaff(req.params.id, req.body));
 });
@@ -58,6 +58,11 @@ const updateStaff = asyncHandler(async (req, res) => {
 // DELETE /api/staff-salary/staff/:id
 const deleteStaff = asyncHandler(async (req, res) => {
   res.json(await staffSalaryService.deleteStaff(req.params.id));
+});
+
+// GET /api/staff-salary/salaries/months   (every month that has saved salaries, newest first)
+const getSalaryMonths = asyncHandler(async (req, res) => {
+  res.json(await staffSalaryService.getSalaryMonths());
 });
 
 // GET /api/staff-salary/salaries?month=2026-10&location=<id optional>
@@ -93,6 +98,7 @@ module.exports = {
   addStaff,
   updateStaff,
   deleteStaff,
+  getSalaryMonths,
   getSalaries,
   createSalary,
   updateSalary,
