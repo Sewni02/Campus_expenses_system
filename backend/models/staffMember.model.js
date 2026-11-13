@@ -5,6 +5,8 @@ const mongoose = require('mongoose');
 const staffMemberSchema = new mongoose.Schema(
   {
     location: { type: mongoose.Schema.Types.ObjectId, ref: 'StaffLocation', required: true, index: true },
+    // Unique across ALL locations. Stored in capitals. (Old profiles may not have one yet - edit them to add it.)
+    employeeNo: { type: String, trim: true, uppercase: true, maxlength: 20 },
     name: { type: String, required: true, trim: true, maxlength: 100 },
     // Sri Lankan NIC: 9 digits + V/X (old format) or 12 digits (new format). Stored in capitals.
     nic: { type: String, required: true, trim: true, uppercase: true },
@@ -19,5 +21,8 @@ const staffMemberSchema = new mongoose.Schema(
 
 // The same NIC cannot be added twice to the same location.
 staffMemberSchema.index({ location: 1, nic: 1 }, { unique: true });
+
+// Employee numbers are unique; "sparse" lets older profiles that have no number yet stay valid.
+staffMemberSchema.index({ employeeNo: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('StaffMember', staffMemberSchema);

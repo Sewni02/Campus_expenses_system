@@ -14,6 +14,7 @@ const toNumber = (value) => {
 
 // Typing filters (the server checks the same rules again).
 const cleanNic = (v) => v.toUpperCase().replace(/[^0-9VX]/g, '').slice(0, 12);
+const cleanEmployeeNo = (v) => v.toUpperCase().replace(/[^A-Z0-9/_-]/g, '').slice(0, 20);
 const cleanMobile = (v) => v.replace(/\D/g, '').slice(0, 10);
 const cleanAmount = (v) => {
   let c = v.replace(/[^0-9.]/g, '');
@@ -29,12 +30,12 @@ const actionsCell = { display: 'flex', gap: 8, justifyContent: 'flex-end' };
 // Staff Salary (super admin sidebar tab)
 //
 //   Tab "Staff & Locations" -> pick a location (or "+ Add location"), then add / edit /
-//                              delete the staff members of that location. The profile holds
-//                              name, NIC, mobile, date joined and the BASIC SALARY.
+//                              delete the staff members of that location. The profile holds the
+//                              employee number, name, NIC, mobile, date joined and the BASIC SALARY.
 //   Tab "Monthly Salary"    -> pick the month, the location and the employee (the basic salary
 //                              fills in by itself), then add Allowances and Deductions.
-//   Tab "Attendance"       -> the monthly attendance sheet: a permanent employee list, and for each month the
-//                              normal days and the extra-work days of every employee (see StaffAttendance.jsx).
+//   Tab "Attendance"       -> pick a location, tick its employees, then fill the monthly attendance chart
+//                              (see StaffAttendance.jsx).
 // The selected tab ("ssec") and location ("sloc") live in the URL, so a refresh or the
 // browser back button keeps you where you were.
 // ---------------------------------------------------------------------------
@@ -69,12 +70,12 @@ function StaffSalary() {
         ))}
       </div>
 
-      {loadError && section !== 'attendance' && <div className="pc-alert err">{loadError}</div>}
+      {loadError && <div className="pc-alert err">{loadError}</div>}
 
-      {section === 'attendance' ? (
-        <StaffAttendance />
-      ) : locations === null ? (
+      {locations === null ? (
         <p style={{ color: '#7C8FAD' }}>Loading...</p>
+      ) : section === 'attendance' ? (
+        <StaffAttendance locations={locations} />
       ) : section === 'staff' ? (
         <StaffSection locations={locations} onLocationsChanged={loadLocations} />
       ) : (
@@ -153,7 +154,7 @@ function StaffSection({ locations, onLocationsChanged }) {
   );
 }
 
-const BLANK_STAFF = { name: '', nic: '', mobile: '', joinedDate: '', basicSalary: '' };
+const BLANK_STAFF = { employeeNo: '', name: '', nic: '', mobile: '', joinedDate: '', basicSalary: '' };
 
 // The staff of ONE location (remounted with a fresh state whenever another location is picked).
 function LocationStaff({ location, onLocationsChanged, onDeleted }) {
@@ -185,6 +186,7 @@ function LocationStaff({ location, onLocationsChanged, onDeleted }) {
   const startEdit = (s) => {
     setEditing(s);
     setForm({
+      employeeNo: s.employeeNo || '',
       name: s.name,
       nic: s.nic,
       mobile: s.mobile,
@@ -214,7 +216,7 @@ function LocationStaff({ location, onLocationsChanged, onDeleted }) {
   };
 
   const remove = async (s) => {
-    if (!window.confirm(`Delete ${s.name}? Salaries already created for this person stay in the records.`)) return;
+    if (!window.confirm(`Delete ${s.name}? Salaries already created for this person stay in the records; the attendance of this person is deleted.`)) return;
     setMessage(null);
     try {
       const res = await axios.delete(`/api/staff-salary/staff/${s._id}`);
@@ -255,6 +257,18 @@ function LocationStaff({ location, onLocationsChanged, onDeleted }) {
       <div className="pc-panel" ref={formRef}>
         <h3>{editing ? `Edit ${editing.name}` : `Add a staff member to ${location.name}`}</h3>
         <form className="pc-form" onSubmit={submit}>
+          <label className="pc-field">
+            Employee number
+            <input
+              type="text"
+              required
+              maxLength={20}
+              placeholder="E001"
+              title="Letters, numbers, - _ and / (it must be different for every employee)"
+              value={form.employeeNo}
+              onChange={(e) => setField('employeeNo', cleanEmployeeNo(e.target.value))}
+            />
+          </label>
           <label className="pc-field">
             Full name
             <input type="text" required maxLength={100} value={form.name} onChange={(e) => setField('name', e.target.value)} />
@@ -313,6 +327,7 @@ function LocationStaff({ location, onLocationsChanged, onDeleted }) {
         <table className="pc-table">
           <thead>
             <tr>
+              <th>Emp. no</th>
               <th>Name</th>
               <th>NIC</th>
               <th>Mobile</th>
@@ -323,13 +338,14 @@ function LocationStaff({ location, onLocationsChanged, onDeleted }) {
           </thead>
           <tbody>
             {staff === null && (
-              <tr><td colSpan={6} className="pc-empty">Loading...</td></tr>
+              <tr><td colSpan={7} className="pc-empty">Loading...</td></tr>
             )}
             {staff && staff.length === 0 && (
-              <tr><td colSpan={6} className="pc-empty">No staff members in {location.name} yet. Add the first one above.</td></tr>
+              <tr><td colSpan={7} className="pc-empty">No staff members in {location.name} yet. Add the first one above.</td></tr>
             )}
             {staff && staff.map((s) => (
               <tr key={s._id}>
+                <td>{s.employeeNo || <span style={{ color: '#B3382C' }} title="Edit this employee and add the employee number">— add</span>}</td>
                 <td>{s.name}</td>
                 <td>{s.nic}</td>
                 <td>{s.mobile}</td>
@@ -879,7 +895,7 @@ function MonthWorkspace({ month, locations }) {
         <form className="pc-form" onSubmit={submit}>
           {editing ? (
             <div className="wide" style={infoBox}>
-              <strong>{editing.staffName}</strong> · {editing.locationName} · NIC {editing.nic || '-'}
+              {editing.employeeNo ? `${editing.employeeNo} · ` : ''}<strong>{editing.staffName}</strong> · {editing.locationName} · NIC {editing.nic || '-'}
             </div>
           ) : (
             <>
@@ -899,7 +915,7 @@ function MonthWorkspace({ month, locations }) {
                   </option>
                   {staffList.map((s) => (
                     <option key={s._id} value={s._id} disabled={doneIds.has(s._id)}>
-                      {s.name} · {s.nic}{doneIds.has(s._id) ? ' (salary already created)' : ''}
+                      {s.employeeNo ? `${s.employeeNo} · ` : ''}{s.name} · {s.nic}{doneIds.has(s._id) ? ' (salary already created)' : ''}
                     </option>
                   ))}
                 </select>
@@ -1018,6 +1034,7 @@ function MonthWorkspace({ month, locations }) {
             {shown.map((r) => (
               <tr key={r._id}>
                 <td>
+                  {r.employeeNo && <b>{r.employeeNo} · </b>}
                   {r.staffName}
                   <br />
                   <small style={{ color: '#4A6288' }}>{r.nic}</small>

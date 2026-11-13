@@ -22,7 +22,7 @@ router.get('/locations', c.getLocations);
 router.post('/locations', c.addLocation);
 router.delete('/locations/:id', c.deleteLocation);
 
-// Staff members (profile + basic salary)
+// Staff members (profile + employee number + basic salary)
 router.get('/staff', c.getStaff);
 router.post('/staff', c.addStaff);
 router.put('/staff/:id', c.updateStaff);
@@ -34,11 +34,9 @@ router.post('/salaries', c.createSalary);
 router.put('/salaries/:id', c.updateSalary);
 router.delete('/salaries/:id', c.deleteSalary);
 
-// Employee attendance (the employee list + one sheet per month: normal days, extra-work days, leaves, arrival % and allowance)
-router.get('/attendance/employees', a.getEmployees);
-router.post('/attendance/employees', a.addEmployee);
-router.put('/attendance/employees/:id', a.updateEmployee);
-router.delete('/attendance/employees/:id', a.deleteEmployee);
+// Attendance: the employees on the sheet of a location, and one sheet per month and location
+// (arrived / extra / leave days, arrival % and allowance).
+router.put('/attendance/selection', a.saveSelection);
 router.get('/attendance', a.getSheet);
 router.put('/attendance', a.saveSheet);
 // Arrival allowance ranges (e.g. 90% and above = Rs. 5,000) - editable

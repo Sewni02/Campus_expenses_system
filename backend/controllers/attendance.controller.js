@@ -1,35 +1,21 @@
 const asyncHandler = require('../utils/asyncHandler');
 const attendanceService = require('../services/attendance.service');
 
-// GET /api/staff-salary/attendance/employees
-const getEmployees = asyncHandler(async (req, res) => {
-  res.json(await attendanceService.getEmployees());
+// PUT /api/staff-salary/attendance/selection   { location, staffIds: [...] }
+// The staff members of that location who are on its attendance sheet (in the order they were added).
+const saveSelection = asyncHandler(async (req, res) => {
+  res.json(await attendanceService.saveSelection(req.body));
 });
 
-// POST /api/staff-salary/attendance/employees   { employeeNo, name }
-const addEmployee = asyncHandler(async (req, res) => {
-  const result = await attendanceService.addEmployee(req.body);
-  res.status(201).json(result);
-});
-
-// PUT /api/staff-salary/attendance/employees/:id   { employeeNo, name }
-const updateEmployee = asyncHandler(async (req, res) => {
-  res.json(await attendanceService.updateEmployee(req.params.id, req.body));
-});
-
-// DELETE /api/staff-salary/attendance/employees/:id   (also deletes the attendance of that employee)
-const deleteEmployee = asyncHandler(async (req, res) => {
-  res.json(await attendanceService.deleteEmployee(req.params.id));
-});
-
-// GET /api/staff-salary/attendance?month=2026-11   (every employee + the days marked that month)
+// GET /api/staff-salary/attendance?month=2026-11&location=<id>
+// The sheet of that location: employees on it + their numbers of the month, total days, ranges, candidates.
 const getSheet = asyncHandler(async (req, res) => {
   res.json(await attendanceService.getSheet(req.query));
 });
 
 // PUT /api/staff-salary/attendance
-//   { month, totalDays? (1-31, null = the days of the calendar month),
-//     rows?: [{ employeeId, normalDates: [1, 2], extraDates: [7], medicalLeave, casualLeave, noPayDays }] }
+//   { month, location, totalDays? (1-31, null = the days of the calendar month),
+//     rows?: [{ employeeId, arrivedDays, extraDays, leaveDays, medicalLeave, casualLeave, noPayDays }] }
 const saveSheet = asyncHandler(async (req, res) => {
   res.json(await attendanceService.saveSheet(req.body));
 });
@@ -44,4 +30,4 @@ const setRanges = asyncHandler(async (req, res) => {
   res.json(await attendanceService.setRanges(req.body));
 });
 
-module.exports = { getEmployees, addEmployee, updateEmployee, deleteEmployee, getSheet, saveSheet, getRanges, setRanges };
+module.exports = { saveSelection, getSheet, saveSheet, getRanges, setRanges };
