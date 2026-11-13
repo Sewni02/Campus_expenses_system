@@ -3,6 +3,7 @@ import axios from 'axios';
 import useTabState from '../hooks/useTabState';
 import StaffAttendance from './StaffAttendance';
 import { formatMoney, formatDate, monthLabel, currentMonthString } from '../utils/pettyCash';
+import { downloadSalarySheetPdf, downloadSalarySheetCsv } from '../utils/staffSalaryExport';
 import './PettyCash.css'; // re-uses the same cards / tables / buttons / tabs as Petty Cash
 
 const apiError = (err, fallback) => err.response?.data?.message || fallback;
@@ -32,8 +33,9 @@ const actionsCell = { display: 'flex', gap: 8, justifyContent: 'flex-end' };
 //   Tab "Staff & Locations" -> pick a location (or "+ Add location"), then add / edit /
 //                              delete the staff members of that location. The profile holds the
 //                              employee number, name, NIC, mobile, date joined and the BASIC SALARY.
-//   Tab "Monthly Salary"    -> pick the month, the location and the employee (the basic salary
-//                              fills in by itself), then add Allowances and Deductions.
+//   Tab "Monthly Salary"    -> pick the month (or jump to a saved month), the location and the employee
+//                              (the basic salary fills in by itself), then add Allowances and Deductions.
+//                              The salaries of a month can be downloaded as a PDF or an Excel (CSV) file.
 //   Tab "Attendance"       -> pick a location, tick its employees, then fill the monthly attendance chart
 //                              (see StaffAttendance.jsx).
 // The selected tab ("ssec") and location ("sloc") live in the URL, so a refresh or the
@@ -370,22 +372,46 @@ function LocationStaff({ location, onLocationsChanged, onDeleted }) {
 
 function SalarySection({ locations }) {
   const [month, setMonth] = useState(currentMonthString());
+  const [savedMonths, setSavedMonths] = useState([]); // every month that already has salaries
   const validMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
+
+  const loadSavedMonths = () =>
+    axios
+      .get('/api/staff-salary/salaries/months')
+      .then((res) => setSavedMonths(res.data))
+      .catch(() => {}); // the list is only a shortcut - the month picker still works without it
+  useEffect(() => { loadSavedMonths(); }, []);
 
   return (
     <>
       <div className="pc-toolbar">
-        <label className="pc-field" style={{ minWidth: 220 }}>
-          Salary month
-          <input type="month" required value={month} onChange={(e) => setMonth(e.target.value)} />
-        </label>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <label className="pc-field" style={{ minWidth: 220 }}>
+            Salary month
+            <input type="month" required value={month} onChange={(e) => setMonth(e.target.value)} />
+          </label>
+          <label className="pc-field" style={{ minWidth: 260 }}>
+            Saved months
+            <select
+              value={savedMonths.some((m) => m.month === month) ? month : ''}
+              onChange={(e) => e.target.value && setMonth(e.target.value)}
+            >
+              <option value="">{savedMonths.length === 0 ? 'No saved salaries yet' : 'Jump to a saved month...'}</option>
+              {savedMonths.map((m) => (
+                <option key={m.month} value={m.month}>
+                  {monthLabel(m.month)} · {m.count} salar{m.count === 1 ? 'y' : 'ies'}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       {locations.length === 0 ? (
         <div className="pc-alert warn">Add a location and its staff in the “Staff &amp; Locations” tab first.</div>
       ) : validMonth ? (
         // key = month: picking another month starts a clean form and loads that month's salaries.
-        <MonthWorkspace key={month} month={month} locations={locations} />
+        <MonthWorkspace key={month} month={month} locations={locations} onChanged={loadSavedMonths} />
       ) : (
         <p style={{ color: '#7C8FAD' }}>Pick a month to create or view its salaries.</p>
       )}
@@ -595,7 +621,8 @@ const valuesFromLines = (lines) => {
 };
 
 // The salary FORM for one month + that month's salaries.
-function MonthWorkspace({ month, locations }) {
+// onChanged() is called after a salary is saved or deleted, so the "Saved months" list stays up to date.
+function MonthWorkspace({ month, locations, onChanged }) {
   const [records, setRecords] = useState(null);
   const [listLocation, setListLocation] = useState(''); // '' = every location
   const [message, setMessage] = useState(null);
@@ -818,6 +845,12 @@ function MonthWorkspace({ month, locations }) {
       setMessage({ type: 'err', text: `${badDays.name}: enter the days (full and / or half) with a day salary more than 0 (at most ${MAX_LINE_DAYS} days in total), or choose No` });
       return;
     }
+    // A "Yes" line with no amount typed (it may be on the other mini tab, where the browser cannot point at it).
+    const noAmount = [...allowanceRows, ...deductionRows].find((r) => r.kind === 'amount' && r.on && toNumber(r.amount) <= 0);
+    if (noAmount) {
+      setMessage({ type: 'err', text: `${noAmount.name}: type the amount, or choose No` });
+      return;
+    }
     setSaving(true);
     try {
       // Every allowance and deduction is sent; one that is not added to this employee is 0.
@@ -838,6 +871,7 @@ function MonthWorkspace({ month, locations }) {
         : await axios.post('/api/staff-salary/salaries', { ...body, staffId, month });
       setMessage({ type: 'ok', text: res.data.message });
       await loadRecords();
+      onChanged(); // refresh the "Saved months" list
       resetForm();
       if (editing) pickLocation(locationId);
     } catch (err) {
@@ -855,12 +889,14 @@ function MonthWorkspace({ month, locations }) {
       setMessage({ type: 'ok', text: res.data.message });
       if (editing && editing._id === rec._id) cancelEdit();
       await loadRecords();
+      onChanged(); // refresh the "Saved months" list
     } catch (err) {
       setMessage({ type: 'err', text: apiError(err, 'Could not delete the salary') });
     }
   };
 
   const shown = (records || []).filter((r) => !listLocation || r.location === listLocation);
+  const listLocationName = listLocation ? locations.find((l) => l._id === listLocation)?.name || '' : 'All locations';
   const sum = (key) => round2(shown.reduce((total, r) => total + (r[key] || 0), 0));
   // "Normal holiday: 2 days + 1 half day × Rs. 1,000.00; Poya: 1 day × Rs. 1,000.00" (lines saved before parts existed: "2 days × Rs. ...")
   const daysText = (l) => {
@@ -1002,13 +1038,31 @@ function MonthWorkspace({ month, locations }) {
 
       <div className="pc-toolbar">
         <h2 style={{ fontSize: 18 }}>Salaries for {monthLabel(month)}</h2>
-        <label className="pc-field" style={{ minWidth: 200 }}>
-          Show location
-          <select value={listLocation} onChange={(e) => setListLocation(e.target.value)}>
-            <option value="">All locations</option>
-            {locations.map((l) => <option key={l._id} value={l._id}>{l.name}</option>)}
-          </select>
-        </label>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <label className="pc-field" style={{ minWidth: 200 }}>
+            Show location
+            <select value={listLocation} onChange={(e) => setListLocation(e.target.value)}>
+              <option value="">All locations</option>
+              {locations.map((l) => <option key={l._id} value={l._id}>{l.name}</option>)}
+            </select>
+          </label>
+          <button
+            className="pc-btn-sm"
+            type="button"
+            disabled={shown.length === 0}
+            onClick={() => downloadSalarySheetPdf({ month, records: shown, locationName: listLocationName })}
+          >
+            Download PDF
+          </button>
+          <button
+            className="pc-btn-sm"
+            type="button"
+            disabled={shown.length === 0}
+            onClick={() => downloadSalarySheetCsv({ month, records: shown, locationName: listLocationName })}
+          >
+            Download Excel (CSV)
+          </button>
+        </div>
       </div>
 
       <div className="pc-table-wrap">

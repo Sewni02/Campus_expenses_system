@@ -29,6 +29,8 @@ router.put('/staff/:id', c.updateStaff);
 router.delete('/staff/:id', c.deleteStaff);
 
 // Monthly salaries (basic + allowances - deductions)
+// /salaries/months = every month that has saved salaries (for the "Saved months" list)
+router.get('/salaries/months', c.getSalaryMonths);
 router.get('/salaries', c.getSalaries);
 router.post('/salaries', c.createSalary);
 router.put('/salaries/:id', c.updateSalary);
