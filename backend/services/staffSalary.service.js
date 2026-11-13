@@ -7,10 +7,12 @@ const DeductionType = require('../models/deductiontype.model');
 const { ApiError, findOrFail } = require('../utils/ApiError');
 const { requireString, optionalString, validateAmount } = require('../utils/validators');
 const { exactRegex } = require('../utils/escapeRegex');
+const attendanceService = require('./attendance.service');
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 const NIC_PATTERN = /^(\d{9}[VX]|\d{12})$/;
 const MOBILE_PATTERN = /^0\d{9}$/;
+const EMPLOYEE_NO_PATTERN = /^[A-Za-z0-9][A-Za-z0-9/_-]*$/;
 // Letters of any language, spaces, dots (initials), hyphens, apostrophes. \p{M} (combining marks) and
 // ‍ (joiner) are needed for Sinhala / Tamil names - their vowel signs and conjuncts are not "letters".
 const NAME_PATTERN = /^[\p{L}][\p{L}\p{M}‍ .'-]*$/u;
@@ -84,8 +86,13 @@ const parseJoinedDate = (value) => {
   return date;
 };
 
-// Checks and cleans the 5 profile fields (used for both adding and editing).
+// Checks and cleans the 6 profile fields (used for both adding and editing).
 const readStaffFields = (body = {}) => {
+  const employeeNo = requireString(body.employeeNo, 'Employee number', { max: 20 }).toUpperCase();
+  if (!EMPLOYEE_NO_PATTERN.test(employeeNo)) {
+    throw new ApiError(400, 'Employee number can only have letters, numbers, - _ and /');
+  }
+
   const name = requireString(body.name, 'Name', { max: 100 });
   if (!NAME_PATTERN.test(name)) {
     throw new ApiError(400, 'Name can only contain letters, spaces, dots, hyphens and apostrophes');
@@ -102,6 +109,7 @@ const readStaffFields = (body = {}) => {
   }
 
   return {
+    employeeNo,
     name,
     nic,
     mobile,
@@ -118,6 +126,15 @@ const assertNicFree = async (locationId, nic, exceptStaffId) => {
   }
 };
 
+// The employee number is unique across ALL locations.
+const assertEmployeeNoFree = async (employeeNo, exceptStaffId) => {
+  const filter = { employeeNo };
+  if (exceptStaffId) filter._id = { $ne: exceptStaffId };
+  if (await StaffMember.exists(filter)) {
+    throw new ApiError(409, `Employee number ${employeeNo} is already used by another staff member`);
+  }
+};
+
 // All staff, or only one location's staff when ?location=<id> is given.
 const getStaff = async ({ location } = {}) => {
   const filter = {};
@@ -129,6 +146,7 @@ const addStaff = async (body = {}) => {
   const fields = readStaffFields(body);
   const location = await findOrFail(StaffLocation, idOf(body.locationId, 'location'), 'Location not found');
   await assertNicFree(location._id, fields.nic);
+  await assertEmployeeNoFree(fields.employeeNo);
 
   const staff = await StaffMember.create({ ...fields, location: location._id });
   return { message: 'Staff member added successfully', staff };
@@ -140,6 +158,7 @@ const updateStaff = async (staffId, body = {}) => {
   const staff = await findOrFail(StaffMember, staffId, 'Staff member not found');
   const fields = readStaffFields(body);
   await assertNicFree(staff.location, fields.nic, staff._id);
+  await assertEmployeeNoFree(fields.employeeNo, staff._id);
 
   Object.assign(staff, fields);
   await staff.save();
@@ -147,9 +166,11 @@ const updateStaff = async (staffId, body = {}) => {
 };
 
 // Salaries already created for this person stay in the records (they hold their own copy of the details).
+// The attendance of this person (and his / her place on the attendance sheet) is deleted.
 const deleteStaff = async (staffId) => {
   const staff = await findOrFail(StaffMember, staffId, 'Staff member not found');
   await staff.deleteOne();
+  await attendanceService.forgetStaff(staff._id);
   return { message: 'Staff member deleted successfully' };
 };
 
@@ -458,6 +479,7 @@ const createSalary = async (body = {}, userId) => {
     location: location._id,
     locationName: location.name,
     staff: staff._id,
+    employeeNo: staff.employeeNo,
     staffName: staff.name,
     nic: staff.nic,
     basicSalary: staff.basicSalary,
@@ -475,6 +497,12 @@ const createSalary = async (body = {}, userId) => {
 // when the salary was created (delete + create again to pick up a new basic salary).
 const updateSalary = async (salaryId, body = {}) => {
   const salary = await findOrFail(StaffSalary, salaryId, 'Salary record not found');
+
+  // Salaries created before the employee number existed pick it up from the profile the first time they are edited.
+  if (!salary.employeeNo) {
+    const profile = await StaffMember.findById(salary.staff).select('employeeNo').lean();
+    if (profile && profile.employeeNo) salary.employeeNo = profile.employeeNo;
+  }
 
   const typeNames = (await getAllowanceTypes()).map((t) => t.name);
   const allowances = readAllowances(body.allowances, typeNames, salary.allowances.map((l) => l.name));

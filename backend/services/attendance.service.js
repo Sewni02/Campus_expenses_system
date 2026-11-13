@@ -1,15 +1,13 @@
 const mongoose = require('mongoose');
-const AttendanceEmployee = require('../models/attendanceEmployee.model');
+const StaffLocation = require('../models/staffLocation.model');
+const StaffMember = require('../models/staffMember.model');
+const AttendanceSelection = require('../models/attendanceSelection.model');
 const AttendanceRecord = require('../models/attendanceRecord.model');
 const AttendanceMonth = require('../models/attendanceMonth.model');
 const AttendanceSetting = require('../models/attendanceSetting.model');
 const { ApiError, findOrFail } = require('../utils/ApiError');
-const { requireString } = require('../utils/validators');
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
-const EMPLOYEE_NO_PATTERN = /^[A-Za-z0-9][A-Za-z0-9/_-]*$/;
-// Letters of any language, spaces, dots (initials), hyphens, apostrophes (\p{M} / joiner for Sinhala / Tamil names).
-const NAME_PATTERN = /^[\p{L}][\p{L}\p{M}‍ .'-]*$/u;
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
@@ -45,61 +43,46 @@ const readNumber = (value, field) => {
 const hasAtMost2Decimals = (n) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6;
 
 // ---------------------------------------------------------------------------
-// Employees (the permanent list shown on every month's sheet)
+// Employees on the sheet
+//   The employees are the STAFF MEMBERS of Staff & Locations (name + employee number). For each location the
+//   accountant ticks the ones whose attendance is taken; they are then on the sheet of every month.
 // ---------------------------------------------------------------------------
 
-const readEmployeeFields = (body = {}) => {
-  const employeeNo = requireString(body.employeeNo, 'Employee number', { max: 20 }).toUpperCase();
-  if (!EMPLOYEE_NO_PATTERN.test(employeeNo)) {
-    throw new ApiError(400, 'Employee number can only have letters, numbers, - _ and /');
+// E2 before E10 (numbers inside the employee number are compared as numbers).
+const byEmployeeNo = (a, b) =>
+  (a.employeeNo || '').localeCompare(b.employeeNo || '', undefined, { numeric: true }) || a.name.localeCompare(b.name);
+
+// PUT { location, staffIds: [...] } -> the staff members of that location who are on its attendance sheet.
+const saveSelection = async (body = {}) => {
+  const location = await findOrFail(StaffLocation, idOf(body.location, 'location'), 'Location not found');
+  if (!Array.isArray(body.staffIds)) throw new ApiError(400, 'staffIds must be a list');
+  if (body.staffIds.length > 500) throw new ApiError(400, 'Too many employees');
+  const ids = [...new Set(body.staffIds.map((id) => idOf(id, 'employee')))];
+
+  const found = await StaffMember.find({ _id: { $in: ids }, location: location._id }).select('employeeNo name').lean();
+  if (found.length !== ids.length) {
+    throw new ApiError(400, 'Some of the selected employees are not in this location any more - reload the page');
   }
-  const name = requireString(body.name, 'Name', { max: 100 });
-  if (!NAME_PATTERN.test(name)) throw new ApiError(400, 'Name can only have letters, spaces, dots, hyphens and apostrophes');
-  return { employeeNo, name };
-};
-
-const assertNumberFree = async (employeeNo, exceptId) => {
-  const filter = { employeeNo };
-  if (exceptId) filter._id = { $ne: exceptId };
-  if (await AttendanceEmployee.exists(filter)) {
-    throw new ApiError(400, `Employee number ${employeeNo} is already used`);
+  const noNumber = found.find((s) => !s.employeeNo);
+  if (noNumber) {
+    throw new ApiError(400, `${noNumber.name} has no employee number yet - add it in Staff & Locations first`);
   }
-};
 
-const getEmployees = async () => AttendanceEmployee.find().sort({ employeeNo: 1 });
-
-const addEmployee = async (body = {}) => {
-  const fields = readEmployeeFields(body);
-  await assertNumberFree(fields.employeeNo);
+  const save = () =>
+    AttendanceSelection.findOneAndUpdate({ location: location._id }, { $set: { staff: ids } }, { upsert: true, new: true, setDefaultsOnInsert: true });
   try {
-    const employee = await AttendanceEmployee.create(fields);
-    return { message: 'Employee added successfully', employee };
+    await save();
   } catch (err) {
-    if (err.code === 11000) throw new ApiError(400, `Employee number ${fields.employeeNo} is already used`);
-    throw err;
+    if (err.code !== 11000) throw err;
+    await save(); // two first-time saves at once - the second one now only updates
   }
+  return { message: 'Employees on the sheet saved successfully' };
 };
 
-const updateEmployee = async (employeeId, body = {}) => {
-  const employee = await findOrFail(AttendanceEmployee, employeeId, 'Employee not found');
-  const fields = readEmployeeFields(body);
-  await assertNumberFree(fields.employeeNo, employee._id);
-  Object.assign(employee, fields);
-  try {
-    await employee.save();
-  } catch (err) {
-    if (err.code === 11000) throw new ApiError(400, `Employee number ${fields.employeeNo} is already used`);
-    throw err;
-  }
-  return { message: 'Employee updated successfully', employee };
-};
-
-// Deleting an employee also deletes his / her attendance of every month.
-const deleteEmployee = async (employeeId) => {
-  const employee = await findOrFail(AttendanceEmployee, employeeId, 'Employee not found');
-  await AttendanceRecord.deleteMany({ employee: employee._id });
-  await employee.deleteOne();
-  return { message: 'Employee deleted successfully' };
+// Called when a staff member is deleted: off the sheets, and his / her attendance is deleted too.
+const forgetStaff = async (staffId) => {
+  await AttendanceSelection.updateMany({ staff: staffId }, { $pull: { staff: staffId } });
+  await AttendanceRecord.deleteMany({ employee: staffId });
 };
 
 // ---------------------------------------------------------------------------
@@ -182,26 +165,19 @@ const allowanceFor = (percent, ranges) => {
 // Monthly sheet
 // ---------------------------------------------------------------------------
 
-// A list of days of the month: whole numbers 1..daysInMonth, no duplicates.
-const readDates = (value, field, maxDay) => {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) throw new ApiError(400, `${field} must be a list of days`);
-  const seen = new Set();
-  value.forEach((item) => {
-    if (!Number.isInteger(item) || item < 1 || item > maxDay) {
-      throw new ApiError(400, `${field}: each day must be a whole number from 1 to ${maxDay}`);
-    }
-    if (seen.has(item)) throw new ApiError(400, `${field}: day ${item} is listed twice`);
-    seen.add(item);
-  });
-  return [...seen].sort((a, b) => a - b);
-};
+// The numbers of the paper report. Every one is typed in as whole or half days (0, 0.5, 1, 1.5 ... 31).
+const SHEET_FIELDS = [
+  ['arrivedDays', 'Arrived days'],
+  ['extraDays', 'Extra days'],
+  ['leaveDays', 'Leave days'],
+  ['medicalLeave', 'Medical leave'],
+  ['casualLeave', 'Casual leave'],
+  ['noPayDays', 'No-pay days'],
+];
 
-// Leave days: whole or half days (0, 0.5, 1, 1.5 ... 31).
-// undefined = not sent (the saved value stays), blank / null = 0.
-const readLeave = (value, field) => {
-  if (value === undefined) return undefined;
-  if (value === null || (typeof value === 'string' && value.trim() === '')) return 0;
+// blank / not sent = 0
+const readDays = (value, field) => {
+  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) return 0;
   const number = readNumber(value, field);
   if (number > 31 || !Number.isInteger(number * 2)) {
     throw new ApiError(400, `${field} must be whole or half days (0, 0.5, 1, 1.5 ... up to 31)`);
@@ -220,56 +196,73 @@ const readTotalDays = (value) => {
 };
 
 const sheetRow = (employee, record, totalDays, ranges) => {
-  const normalDates = record ? record.normalDates : [];
-  const extraDates = record ? record.extraDates : [];
-  const arrivalDays = normalDates.length + extraDates.length;
+  const value = (key) => (record && record[key]) || 0;
+  const arrivalDays = value('arrivedDays') + value('extraDays'); // extra work days are arrival days too
   const percent = percentOf(arrivalDays, totalDays);
   return {
     _id: employee._id,
     employeeNo: employee.employeeNo,
     name: employee.name,
-    normalDates,
-    extraDates,
-    normalDays: normalDates.length,
-    extraDays: extraDates.length,
+    arrivedDays: value('arrivedDays'),
+    extraDays: value('extraDays'),
     arrivalDays,
-    medicalLeave: (record && record.medicalLeave) || 0,
-    casualLeave: (record && record.casualLeave) || 0,
-    noPayDays: (record && record.noPayDays) || 0,
+    leaveDays: value('leaveDays'),
+    medicalLeave: value('medicalLeave'),
+    casualLeave: value('casualLeave'),
+    noPayDays: value('noPayDays'),
     arrivalPercentage: round2(percent),
     allowance: allowanceFor(percent, ranges),
   };
 };
 
-// GET ?month=2026-11 -> every employee of the list with his / her attendance of that month
-// (employees with nothing marked yet come back with empty lists and 0 days), the total days of the month
-// (the calendar days unless it was changed) and the allowance ranges.
+// GET ?month=2026-11&location=<id> -> the employees on the sheet of that location (in the order they were added)
+// with his / her numbers of that month (0 until typed in), the total days of the month (the calendar days unless
+// it was changed), the allowance ranges, and `candidates` = every staff member of the location with
+// `selected` (the employee numbers the accountant can add to the sheet).
 const getSheet = async (query = {}) => {
   const month = parseMonth(query.month);
-  const [employees, records, monthSetting, ranges] = await Promise.all([
-    getEmployees(),
-    AttendanceRecord.find({ month }),
+  const location = await findOrFail(StaffLocation, idOf(query.location, 'location'), 'Location not found');
+
+  const [staffList, selection, monthSetting, ranges] = await Promise.all([
+    StaffMember.find({ location: location._id }).select('employeeNo name').lean(),
+    AttendanceSelection.findOne({ location: location._id }).lean(),
     AttendanceMonth.findOne({ month }),
     getRanges(),
   ]);
+  staffList.sort(byEmployeeNo);
+  const selectedIds = new Set(((selection && selection.staff) || []).map(String));
+  // the sheet keeps the order the employees were added in (like the "No" column of the paper report)
+  const staffById = new Map(staffList.map((s) => [String(s._id), s]));
+  const onSheet = ((selection && selection.staff) || []).map((id) => staffById.get(String(id))).filter((s) => s && s.employeeNo);
+
+  const records = onSheet.length > 0 ? await AttendanceRecord.find({ month, employee: { $in: onSheet.map((s) => s._id) } }) : [];
   const byEmployee = new Map(records.map((r) => [String(r.employee), r]));
   const calendarDays = daysInMonth(month);
   const totalDays = monthSetting ? monthSetting.totalDays : calendarDays;
+
   return {
     month,
+    location: { _id: location._id, name: location.name },
     daysInMonth: calendarDays,
     totalDays,
     totalDaysChanged: Boolean(monthSetting),
     ranges,
-    employees: employees.map((e) => sheetRow(e, byEmployee.get(String(e._id)), totalDays, ranges)),
+    employees: onSheet.map((s) => sheetRow(s, byEmployee.get(String(s._id)), totalDays, ranges)),
+    candidates: staffList.map((s) => ({
+      _id: s._id,
+      employeeNo: s.employeeNo || '',
+      name: s.name,
+      selected: Boolean(s.employeeNo) && selectedIds.has(String(s._id)),
+    })),
   };
 };
 
-// PUT { month, totalDays?, rows?: [{ employeeId, normalDates, extraDates, medicalLeave, casualLeave, noPayDays }] }
+// PUT { month, location, totalDays?, rows?: [{ employeeId, arrivedDays, extraDays, leaveDays, medicalLeave, casualLeave, noPayDays }] }
 // Saves the rows sent (one record per employee per month) and / or the total days of the month.
 // The counts are worked out here; the percentage and the allowance are worked out when the sheet is read.
 const saveSheet = async (body = {}) => {
   const month = parseMonth(body.month);
+  const locationId = idOf(body.location, 'location');
   const maxDay = daysInMonth(month);
   const totalDays = readTotalDays(body.totalDays);
 
@@ -285,37 +278,24 @@ const saveSheet = async (body = {}) => {
     if (seen.has(employeeId)) throw new ApiError(400, 'An employee is listed twice');
     seen.add(employeeId);
 
-    const normalDates = readDates(row.normalDates, 'Normal days', maxDay);
-    const extraDates = readDates(row.extraDates, 'Extra days', maxDay);
-    const both = normalDates.find((d) => extraDates.includes(d));
-    if (both) throw new ApiError(400, `Day ${both} cannot be both a normal day and an extra day`);
-
-    return {
-      employeeId,
-      normalDates,
-      extraDates,
-      medicalLeave: readLeave(row.medicalLeave, 'Medical leave'),
-      casualLeave: readLeave(row.casualLeave, 'Casual leave'),
-      noPayDays: readLeave(row.noPayDays, 'No-pay days'),
-    };
+    const numbers = {};
+    SHEET_FIELDS.forEach(([key, label]) => {
+      numbers[key] = readDays(row[key], label);
+    });
+    return { employeeId, ...numbers };
   });
 
   if (rows.length > 0) {
-    const count = await AttendanceEmployee.countDocuments({ _id: { $in: rows.map((r) => r.employeeId) } });
-    if (count !== rows.length) throw new ApiError(404, 'An employee was not found (it may have been deleted) - reload the sheet');
+    // only staff members of this location can be saved on its sheet
+    const count = await StaffMember.countDocuments({ _id: { $in: rows.map((r) => r.employeeId) }, location: locationId });
+    if (count !== rows.length) throw new ApiError(404, 'An employee was not found in this location (it may have been deleted) - reload the sheet');
 
     await AttendanceRecord.bulkWrite(
       rows.map((r) => {
-        const set = {
-          normalDates: r.normalDates,
-          extraDates: r.extraDates,
-          normalDays: r.normalDates.length,
-          extraDays: r.extraDates.length,
-          arrivalDays: r.normalDates.length + r.extraDates.length,
-        };
-        if (r.medicalLeave !== undefined) set.medicalLeave = r.medicalLeave;
-        if (r.casualLeave !== undefined) set.casualLeave = r.casualLeave;
-        if (r.noPayDays !== undefined) set.noPayDays = r.noPayDays;
+        const set = { arrivalDays: r.arrivedDays + r.extraDays };
+        SHEET_FIELDS.forEach(([key]) => {
+          set[key] = r[key];
+        });
         return { updateOne: { filter: { month, employee: r.employeeId }, update: { $set: set }, upsert: true } };
       })
     );
@@ -329,14 +309,12 @@ const saveSheet = async (body = {}) => {
     }
   }
 
-  return { message: 'Attendance saved successfully', ...(await getSheet({ month })) };
+  return { message: 'Attendance saved successfully', ...(await getSheet({ month, location: locationId })) };
 };
 
 module.exports = {
-  getEmployees,
-  addEmployee,
-  updateEmployee,
-  deleteEmployee,
+  saveSelection,
+  forgetStaff,
   getRanges,
   setRanges,
   getSheet,

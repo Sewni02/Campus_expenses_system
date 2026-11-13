@@ -1,4 +1,10 @@
 const mongoose = require('mongoose');
+
+// One allowance or one deduction line, e.g. { name: 'Transport', amount: 5000 }.
+// Lines that are worked out also keep how: Holiday Payments / No-Pay Leave = full + half days x daySalary (per part),
+// EPF / ETF = (basic salary + Holiday Payments of that month, if any) x rate %.
+// Holiday Payments / No-Pay Leave are worked out in parts (Holiday Payments: Normal holiday + Poya).
+// Each part: amount = (fullDays + halfDays x 0.5) x daySalary.
 const partSchema = new mongoose.Schema(
   {
     key: { type: String, required: true, maxlength: 20 },
@@ -24,12 +30,19 @@ const lineSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// One monthly salary for one staff member.
+//   gross = basic salary + allowances
+//   net   = gross - deductions
+// The staff member's employee number / name / NIC / location / basic salary are COPIED into the record,
+// so changing the profile later (or deleting the person) never changes a salary
+// that was already created.
 const staffSalarySchema = new mongoose.Schema(
   {
     month: { type: String, required: true, match: /^\d{4}-(0[1-9]|1[0-2])$/ },
     location: { type: mongoose.Schema.Types.ObjectId, ref: 'StaffLocation', required: true },
     locationName: { type: String, required: true },
     staff: { type: mongoose.Schema.Types.ObjectId, ref: 'StaffMember', required: true },
+    employeeNo: { type: String },
     staffName: { type: String, required: true },
     nic: { type: String },
     basicSalary: { type: Number, required: true, min: 0 },
