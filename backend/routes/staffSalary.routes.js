@@ -31,6 +31,8 @@ router.delete('/staff/:id', c.deleteStaff);
 // Monthly salaries (basic + allowances - deductions)
 // /salaries/months = every month that has saved salaries (for the "Saved months" list)
 router.get('/salaries/months', c.getSalaryMonths);
+// /salaries/totals?month=2026-10 = the total net salary of that month, per location and in all
+router.get('/salaries/totals', c.getMonthTotals);
 router.get('/salaries', c.getSalaries);
 router.post('/salaries', c.createSalary);
 router.put('/salaries/:id', c.updateSalary);
@@ -41,6 +43,9 @@ router.delete('/salaries/:id', c.deleteSalary);
 router.put('/attendance/selection', a.saveSelection);
 router.get('/attendance', a.getSheet);
 router.put('/attendance', a.saveSheet);
+// Saved months: every month that was saved (list), and the saved copy of one month (opens it again / PDF).
+router.get('/attendance/saved', a.listSaved);
+router.get('/attendance/saved/:month', a.getSaved);
 // Arrival allowance ranges (e.g. 90% and above = Rs. 5,000) - editable
 router.get('/attendance/allowance-ranges', a.getRanges);
 router.put('/attendance/allowance-ranges', a.setRanges);

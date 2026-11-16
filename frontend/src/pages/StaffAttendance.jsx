@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import useTabState from '../hooks/useTabState';
 import { formatMoney, monthLabel, currentMonthString } from '../utils/pettyCash';
+import { downloadAttendancePdf } from '../utils/attendancePdf';
 import './PettyCash.css'; // same cards / tables / buttons as the rest of Staff Salary
 
 const apiError = (err, fallback) => err.response?.data?.message || fallback;
@@ -72,12 +73,19 @@ const centered = { textAlign: 'center' };
 //      The Total column adds them up - it should be the total days of the month.
 //
 //   Arrival days = Arrived days + Extra days (extra work days count as arrival days)
-//   TOTAL DAYS of the month comes pre-filled (the days of the calendar month: 30, 31, 28 / 29) and can be
-//   changed for that month. Then:
+//   TOTAL DAYS is ONE fixed number (25 at first), NOT the days of the calendar month. Every month uses the same
+//   number until the accountant types a new one and saves; then the new number is used from that point on.
+//   Months that were already saved keep the total days they were saved with. Then:
 //       Arrival Allowance % = Arrival days / Total days x 100
 //   The ARRIVAL ALLOWANCE (Rs.) comes from the allowance ranges (below the report; editable), for example
 //       90% - 100% = Rs. 5,000   80% - 90% = Rs. 4,000   70% - 80% = Rs. 2,000   below 70% = nothing
 //   "Save attendance" saves only the rows that were changed (and the total days if it was changed).
+//
+//   DOWNLOAD PDF   prints the report on the screen (any month) as a PDF.
+//   SAVED MONTHS   every month that was saved stays stored. The list under the report opens a past month again
+//                  ("Open") or downloads its PDF exactly as it was saved. The allowance ranges of a month are
+//                  frozen when it is saved, so changing the ranges later does not change old months
+//                  ("Use current ranges" re-applies the current ones to one month).
 // ---------------------------------------------------------------------------
 function StaffAttendance({ locations }) {
   const [wantedLocation, setWantedLocation] = useTabState('aloc', '');
@@ -93,7 +101,11 @@ function StaffAttendance({ locations }) {
   const [loadError, setLoadError] = useState('');
   const [message, setMessage] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(null); // the saved months of this location: { months: [...] } (null = loading)
+  const [savedError, setSavedError] = useState('');
+  const [pdfMonth, setPdfMonth] = useState(''); // the saved month whose PDF is being prepared
   const latest = useRef(0);
+  const latestSaved = useRef(0);
   const validMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
   const canLoad = validMonth && Boolean(locationId);
 
@@ -118,6 +130,36 @@ function StaffAttendance({ locations }) {
   // Loads when the month or the location changes (changeMonth / changeLocation clear the old sheet first).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (canLoad) load(month, locationId); }, [month, locationId]);
+
+  // The list of saved months (every month that was saved for this location, newest first).
+  const loadSaved = async (forLocation) => {
+    const ticket = ++latestSaved.current;
+    try {
+      const res = await axios.get('/api/staff-salary/attendance/saved', { params: { location: forLocation } });
+      if (ticket !== latestSaved.current) return;
+      setSavedError('');
+      setSaved(res.data);
+    } catch (err) {
+      if (ticket !== latestSaved.current) return;
+      setSavedError(apiError(err, 'Could not load the saved months'));
+    }
+  };
+  // Loads when the location changes (changeLocation clears the old list first).
+  useEffect(() => {
+    if (!locationId) return;
+    const ticket = ++latestSaved.current;
+    axios
+      .get('/api/staff-salary/attendance/saved', { params: { location: locationId } })
+      .then((res) => {
+        if (ticket !== latestSaved.current) return;
+        setSavedError('');
+        setSaved(res.data);
+      })
+      .catch((err) => {
+        if (ticket !== latestSaved.current) return;
+        setSavedError(apiError(err, 'Could not load the saved months'));
+      });
+  }, [locationId]);
 
   // The employees whose row on screen is different from what is saved.
   const dirtyIds = sheet
@@ -151,6 +193,8 @@ function StaffAttendance({ locations }) {
   const changeLocation = (next) => {
     if (hasChanges && !window.confirm('You have attendance changes that are not saved. Change the location and lose them?')) return;
     clearScreen();
+    setSaved(null);
+    setSavedError('');
     setWantedLocation(next);
   };
 
@@ -161,7 +205,8 @@ function StaffAttendance({ locations }) {
     setTotalDraft(null);
   };
 
-  const save = async () => {
+  // refresh = true: also use the CURRENT allowance ranges for this month again (its saved ranges are replaced).
+  const save = async (refresh = false) => {
     setMessage(null);
     if (!totalValid) {
       setMessage({ type: 'err', text: 'Total days must be a whole number from 1 to 31' });
@@ -187,11 +232,13 @@ function StaffAttendance({ locations }) {
         })),
       };
       if (totalDirty) body.totalDays = totalValue;
+      if (refresh) body.refreshRanges = true;
       const res = await axios.put('/api/staff-salary/attendance', body);
       setSheet(res.data);
       setMarks(marksFromSheet(res.data.employees));
       setTotalDraft(null);
       setMessage({ type: 'ok', text: res.data.message });
+      loadSaved(locationId);
     } catch (err) {
       setMessage({ type: 'err', text: apiError(err, 'Could not save the attendance') });
     } finally {
@@ -231,7 +278,9 @@ function StaffAttendance({ locations }) {
   };
 
   // ----- allowance ranges (edited here, saved with "Save ranges") -----
-  const savedRanges = sheet ? sheet.ranges : [];
+  // appliedRanges = the ranges THIS month uses (frozen once the month is saved); currentRanges = what the editor below saves.
+  const appliedRanges = sheet ? sheet.ranges : [];
+  const savedRanges = sheet ? sheet.currentRanges || sheet.ranges : [];
   const draft = rangesDraft || savedRanges.map((r) => ({ minPercent: String(r.minPercent), amount: String(r.amount) }));
   const editDraft = (index, field, value) => setRangesDraft(draft.map((r, i) => (i === index ? { ...r, [field]: value } : r)));
   const draftMins = draft.map((r) => toNumber(r.minPercent)).filter((n) => n > 0);
@@ -263,10 +312,61 @@ function StaffAttendance({ locations }) {
         const arrival = n.arrived + n.extra; // extra work days are arrival days too
         const accounted = arrival + n.leave + n.medical + n.casual + n.noPay; // every day written on the row
         const percent = totalValid ? percentOf(arrival, totalValue) : null;
-        return { ...e, m, n, arrival, accounted, percent, allowance: percent === null ? 0 : allowanceFor(percent, savedRanges) };
+        return { ...e, m, n, arrival, accounted, percent, allowance: percent === null ? 0 : allowanceFor(percent, appliedRanges) };
       })
     : [];
   const sumOf = (pick) => rows.reduce((t, r) => t + pick(r), 0);
+
+  // ----- PDF of the report on the screen (what you see, also when it is not saved yet) -----
+  const downloadScreenPdf = () => {
+    downloadAttendancePdf({
+      month,
+      locationName: location.name,
+      totalDays: totalValue,
+      ranges: appliedRanges,
+      draft: hasChanges,
+      employees: rows.map((r) => ({
+        employeeNo: r.employeeNo,
+        name: r.name,
+        arrivedDays: r.n.arrived,
+        extraDays: r.n.extra,
+        leaveDays: r.n.leave,
+        medicalLeave: r.n.medical,
+        casualLeave: r.n.casual,
+        noPayDays: r.n.noPay,
+        arrivalPercentage: r.percent === null ? 0 : round2(r.percent),
+        allowance: r.allowance,
+      })),
+    });
+  };
+
+  // ----- PDF of a saved past month: made from the saved copy, so the figures are the ones saved then -----
+  const downloadSavedPdf = async (savedMonth) => {
+    setMessage(null);
+    setPdfMonth(savedMonth);
+    try {
+      const res = await axios.get(`/api/staff-salary/attendance/saved/${savedMonth}`, { params: { location: locationId } });
+      downloadAttendancePdf({
+        month: savedMonth,
+        locationName: res.data.location.name,
+        totalDays: res.data.totalDays,
+        ranges: res.data.ranges,
+        employees: res.data.employees,
+        savedAt: res.data.savedAt,
+      });
+    } catch (err) {
+      setMessage({ type: 'err', text: apiError(err, 'Could not download the PDF') });
+    } finally {
+      setPdfMonth('');
+    }
+  };
+
+  // ----- open a saved month again on the report above -----
+  const openSaved = (savedMonth) => {
+    if (savedMonth === month) return;
+    changeMonth(savedMonth);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   return (
     <>
@@ -298,10 +398,10 @@ function StaffAttendance({ locations }) {
               />
             </label>
           )}
-          {sheet && totalValue !== sheet.daysInMonth && (
-            <button className="pc-btn-sm" type="button" disabled={saving} onClick={() => setTotalDraft(String(sheet.daysInMonth))}>
-              Use {sheet.daysInMonth} (days of the month)
-            </button>
+          {sheet && (
+            <span style={{ fontSize: 12, color: '#4A6288', maxWidth: 260, paddingBottom: 8 }}>
+              Same for every month. Change it only when the number of days changes - then press Save attendance.
+            </span>
           )}
         </div>
         {sheet && (
@@ -313,8 +413,11 @@ function StaffAttendance({ locations }) {
                 {totalDirty && 'total days changed'}
               </span>
             )}
+            <button className="pc-btn-sm" type="button" disabled={saving || !totalValid || sheet.employees.length === 0} onClick={downloadScreenPdf}>
+              Download PDF
+            </button>
             <button className="pc-btn-sm" type="button" disabled={saving || !hasChanges} onClick={discard}>Undo changes</button>
-            <button className="pc-btn" type="button" disabled={saving || !hasChanges} onClick={save}>
+            <button className="pc-btn" type="button" disabled={saving || !hasChanges} onClick={() => save()}>
               {saving ? 'Saving...' : 'Save attendance'}
             </button>
           </div>
@@ -343,6 +446,18 @@ function StaffAttendance({ locations }) {
               Month = <b>{monthLabel(month).toUpperCase()}</b> &nbsp;·&nbsp; Location = <b>{location.name}</b> &nbsp;·&nbsp; Total days = <b>{totalValid ? totalValue : '?'}</b>
             </div>
           </div>
+
+          {sheet.rangesFrozen && sheet.rangesOutdated && (
+            <div className="pc-alert warn" style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+              <span>
+                This month keeps the allowance ranges it was saved with, which are different from the current ranges below. Its allowance
+                figures have not changed.
+              </span>
+              <button className="pc-btn-sm" type="button" disabled={saving || !totalValid} onClick={() => save(true)}>
+                Use current ranges
+              </button>
+            </div>
+          )}
 
           <p style={{ margin: '0 0 10px', fontSize: 13, color: '#4A6288' }}>
             Type the numbers like on the paper report (whole or half days: 25, 25.5 ...). Arrival days = Arrived days + Extra days.
@@ -486,10 +601,64 @@ function StaffAttendance({ locations }) {
           </div>
 
           <div className="pc-panel" style={{ marginTop: 24 }}>
+            <h3>Saved months · {location.name}</h3>
+            <p style={{ margin: '0 0 12px', fontSize: 13, color: '#4A6288' }}>
+              Every month you save is kept here. <b>Open</b> shows it on the report above; <b>Download PDF</b> gives the report exactly as it was saved.
+            </p>
+            {savedError && (
+              <div className="pc-alert err">
+                {savedError}
+                <button className="pc-btn-sm" type="button" onClick={() => loadSaved(locationId)}>Try again</button>
+              </div>
+            )}
+            {saved === null && !savedError ? (
+              <p style={{ color: '#7C8FAD' }}>Loading...</p>
+            ) : (
+              <div className="pc-table-wrap">
+                <table className="pc-table">
+                  <thead>
+                    <tr>
+                      <th>Month</th>
+                      <th style={centered}>Employees</th>
+                      <th style={centered}>Total days</th>
+                      <th className="num">Total allowance</th>
+                      <th>Last saved</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {saved && saved.months.length === 0 && (
+                      <tr><td colSpan={6} className="pc-empty">No saved months yet. Type the attendance above and press “Save attendance”.</td></tr>
+                    )}
+                    {saved && saved.months.map((m) => (
+                      <tr key={m.month} style={m.month === month ? { background: '#EAF1FC' } : undefined}>
+                        <td style={{ fontWeight: 600 }}>{monthLabel(m.month)}{m.month === month && ' (open)'}</td>
+                        <td style={centered}>{m.employees}</td>
+                        <td style={centered}>{m.totalDays}</td>
+                        <td className="num">{formatMoney(m.totalAllowance)}</td>
+                        <td>{new Date(m.savedAt).toLocaleString('en-GB', { timeZone: 'Asia/Colombo' })}</td>
+                        <td>
+                          <div style={actionsCell}>
+                            <button className="pc-btn-sm" type="button" disabled={saving || m.month === month} onClick={() => openSaved(m.month)}>Open</button>
+                            <button className="pc-btn-sm" type="button" disabled={pdfMonth === m.month} onClick={() => downloadSavedPdf(m.month)}>
+                              {pdfMonth === m.month ? 'Preparing...' : 'Download PDF'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="pc-panel" style={{ marginTop: 24 }}>
             <h3>Arrival allowance ranges</h3>
             <p style={{ margin: '0 0 12px', fontSize: 13, color: '#4A6288' }}>
               The allowance depends on the Arrival Allowance % (arrival days ÷ total days × 100). Change the “from %” or the amount of a range,
-              add or remove ranges, then press <b>Save ranges</b>. The report above uses the saved ranges for every month.
+              add or remove ranges, then press <b>Save ranges</b>. The new ranges are used for months that are not saved yet. A month that was
+              already saved keeps the ranges it was saved with, so old reports never change.
             </p>
             <div className="pc-table-wrap">
               <table className="pc-table" style={{ maxWidth: 640 }}>

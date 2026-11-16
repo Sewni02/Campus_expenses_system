@@ -5,6 +5,7 @@ const AttendanceSelection = require('../models/attendanceSelection.model');
 const AttendanceRecord = require('../models/attendanceRecord.model');
 const AttendanceMonth = require('../models/attendanceMonth.model');
 const AttendanceSetting = require('../models/attendanceSetting.model');
+const AttendanceSnapshot = require('../models/attendanceSnapshot.model');
 const { ApiError, findOrFail } = require('../utils/ApiError');
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -162,6 +163,33 @@ const allowanceFor = (percent, ranges) => {
 };
 
 // ---------------------------------------------------------------------------
+// Total days (the number the arrival % is worked out with)
+//   NOT the days of the calendar month. It is ONE standing number (25 until the accountant changes it) that
+//   every month uses, so November, December, February ... all use the same count. When the accountant
+//   types a new number and saves, it is used from then on; months that were already saved keep the total days
+//   they were saved with (see attendanceSnapshot.model.js).
+// ---------------------------------------------------------------------------
+
+const TOTAL_DAYS_KEY = 'totalDays';
+const DEFAULT_TOTAL_DAYS = 25;
+
+const getStandingTotalDays = async () => {
+  const setting = await AttendanceSetting.findOne({ key: TOTAL_DAYS_KEY });
+  return setting && setting.totalDays ? setting.totalDays : DEFAULT_TOTAL_DAYS;
+};
+
+const setStandingTotalDays = async (days) => {
+  const save = () =>
+    AttendanceSetting.findOneAndUpdate({ key: TOTAL_DAYS_KEY }, { $set: { totalDays: days } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+  try {
+    await save();
+  } catch (err) {
+    if (err.code !== 11000) throw err;
+    await save(); // two first-time saves at once - the second one now only updates
+  }
+};
+
+// ---------------------------------------------------------------------------
 // Monthly sheet
 // ---------------------------------------------------------------------------
 
@@ -185,7 +213,7 @@ const readDays = (value, field) => {
   return number;
 };
 
-// The total days of a month: whole number 1..31. undefined = not sent, null = back to the calendar days.
+// The total days: whole number 1..31. undefined = not sent, null = back to the standard 25.
 const readTotalDays = (value) => {
   if (value === undefined || value === null) return value;
   const number = readNumber(value, 'Total days');
@@ -215,20 +243,34 @@ const sheetRow = (employee, record, totalDays, ranges) => {
   };
 };
 
+// The same ranges? (both lists are sorted highest first)
+const sameRanges = (a, b) =>
+  a.length === b.length && a.every((r, i) => r.minPercent === b[i].minPercent && r.amount === b[i].amount);
+
 // GET ?month=2026-11&location=<id> -> the employees on the sheet of that location (in the order they were added)
 // with his / her numbers of that month (0 until typed in), the total days of the month (the calendar days unless
 // it was changed), the allowance ranges, and `candidates` = every staff member of the location with
 // `selected` (the employee numbers the accountant can add to the sheet).
+//
+// Allowance ranges:
+//   ranges        = the ranges used for THIS month. Once the month has been saved they are frozen (the ranges
+//                   that were used when it was saved), so changing the ranges later does not change old months.
+//   currentRanges = the ranges as they are now (what the "Allowance ranges" editor shows and saves).
+//   rangesFrozen  = this month already has a saved copy (so its ranges are frozen).
+//   rangesOutdated= frozen ranges that are different from the current ranges.
 const getSheet = async (query = {}) => {
   const month = parseMonth(query.month);
   const location = await findOrFail(StaffLocation, idOf(query.location, 'location'), 'Location not found');
 
-  const [staffList, selection, monthSetting, ranges] = await Promise.all([
+  const [staffList, selection, monthSetting, currentRanges, snapshot, standingTotalDays] = await Promise.all([
     StaffMember.find({ location: location._id }).select('employeeNo name').lean(),
     AttendanceSelection.findOne({ location: location._id }).lean(),
     AttendanceMonth.findOne({ month }),
     getRanges(),
+    AttendanceSnapshot.findOne({ month, location: location._id }).select('ranges totalDays').lean(),
+    getStandingTotalDays(),
   ]);
+  const ranges = snapshot ? plainRanges(snapshot.ranges) : currentRanges;
   staffList.sort(byEmployeeNo);
   const selectedIds = new Set(((selection && selection.staff) || []).map(String));
   // the sheet keeps the order the employees were added in (like the "No" column of the paper report)
@@ -238,15 +280,22 @@ const getSheet = async (query = {}) => {
   const records = onSheet.length > 0 ? await AttendanceRecord.find({ month, employee: { $in: onSheet.map((s) => s._id) } }) : [];
   const byEmployee = new Map(records.map((r) => [String(r.employee), r]));
   const calendarDays = daysInMonth(month);
-  const totalDays = monthSetting ? monthSetting.totalDays : calendarDays;
+  // Total days of this month:
+  //   1. a month that was saved keeps the total days it was saved with,
+  //   2. (a value set for one single month by an older version of the app is still respected),
+  //   3. otherwise the standing total days (25 until changed) - the SAME for every month, not the calendar days.
+  const totalDays = snapshot && snapshot.totalDays ? snapshot.totalDays : monthSetting ? monthSetting.totalDays : standingTotalDays;
 
   return {
     month,
     location: { _id: location._id, name: location.name },
     daysInMonth: calendarDays,
     totalDays,
-    totalDaysChanged: Boolean(monthSetting),
+    standingTotalDays,
     ranges,
+    currentRanges,
+    rangesFrozen: Boolean(snapshot),
+    rangesOutdated: Boolean(snapshot) && !sameRanges(ranges, currentRanges),
     employees: onSheet.map((s) => sheetRow(s, byEmployee.get(String(s._id)), totalDays, ranges)),
     candidates: staffList.map((s) => ({
       _id: s._id,
@@ -257,18 +306,136 @@ const getSheet = async (query = {}) => {
   };
 };
 
+// ---------------------------------------------------------------------------
+// Saved months (a stored copy of every month that was saved - see attendanceSnapshot.model.js)
+// ---------------------------------------------------------------------------
+
+// Stores (or replaces) the saved copy of the month shown on `sheet` (the object getSheet returns).
+// A sheet with nobody on it is not stored.
+const saveSnapshot = async (sheet) => {
+  if (!sheet.employees.length) return;
+  const data = {
+    locationName: sheet.location.name,
+    totalDays: sheet.totalDays,
+    ranges: sheet.ranges,
+    rows: sheet.employees.map((e) => ({
+      employee: e._id,
+      employeeNo: e.employeeNo,
+      name: e.name,
+      arrivedDays: e.arrivedDays,
+      extraDays: e.extraDays,
+      arrivalDays: e.arrivalDays,
+      leaveDays: e.leaveDays,
+      medicalLeave: e.medicalLeave,
+      casualLeave: e.casualLeave,
+      noPayDays: e.noPayDays,
+      arrivalPercentage: e.arrivalPercentage,
+      allowance: e.allowance,
+    })),
+    totalAllowance: round2(sheet.employees.reduce((t, e) => t + e.allowance, 0)),
+  };
+  const save = () =>
+    AttendanceSnapshot.updateOne({ month: sheet.month, location: sheet.location._id }, { $set: data }, { upsert: true });
+  try {
+    await save();
+  } catch (err) {
+    if (err.code !== 11000) throw err;
+    await save(); // two first-time saves at once - the second one now only updates
+  }
+};
+
+// Months saved BEFORE saved copies existed (they only have the typed records): make their copy now, once,
+// with the ranges as they are now. Months that already have a copy are not touched.
+const backfillSnapshots = async (location) => {
+  const selection = await AttendanceSelection.findOne({ location: location._id }).lean();
+  const staffIds = (selection && selection.staff) || [];
+  if (staffIds.length === 0) return;
+
+  const [recordMonths, savedMonths] = await Promise.all([
+    AttendanceRecord.distinct('month', { employee: { $in: staffIds } }),
+    AttendanceSnapshot.distinct('month', { location: location._id }),
+  ]);
+  const have = new Set(savedMonths);
+  const missing = recordMonths.filter((m) => !have.has(m)).sort();
+  for (const month of missing) {
+    // eslint-disable-next-line no-await-in-loop
+    await saveSnapshot(await getSheet({ month, location: String(location._id) }));
+  }
+};
+
+// GET ?location=<id> -> every saved month of that location, newest first (for the "Saved months" list).
+const listSaved = async (query = {}) => {
+  const location = await findOrFail(StaffLocation, idOf(query.location, 'location'), 'Location not found');
+  await backfillSnapshots(location);
+
+  const list = await AttendanceSnapshot.find({ location: location._id })
+    .select('month totalDays totalAllowance rows.employee updatedAt')
+    .sort({ month: -1 })
+    .lean();
+
+  return {
+    location: { _id: location._id, name: location.name },
+    months: list.map((s) => ({
+      month: s.month,
+      employees: s.rows.length,
+      totalDays: s.totalDays,
+      totalAllowance: s.totalAllowance,
+      savedAt: s.updatedAt,
+    })),
+  };
+};
+
+// GET /saved/:month?location=<id> -> the saved copy of that month, exactly as it was when it was saved
+// (this is what the PDF of a past month is made from).
+const getSaved = async (params = {}, query = {}) => {
+  const month = parseMonth(params.month);
+  const location = await findOrFail(StaffLocation, idOf(query.location, 'location'), 'Location not found');
+
+  let snapshot = await AttendanceSnapshot.findOne({ month, location: location._id }).lean();
+  if (!snapshot) {
+    await backfillSnapshots(location);
+    snapshot = await AttendanceSnapshot.findOne({ month, location: location._id }).lean();
+  }
+  if (!snapshot) throw new ApiError(404, 'No saved attendance for that month');
+
+  return {
+    month,
+    location: { _id: location._id, name: location.name },
+    totalDays: snapshot.totalDays,
+    ranges: plainRanges(snapshot.ranges),
+    totalAllowance: snapshot.totalAllowance,
+    savedAt: snapshot.updatedAt,
+    employees: snapshot.rows.map((r) => ({
+      _id: r.employee,
+      employeeNo: r.employeeNo,
+      name: r.name,
+      arrivedDays: r.arrivedDays,
+      extraDays: r.extraDays,
+      arrivalDays: r.arrivalDays,
+      leaveDays: r.leaveDays,
+      medicalLeave: r.medicalLeave,
+      casualLeave: r.casualLeave,
+      noPayDays: r.noPayDays,
+      arrivalPercentage: r.arrivalPercentage,
+      allowance: r.allowance,
+    })),
+  };
+};
+
 // PUT { month, location, totalDays?, rows?: [{ employeeId, arrivedDays, extraDays, leaveDays, medicalLeave, casualLeave, noPayDays }] }
 // Saves the rows sent (one record per employee per month) and / or the total days of the month.
+// refreshRanges: true -> the month's frozen allowance ranges are replaced by the current ranges.
+// Every save also stores a saved copy of the month (see saveSnapshot) for the "Saved months" list and the PDF.
 // The counts are worked out here; the percentage and the allowance are worked out when the sheet is read.
 const saveSheet = async (body = {}) => {
   const month = parseMonth(body.month);
   const locationId = idOf(body.location, 'location');
-  const maxDay = daysInMonth(month);
   const totalDays = readTotalDays(body.totalDays);
+  const refreshRanges = body.refreshRanges === true;
 
   const rawRows = body.rows === undefined ? [] : body.rows;
   if (!Array.isArray(rawRows)) throw new ApiError(400, 'rows must be a list');
-  if (rawRows.length === 0 && totalDays === undefined) throw new ApiError(400, 'There is nothing to save');
+  if (rawRows.length === 0 && totalDays === undefined && !refreshRanges) throw new ApiError(400, 'There is nothing to save');
   if (rawRows.length > 1000) throw new ApiError(400, 'Too many rows');
 
   const seen = new Set();
@@ -301,15 +468,29 @@ const saveSheet = async (body = {}) => {
     );
   }
 
+  // New total days: it becomes the standing number every month uses from now on (null = back to 25).
+  // This month's saved copy (if it has one) gets it too; other saved months keep the total days they have.
+  let newStanding;
   if (totalDays !== undefined) {
-    if (totalDays === null || totalDays === maxDay) {
-      await AttendanceMonth.deleteOne({ month }); // the calendar days are the default - nothing to keep
-    } else {
-      await AttendanceMonth.updateOne({ month }, { $set: { totalDays } }, { upsert: true });
-    }
+    newStanding = totalDays === null ? DEFAULT_TOTAL_DAYS : totalDays;
+    await setStandingTotalDays(newStanding);
+    await AttendanceMonth.deleteOne({ month }); // a value set for this single month (older versions) would hide the new one
+    await AttendanceSnapshot.updateOne({ month, location: locationId }, { $set: { totalDays: newStanding } }); // no upsert: only if the month was saved
   }
 
-  return { message: 'Attendance saved successfully', ...(await getSheet({ month, location: locationId })) };
+  // Use the current ranges again: forget the frozen ones, the copy made below stores the current ones.
+  if (refreshRanges) {
+    await AttendanceSnapshot.deleteOne({ month, location: locationId });
+  }
+
+  const sheet = await getSheet({ month, location: locationId });
+  await saveSnapshot(sheet);
+  // the sheet was just stored, so its ranges are frozen from now on
+  const saved = sheet.employees.length > 0 ? { ...sheet, rangesFrozen: true, rangesOutdated: !sameRanges(sheet.ranges, sheet.currentRanges) } : sheet;
+  let message = 'Attendance saved successfully';
+  if (refreshRanges && rows.length === 0 && totalDays === undefined) message = 'Current allowance ranges applied to this month';
+  else if (newStanding !== undefined) message = `Attendance saved successfully. Total days ${newStanding} will be used for every month until you change it.`;
+  return { message, ...saved };
 };
 
 module.exports = {
@@ -319,4 +500,6 @@ module.exports = {
   setRanges,
   getSheet,
   saveSheet,
+  listSaved,
+  getSaved,
 };
