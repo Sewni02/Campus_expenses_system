@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import useTabState from '../hooks/useTabState';
 import StaffAttendance from './StaffAttendance';
+import StaffSalaryTotals from './StaffSalaryTotals';
 import { formatMoney, formatDate, monthLabel, currentMonthString } from '../utils/pettyCash';
 import { downloadSalarySheetPdf, downloadSalarySheetCsv } from '../utils/staffSalaryExport';
 import './PettyCash.css'; // re-uses the same cards / tables / buttons / tabs as Petty Cash
@@ -38,6 +39,8 @@ const actionsCell = { display: 'flex', gap: 8, justifyContent: 'flex-end' };
 //                              The salaries of a month can be downloaded as a PDF or an Excel (CSV) file.
 //   Tab "Attendance"       -> pick a location, tick its employees, then fill the monthly attendance chart
 //                              (see StaffAttendance.jsx).
+//   Tab "Month Totals"     -> pick a month: the TOTAL NET SALARY of that month for every location and in all,
+//                              with a location filter (see StaffSalaryTotals.jsx).
 // The selected tab ("ssec") and location ("sloc") live in the URL, so a refresh or the
 // browser back button keeps you where you were.
 // ---------------------------------------------------------------------------
@@ -65,7 +68,7 @@ function StaffSalary() {
         <h1 className="sa-page-title" style={{ margin: 0 }}>Staff Salary</h1>
       </div>
       <div className="pc-tabs">
-        {[['staff', 'Staff & Locations'], ['salaries', 'Monthly Salary'], ['attendance', 'Attendance']].map(([key, label]) => (
+        {[['staff', 'Staff & Locations'], ['salaries', 'Monthly Salary'], ['attendance', 'Attendance'], ['totals', 'Month Totals']].map(([key, label]) => (
           <button key={key} className={`pc-tab ${section === key ? 'active' : ''}`} onClick={() => setSection(key)}>
             {label}
           </button>
@@ -78,6 +81,8 @@ function StaffSalary() {
         <p style={{ color: '#7C8FAD' }}>Loading...</p>
       ) : section === 'attendance' ? (
         <StaffAttendance locations={locations} />
+      ) : section === 'totals' ? (
+        <StaffSalaryTotals locations={locations} />
       ) : section === 'staff' ? (
         <StaffSection locations={locations} onLocationsChanged={loadLocations} />
       ) : (

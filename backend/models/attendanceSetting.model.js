@@ -21,6 +21,10 @@ const attendanceSettingSchema = new mongoose.Schema(
   {
     key: { type: String, required: true, unique: true, default: 'allowance' },
     tiers: { type: [tierSchema], default: [] },
+    // The document with key "totalDays" holds the STANDING TOTAL DAYS (see attendance.service.js): the number of
+    // days every month's arrival % is worked out with, e.g. 25. It does not follow the calendar month and stays
+    // the same until the accountant changes it.
+    totalDays: { type: Number, min: 1, max: 31 },
   },
   { timestamps: true }
 );

@@ -65,6 +65,12 @@ const getSalaryMonths = asyncHandler(async (req, res) => {
   res.json(await staffSalaryService.getSalaryMonths());
 });
 
+// GET /api/staff-salary/salaries/totals?month=2026-10
+// The total net salary (and basic / allowances / deductions / gross) of that month for every location + the grand total.
+const getMonthTotals = asyncHandler(async (req, res) => {
+  res.json(await staffSalaryService.getMonthTotals(req.query));
+});
+
 // GET /api/staff-salary/salaries?month=2026-10&location=<id optional>
 const getSalaries = asyncHandler(async (req, res) => {
   res.json(await staffSalaryService.getSalaries(req.query));
@@ -99,6 +105,7 @@ module.exports = {
   updateStaff,
   deleteStaff,
   getSalaryMonths,
+  getMonthTotals,
   getSalaries,
   createSalary,
   updateSalary,

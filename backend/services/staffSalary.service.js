@@ -467,6 +467,64 @@ const getSalaryMonths = async () => {
   return rows.map((r) => ({ month: r._id, count: r.count, totalNet: round2(r.totalNet) }));
 };
 
+// GET ?month=2026-10 (required)
+// The totals of ONE month for EVERY location (a location with no salaries that month shows 0), and the grand total
+// of all locations. The total NET SALARY is the sum of the net salary of every saved salary of that month.
+// The salaries keep the location name they were saved with, so salaries of a location that was deleted later still
+// count in the month's grand total.
+const getMonthTotals = async ({ month } = {}) => {
+  const monthText = parseMonth(month);
+
+  const [locations, groups] = await Promise.all([
+    StaffLocation.find().sort({ name: 1 }).select('name').lean(),
+    StaffSalary.aggregate([
+      { $match: { month: monthText } },
+      {
+        $group: {
+          _id: '$location',
+          locationName: { $first: '$locationName' },
+          count: { $sum: 1 },
+          totalBasic: { $sum: '$basicSalary' },
+          totalAllowances: { $sum: '$totalAllowances' },
+          totalDeductions: { $sum: '$totalDeductions' },
+          totalGross: { $sum: '$grossSalary' },
+          totalNet: { $sum: '$netSalary' },
+        },
+      },
+    ]),
+  ]);
+
+  const byLocation = new Map(groups.map((g) => [String(g._id), g]));
+  const toRow = (id, name, g) => ({
+    location: id,
+    name,
+    count: g ? g.count : 0,
+    totalBasic: round2(g ? g.totalBasic : 0),
+    totalAllowances: round2(g ? g.totalAllowances : 0),
+    totalDeductions: round2(g ? g.totalDeductions : 0),
+    totalGross: round2(g ? g.totalGross : 0),
+    totalNet: round2(g ? g.totalNet : 0),
+  });
+
+  const rows = locations.map((l) => toRow(l._id, l.name, byLocation.get(String(l._id))));
+  const known = new Set(locations.map((l) => String(l._id)));
+  groups.filter((g) => !known.has(String(g._id))).forEach((g) => rows.push(toRow(g._id, g.locationName, g)));
+
+  const grand = rows.reduce(
+    (t, r) => ({
+      count: t.count + r.count,
+      totalBasic: round2(t.totalBasic + r.totalBasic),
+      totalAllowances: round2(t.totalAllowances + r.totalAllowances),
+      totalDeductions: round2(t.totalDeductions + r.totalDeductions),
+      totalGross: round2(t.totalGross + r.totalGross),
+      totalNet: round2(t.totalNet + r.totalNet),
+    }),
+    { count: 0, totalBasic: 0, totalAllowances: 0, totalDeductions: 0, totalGross: 0, totalNet: 0 }
+  );
+
+  return { month: monthText, locations: rows, grand };
+};
+
 // The BASIC SALARY always comes from the staff profile (never from the request), so the form
 // cannot be used to change it - the profile is the one place it is edited.
 const createSalary = async (body = {}, userId) => {
@@ -548,6 +606,7 @@ module.exports = {
   updateStaff,
   deleteStaff,
   getSalaryMonths,
+  getMonthTotals,
   getSalaries,
   createSalary,
   updateSalary,
