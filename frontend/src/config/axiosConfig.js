@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { API_BASE_URL } from './api';
+import { startRequest, endRequest } from './loadingStore';
 
 // Every axios call anywhere in the app can now use relative paths like
 // axios.get('/api/expenses') and it will automatically be sent to the
@@ -13,22 +14,40 @@ axios.defaults.baseURL = API_BASE_URL;
 // upload, but still gives the user a clear error instead of an endless wait.
 axios.defaults.timeout = 30000;
 
-// Every axios call anywhere in the app will now automatically include
-// the logged-in user's token in the Authorization header.
+// The login token is stored in an httpOnly cookie (set by the server on login).
+// `withCredentials` makes the browser send that cookie with every request,
+// including to the API's own domain/port. No token is read or attached here
+// any more, so nothing in the page's JavaScript can leak it.
+axios.defaults.withCredentials = true;
+
+// --- Global loading indicator -------------------------------------------
+// Count every request that starts and finishes so <GlobalLoader /> can show
+// a progress bar / spinner while ANY request is running. The method is
+// remembered on the config so the same one is released when it ends.
 axios.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
+  config.__tracked = true;
+  startRequest(config.method);
   return config;
 });
 
-// If the backend says the token is missing/expired (401), log the user
-// out on the frontend too and send them back to the login page - keeping
-// a note of the page + tab they were on so login can return them there.
+const release = (config) => {
+  if (config && config.__tracked) {
+    config.__tracked = false; // never release the same request twice
+    endRequest(config.method);
+  }
+};
+
+// If the backend says the login is missing/expired (401), forget the saved
+// profile on the frontend too and send the user back to the login page -
+// keeping a note of the page + tab they were on so login can return them there.
 axios.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    release(response.config);
+    return response;
+  },
   (error) => {
+    release(error.config);
+
     if (error.response && error.response.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');

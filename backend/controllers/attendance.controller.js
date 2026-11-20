@@ -13,10 +13,6 @@ const getSheet = asyncHandler(async (req, res) => {
   res.json(await attendanceService.getSheet(req.query));
 });
 
-// PUT /api/staff-salary/attendance
-//   { month, location, totalDays? (1-31, null = the days of the calendar month),
-//     rows?: [{ employeeId, arrivedDays, extraDays, leaveDays, medicalLeave, casualLeave, noPayDays }],
-//     refreshRanges?: true  (use the current allowance ranges again for this month) }
 // Every save also stores a saved copy of the month (used by the "Saved months" list and the PDF).
 const saveSheet = asyncHandler(async (req, res) => {
   res.json(await attendanceService.saveSheet(req.body));
