@@ -1,10 +1,11 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { subscribe, getSnapshot } from '../config/loadingStore';
+import markUrl from '../assets/xpendly-mark.png';
 import './GlobalLoader.css';
 
 // Shows that "something is happening" whenever an API request is running.
 //   - Thin progress bar at the top : any request (instant feedback)
-//   - Centered spinner overlay      : saves/uploads/deletes (POST/PUT/PATCH/DELETE),
+//   - Centered loading card         : saves/uploads/deletes (POST/PUT/PATCH/DELETE),
 //                                     or any request still running after 800 ms.
 //     It also blocks clicks so a button can't be pressed twice by accident.
 //   - "Server is waking up" message : if it still hasn't finished after 6 s
@@ -50,12 +51,25 @@ function GlobalLoader() {
       {showOverlay && (
         <div className="gl-overlay" role="status" aria-live="polite">
           <div className="gl-card">
-            <div className="gl-spinner" />
-            <p className="gl-text">{hasWrite ? 'Saving, please wait...' : 'Loading...'}</p>
+            <div className="gl-logo">
+              <span className="gl-ring" />
+              <span className="gl-ring gl-ring-inner" />
+              <img className="gl-mark" src={markUrl} alt="" />
+            </div>
+
+            <p className="gl-text">
+              {hasWrite ? 'Saving your changes' : 'Loading your data'}
+              <span className="gl-dots" aria-hidden="true"><i /><i /><i /></span>
+            </p>
+            <p className="gl-hint">{hasWrite ? 'Please do not close or refresh this page.' : 'This will only take a moment.'}</p>
+
+            <div className="gl-track" aria-hidden="true"><div className="gl-track-fill" /></div>
+
             {slow && (
-              <p className="gl-sub">
-                This is taking longer than usual. The server may be waking up, please keep this page open.
-              </p>
+              <div className="gl-slow">
+                <b>Taking longer than usual</b>
+                <span>The server may be waking up. Please keep this page open.</span>
+              </div>
             )}
           </div>
         </div>
