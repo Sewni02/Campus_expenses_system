@@ -42,6 +42,7 @@ const officeExpenseRoutes = require('./routes/officeExpense.routes');
 const pettyCashRoutes = require('./routes/pettyCash.routes');
 const lecturerSalaryRoutes = require('./routes/lecturerSalary.routes');
 const staffSalaryRoutes = require('./routes/staffSalary.routes');
+const grandTotalRoutes = require('./routes/grandTotal.routes');
 
 const app = express();
 
@@ -111,6 +112,7 @@ app.use('/api/office-expenses', officeExpenseRoutes);
 app.use('/api/petty-cash', pettyCashRoutes);
 app.use('/api/lecturer-salary', lecturerSalaryRoutes);
 app.use('/api/staff-salary', staffSalaryRoutes);
+app.use('/api/grand-total', grandTotalRoutes);
 
 app.get('/', (req, res) => {
   res.send('Campus Expense System API is running!');
