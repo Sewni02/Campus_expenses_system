@@ -2,6 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { saveUser } from '../utils/session';
+import ThemeToggle from '../components/ThemeToggle';
 import './Login.css';
 
 function Login() {
@@ -46,6 +47,7 @@ function Login() {
 
   return (
     <div className="auth-page">
+      <ThemeToggle floating />
       <div className="auth-card">
         <h2 className="auth-title">Login</h2>
         <p className="auth-subtitle">Sign in to your account</p>

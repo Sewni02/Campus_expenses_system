@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import ThemeToggle from '../components/ThemeToggle';
 import './Login.css';
 
-const SUCCESS_STYLE = { background: '#f0f7f1', borderColor: '#cfe6d3', color: '#2f7a3d' };
-const ERROR_STYLE = { background: '#fdf1f0', borderColor: '#f0c9c5', color: '#b3382c' };
 
 // Same rules the server enforces for new passwords (so mistakes are caught before sending).
 const passwordProblem = (value) => {
@@ -58,12 +57,13 @@ function ResetPassword() {
 
   return (
     <div className="auth-page">
+      <ThemeToggle floating />
       <div className="auth-card">
         <h2 className="auth-title">Reset Password</h2>
 
         {done ? (
           <>
-            <p className="auth-message" style={SUCCESS_STYLE}>
+            <p className="auth-message auth-message-ok">
               Your password has been updated. Redirecting you to the login page…
             </p>
             <p className="auth-bottom-text">
@@ -105,7 +105,7 @@ function ResetPassword() {
             </form>
 
             {error && (
-              <p className="auth-message" style={ERROR_STYLE}>
+              <p className="auth-message auth-message-err">
                 {error}
                 {/invalid|expired/i.test(error) && (
                   <>
