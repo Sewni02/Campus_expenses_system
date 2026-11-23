@@ -7,6 +7,7 @@ import autoTable from 'jspdf-autotable';
 import PettyCashAdmin from './PettyCashAdmin';
 import LecturerSalary from './LecturerSalary';
 import StaffSalary from './StaffSalary';
+import GrandTotal from './GrandTotal';
 import './SuperAdminDashboard.css';
 
 // Sidebar icons: inline SVG (Lucide-style line icons). They take the colour of the
@@ -307,7 +308,7 @@ function SuperAdminDashboard() {
     { key: 'P', label: 'Petty Cash', icon: 'petty-cash' },
     { key: 'L', label: 'Lecturer Salary', icon: 'lecturer-salary' },
     { key: 'S', label: 'Staff Salary', icon: 'staff-salary' },
-    { key: 'C', label: 'Section C', icon: 'section-c' },
+    { key: 'C', label: 'Grand Total', icon: 'section-c' },
     { key: 'D', label: 'Section D', icon: 'section-d' },
   ];
 
@@ -348,7 +349,7 @@ function SuperAdminDashboard() {
         {activeTab === 'P' && <PettyCashAdmin />}
         {activeTab === 'L' && <LecturerSalary />}
         {activeTab === 'S' && <StaffSalary />}
-        {activeTab === 'C' && <ComingSoon label="Section C" />}
+        {activeTab === 'C' && <GrandTotal />}
         {activeTab === 'D' && <ComingSoon label="Section D" />}
       </div>
     </div>
