@@ -1,0 +1,166 @@
+/* =====================================================================
+   Xpendly - shared look & feel for the admin / accountant screens.
+
+   VISUAL ONLY: colours, borders, radius, shadows, spacing, fonts,
+   transitions. Nothing here changes what a page does (nothing is hidden,
+   no pointer-events, no JSX / logic is touched).
+   Every rule is prefixed with :root so it wins over the older
+   per-page stylesheets without !important.
+
+   Loaded from main.jsx AFTER the page stylesheets.
+   ===================================================================== */
+
+:root {
+  --ui-navy: #0A1F44;
+  --ui-text: #0A1F44;
+  --ui-muted: #4A6288;
+  --ui-faint: #7C8FAD;
+  --ui-border: #E1E8F2;
+  --ui-border-strong: #D3DCEB;
+  --ui-surface: #FFFFFF;
+  --ui-bg: #F4F7FB;
+  --ui-primary: #1E56C2;
+  --ui-primary-dark: #17439B;
+  --ui-primary-soft: #EAF1FC;
+  --ui-teal: #1FB5A4;
+  --ui-grad: linear-gradient(135deg, #1FB5A4, #2469C9);
+  --ui-radius: 12px;
+  --ui-radius-sm: 8px;
+  --ui-shadow: 0 2px 10px rgba(10, 31, 68, .05);
+  --ui-shadow-lg: 0 10px 28px rgba(10, 31, 68, .12);
+}
+
+/* ---------- page frame ---------- */
+:root .sa-content { background: var(--ui-bg); }
+:root .sa-page { padding: 32px 40px 48px; max-width: 1560px; margin: 0 auto; box-sizing: border-box; }
+:root .sa-page-title { font-size: 28px; font-weight: 700; letter-spacing: -.3px; color: var(--ui-text); margin-bottom: 24px; }
+:root .pc-toolbar { margin-bottom: 22px; }
+:root .pc-toolbar .sa-page-title { margin-bottom: 0; }
+:root .sa-coming-soon { padding: 48px 40px; }
+
+/* ---------- sidebar ---------- */
+:root .sa-sidebar { background: linear-gradient(180deg, #050F24 0%, #0A1F44 100%); box-shadow: 2px 0 16px rgba(5, 15, 36, .25); }
+:root .sa-sidebar-header { border-bottom: 1px solid rgba(255, 255, 255, .08); }
+:root .sa-avatar { border: 2px solid rgba(255, 255, 255, .14); background: rgba(255, 255, 255, .05); }
+:root .sa-sidebar-header p { font-size: 12px; font-weight: 600; letter-spacing: 1.2px; color: rgba(255, 255, 255, .5); }
+:root .sa-sidebar-item { position: relative; margin: 3px 14px; padding: 12px 16px; border-radius: 12px; color: rgba(255, 255, 255, .62); transition: background .18s, color .18s; }
+:root .sa-sidebar-item:hover { background: rgba(255, 255, 255, .07); color: #fff; }
+:root .sa-sidebar-item.active {
+  background: linear-gradient(135deg, rgba(31, 181, 164, .28), rgba(36, 105, 201, .28));
+  color: #fff; font-weight: 600; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
+}
+:root .sa-sidebar-item.active::before {
+  content: ''; position: absolute; left: -14px; top: 10px; bottom: 10px; width: 4px; border-radius: 0 4px 4px 0; background: var(--ui-teal);
+}
+
+/* ---------- stat cards (User Management, etc.) ---------- */
+:root .sa-stats-row { gap: 18px; }
+:root .sa-stat-card {
+  border-radius: var(--ui-radius); padding: 22px 26px; border: 1px solid var(--ui-border);
+  box-shadow: var(--ui-shadow); transition: transform .15s, box-shadow .15s;
+}
+:root .sa-stat-card:hover { transform: translateY(-2px); box-shadow: var(--ui-shadow-lg); }
+:root .sa-stat-card p { font-size: 12px; font-weight: 700; letter-spacing: .6px; color: var(--ui-muted); }
+:root .sa-stat-card h2 { font-size: 28px; font-weight: 700; }
+
+/* ---------- tables ---------- */
+:root .sa-table, :root .pc-table, :root .hw-items-table, :root .report-table {
+  border: 1px solid var(--ui-border); border-radius: var(--ui-radius); box-shadow: var(--ui-shadow); background: var(--ui-surface);
+}
+:root .sa-table thead tr, :root .sa-table th, :root .pc-table th {
+  background: #F4F7FB; color: var(--ui-muted); font-size: 11.5px; font-weight: 700; letter-spacing: .6px;
+}
+:root .sa-table th, :root .pc-table th { padding: 14px 18px; border-bottom: 1px solid var(--ui-border); }
+:root .sa-table td, :root .pc-table td { padding: 14px 18px; font-size: 14px; color: var(--ui-text); border-top: 1px solid #EEF2F8; }
+:root .sa-table tbody tr { border-bottom: none; transition: background .12s; }
+:root .sa-table tbody tr:hover, :root .pc-table tbody tr:hover { background: #F4F8FE; }
+:root .sa-table tbody tr.selected-row { background: rgba(31, 181, 164, .12); }
+:root .pc-table tfoot td { background: var(--ui-primary-soft); border-top: 2px solid var(--ui-primary); color: var(--ui-text); }
+:root .pc-table tr.pc-row-over td { background: #FDF3F1; }
+:root .pc-table .num { font-variant-numeric: tabular-nums; }
+:root .pc-empty { color: var(--ui-faint); padding: 40px 20px; }
+:root .pc-table-wrap { border-radius: var(--ui-radius); }
+
+/* ---------- cards & panels ---------- */
+:root .pc-cards { gap: 18px; }
+:root .pc-card {
+  border: 1px solid var(--ui-border); border-left-width: 4px; border-radius: var(--ui-radius); padding: 20px 24px;
+  box-shadow: var(--ui-shadow); transition: transform .15s, box-shadow .15s;
+}
+:root .pc-card:hover { transform: translateY(-2px); box-shadow: var(--ui-shadow-lg); }
+:root .pc-card p { font-size: 12px; font-weight: 700; letter-spacing: .6px; color: var(--ui-muted); }
+:root .pc-card h2 { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+:root .pc-panel, :root .ge-form, :root .hw-supplier-card, :root .sa-permission-panel {
+  border: 1px solid var(--ui-border); border-radius: var(--ui-radius); box-shadow: var(--ui-shadow); background: var(--ui-surface);
+}
+:root .pc-panel { padding: 22px 26px; }
+:root .pc-panel h3 { font-size: 17px; font-weight: 700; }
+:root .ge-form { padding: 20px 22px; }
+:root .sa-permission-panel { padding: 22px; box-shadow: var(--ui-shadow-lg); }
+:root .sa-panel-header h3 { font-size: 17px; font-weight: 700; }
+:root .sa-group-title { color: var(--ui-muted); font-size: 12px; font-weight: 700; letter-spacing: .6px; border-bottom: 1px solid var(--ui-border); }
+:root .sa-checkbox-row { border-radius: 8px; transition: background .12s; }
+
+/* ---------- forms ---------- */
+:root .pc-field { font-size: 11.5px; font-weight: 700; letter-spacing: .6px; color: var(--ui-muted); }
+:root .pc-field input, :root .pc-field select, :root .pc-field textarea,
+:root .ge-form-row input, :root .ge-form-row select, :root .ge-form textarea,
+:root .ge-form > input[type='text'], :root .ge-form > input[type='number'],
+:root .hw-qty-input, :root .pc-add-degree input {
+  border: 1px solid var(--ui-border-strong); border-radius: var(--ui-radius-sm); color: var(--ui-text);
+  transition: border-color .15s, box-shadow .15s;
+}
+:root .pc-field input:focus, :root .pc-field select:focus, :root .pc-field textarea:focus,
+:root .ge-form-row input:focus, :root .ge-form-row select:focus, :root .ge-form textarea:focus,
+:root .ge-form > input[type='text']:focus, :root .ge-form > input[type='number']:focus,
+:root .hw-qty-input:focus, :root .pc-add-degree input:focus {
+  border-color: var(--ui-primary); box-shadow: 0 0 0 3px rgba(30, 86, 194, .12); outline: none;
+}
+:root .pc-form { gap: 16px; }
+
+/* ---------- buttons ---------- */
+:root .pc-btn, :root .ge-add-btn, :root .sa-save-btn {
+  border: none; border-radius: var(--ui-radius-sm); background: var(--ui-grad); color: #fff; font-weight: 600;
+  box-shadow: 0 4px 12px rgba(36, 105, 201, .22); transition: filter .15s, transform .15s, box-shadow .15s;
+}
+:root .pc-btn:hover:not(:disabled), :root .ge-add-btn:hover, :root .sa-save-btn:hover:not(:disabled) {
+  filter: brightness(1.06); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(36, 105, 201, .3); background: var(--ui-grad);
+}
+:root .pc-btn-sm, :root .sa-manage-btn, :root .ge-save-btn, :root .hw-edit-btn, :root .hw-finder-add-btn {
+  border: 1px solid var(--ui-border-strong); border-radius: var(--ui-radius-sm); background: #fff; color: var(--ui-primary-dark);
+  font-weight: 600; transition: background .15s, border-color .15s, color .15s;
+}
+:root .pc-btn-sm:hover, :root .sa-manage-btn:hover, :root .ge-save-btn:hover, :root .hw-edit-btn:hover, :root .hw-finder-add-btn:hover {
+  background: var(--ui-primary-soft); border-color: var(--ui-primary); color: var(--ui-primary-dark); box-shadow: none;
+}
+:root .pc-btn-danger, :root .sa-reject-btn, :root .hw-delete-btn { border-radius: var(--ui-radius-sm); font-weight: 600; transition: background .15s; }
+
+/* ---------- tabs ---------- */
+:root .pc-tabs { gap: 8px; padding: 5px; background: #fff; border: 1px solid var(--ui-border); border-radius: 12px; width: fit-content; box-shadow: var(--ui-shadow); max-width: 100%; }
+:root .pc-tab { border: none; background: transparent; border-radius: 9px; padding: 9px 18px; color: var(--ui-muted); font-weight: 600; transition: background .15s, color .15s; }
+:root .pc-tab:hover { background: var(--ui-primary-soft); color: var(--ui-primary-dark); }
+:root .pc-tab.active { background: var(--ui-grad); color: #fff; box-shadow: 0 3px 10px rgba(36, 105, 201, .25); }
+:root .pc-tab.pc-tab-add { border: 1px dashed #9FD6CF; color: #0F7A6F; }
+:root .ge-tabs, :root .hw-subtabs { border-bottom: 1px solid var(--ui-border); gap: 4px; }
+:root .ge-tab, :root .hw-subtab-btn { font-weight: 600; padding: 11px 20px; transition: color .15s, background .15s; border-radius: 8px 8px 0 0; }
+:root .ge-tab { border-bottom-width: 3px; }
+:root .ge-tab:hover, :root .hw-subtab-btn:hover { background: var(--ui-primary-soft); color: var(--ui-primary-dark); }
+:root .ge-tab.active { color: var(--ui-primary-dark); border-bottom: 3px solid var(--ui-primary); }
+
+/* ---------- badges & alerts ---------- */
+:root .sa-badge, :root .pc-badge, :root .ge-cat-badge { border-radius: 999px; padding: 4px 12px; font-size: 11.5px; font-weight: 700; letter-spacing: .4px; }
+:root .pc-alert { border-radius: 10px; padding: 13px 18px; }
+:root .ge-slip-link { color: var(--ui-primary); }
+:root .ge-slip-link:hover { color: var(--ui-primary-dark); }
+:root .ge-summary { color: var(--ui-muted); }
+
+/* ---------- bars ---------- */
+:root .pc-bar { height: 8px; border-radius: 999px; }
+:root .pc-bar > span { border-radius: 999px; }
+
+/* ---------- hardware quote cards ---------- */
+:root .hw-quote-card { border-radius: var(--ui-radius); box-shadow: var(--ui-shadow); }
+
+@media (max-width: 900px) {
+  :root .sa-page { padding: 20px 16px 40px; }
+}
