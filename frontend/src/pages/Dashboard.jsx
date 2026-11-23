@@ -6,6 +6,7 @@ import { getSavedUser, saveUser, logout } from '../utils/session';
 import { sectionsForUser } from '../config/permissionSections';
 import PettyCashPanel from './PettyCashPanel';
 import StaffSalary from './StaffSalary';
+import Settings from './Settings';
 import './SuperAdminDashboard.css';
 import './UserDashboard.css';
 
@@ -32,7 +33,7 @@ function Dashboard() {
   const sections = sectionsForUser(user);
   const active = sections.find((s) => s.key === activeTab);
   // If the tab in the URL is not one this user may open (or was just revoked), show the overview.
-  const tab = active ? active.key : 'overview';
+  const tab = activeTab === 'settings' ? 'settings' : active ? active.key : 'overview';
 
   const handleLogout = async () => {
     await logout();
@@ -64,12 +65,16 @@ function Dashboard() {
             <span>{section.label}</span>
           </div>
         ))}
+        <div className={`sa-sidebar-item ${tab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
+          <span>Settings</span>
+        </div>
         <div className="sa-sidebar-item ud-logout" onClick={handleLogout}>
           <span>Log out</span>
         </div>
       </div>
 
       <div className="sa-content">
+        {tab === 'settings' && <Settings />}
         {tab === 'overview' && <Overview user={user} sections={sections} onOpen={setActiveTab} />}
         {active?.kind === 'petty-cash' && <PettyCashPanel />}
         {active?.kind === 'staff-salary' && <StaffSalary />}

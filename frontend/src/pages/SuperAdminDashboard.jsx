@@ -8,6 +8,7 @@ import PettyCashAdmin from './PettyCashAdmin';
 import LecturerSalary from './LecturerSalary';
 import StaffSalary from './StaffSalary';
 import GrandTotal from './GrandTotal';
+import Settings from './Settings';
 import './SuperAdminDashboard.css';
 
 // Sidebar icons: inline SVG (Lucide-style line icons). They take the colour of the
@@ -63,8 +64,11 @@ const SIDEBAR_ICONS = {
       <rect x="3" y="14" width="7" height="7" rx="1" />
     </>
   ),
-  'section-d': (
-    <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+    </>
   ),
 };
 
@@ -309,7 +313,7 @@ function SuperAdminDashboard() {
     { key: 'L', label: 'Lecturer Salary', icon: 'lecturer-salary' },
     { key: 'S', label: 'Staff Salary', icon: 'staff-salary' },
     { key: 'C', label: 'Grand Total', icon: 'section-c' },
-    { key: 'D', label: 'Section D', icon: 'section-d' },
+    { key: 'D', label: 'Settings', icon: 'settings' },
   ];
 
   return (
@@ -350,7 +354,7 @@ function SuperAdminDashboard() {
         {activeTab === 'L' && <LecturerSalary />}
         {activeTab === 'S' && <StaffSalary />}
         {activeTab === 'C' && <GrandTotal />}
-        {activeTab === 'D' && <ComingSoon label="Section D" />}
+        {activeTab === 'D' && <Settings />}
       </div>
     </div>
   );
