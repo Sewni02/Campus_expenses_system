@@ -7,6 +7,7 @@ const OfficeExpense = require('../models/officeExpense.model');
 const PettyCashAllocation = require('../models/pettyCashAllocation.model');
 const PettyCashExpense = require('../models/pettyCashExpense.model');
 const { listProjectNames } = require('./project.service');
+const { getGrandTotals } = require('./grandTotal.service');
 
 // Powers the chart on the public landing page.
 //
@@ -85,4 +86,66 @@ const getSystemOverview = async () => {
   return data;
 };
 
-module.exports = { getSystemOverview };
+// ---------------------------------------------------------------------------
+// Landing page "live overview": money spent THIS MONTH and YEAR-TO-DATE.
+//
+// Only totals leave this file (per function, per month) - never individual
+// payments, names, invoices or bank details. Built from the same numbers as
+// the Grand Total tab, so the landing page and the dashboard always agree.
+// Cached for a minute because the page is public.
+// ---------------------------------------------------------------------------
+const FUNCTIONS = ['constructions', 'officeExpenses', 'pettyCash', 'lecturerSalary', 'staffSalary'];
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+let summaryCache = { at: 0, data: null };
+
+const emptyTotals = () => {
+  const row = { grandTotal: 0 };
+  FUNCTIONS.forEach((f) => { row[f] = 0; });
+  return row;
+};
+
+const pickTotals = (row) => {
+  const out = emptyTotals();
+  if (!row) return out;
+  FUNCTIONS.forEach((f) => { out[f] = round2(row[f]); });
+  out.grandTotal = round2(row.grandTotal);
+  return out;
+};
+
+const getLandingSummary = async () => {
+  if (summaryCache.data && Date.now() - summaryCache.at < CACHE_MS) return summaryCache.data;
+
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const currentMonth = now.toISOString().slice(0, 7); // 'YYYY-MM'
+  const currentMonthNumber = now.getUTCMonth() + 1;
+
+  const { months } = await getGrandTotals();
+  const byMonth = new Map(months.map((m) => [m.month, m]));
+
+  // January .. the month the page is being opened in. Months with no spending are zeros.
+  const monthly = [];
+  const yearToDate = emptyTotals();
+  for (let m = 1; m <= currentMonthNumber; m += 1) {
+    const key = `${year}-${String(m).padStart(2, '0')}`;
+    const row = pickTotals(byMonth.get(key));
+    monthly.push({ month: key, grandTotal: row.grandTotal });
+    FUNCTIONS.forEach((f) => { yearToDate[f] = round2(yearToDate[f] + row[f]); });
+    yearToDate.grandTotal = round2(yearToDate.grandTotal + row.grandTotal);
+  }
+
+  const data = {
+    year,
+    month: currentMonth,
+    thisMonth: pickTotals(byMonth.get(currentMonth)),
+    yearToDate,
+    monthly,
+    updatedAt: now.toISOString(),
+  };
+
+  summaryCache = { at: Date.now(), data };
+  return data;
+};
+
+module.exports = { getSystemOverview, getLandingSummary };
