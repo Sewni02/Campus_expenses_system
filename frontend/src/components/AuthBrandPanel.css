@@ -1,0 +1,86 @@
+/* Brand panel for the sign in / sign up family of pages.
+   It is a dark gradient panel in BOTH light and dark mode (like most SaaS login pages). */
+.abp {
+  position: relative; isolation: isolate; overflow: hidden;
+  min-height: calc(100vh - 32px); border-radius: 32px; padding: 44px 48px;
+  display: flex; flex-direction: column; justify-content: space-between; gap: 28px;
+  color: #E6ECF5;
+  background: linear-gradient(150deg, #071A3D 0%, #0B2E6B 52%, #0E6F8F 100%);
+  box-shadow: 0 24px 60px rgba(10, 31, 68, .25);
+}
+
+/* background decoration */
+.abp-grid {
+  position: absolute; inset: 0; z-index: -1; opacity: .5; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .06) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse at 30% 40%, #000 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse at 30% 40%, #000 20%, transparent 75%);
+}
+.abp-glow { position: absolute; z-index: -1; border-radius: 50%; filter: blur(70px); pointer-events: none; }
+.abp-glow-a { width: 360px; height: 360px; top: -120px; right: -100px; background: #1FB5A4; opacity: .45; animation: abp-float 10s ease-in-out infinite; }
+.abp-glow-b { width: 320px; height: 320px; bottom: -140px; left: -90px; background: #2469C9; opacity: .55; animation: abp-float 12s ease-in-out infinite reverse; }
+@keyframes abp-float { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(30px, 24px); } }
+
+/* top badge */
+.abp-badge {
+  display: inline-flex; align-items: center; gap: 9px; padding: 7px 14px; border-radius: 999px;
+  background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .18); backdrop-filter: blur(8px);
+  font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: #CFE3FF;
+}
+.abp-badge i { position: relative; width: 8px; height: 8px; border-radius: 50%; background: #7FE0D3; }
+.abp-badge i::after { content: ''; position: absolute; inset: 0; border-radius: 50%; background: #7FE0D3; animation: abp-ping 2s ease-out infinite; }
+@keyframes abp-ping { 0% { transform: scale(1); opacity: .7; } 100% { transform: scale(3); opacity: 0; } }
+
+/* headline */
+.abp-title { margin: 0; max-width: 520px; font-size: clamp(30px, 3vw, 46px); font-weight: 300; line-height: 1.15; letter-spacing: -0.025em; color: #fff; }
+.abp-sub { margin: 14px 0 0; max-width: 460px; font-size: 15.5px; line-height: 1.6; color: #B7C8E6; }
+
+/* decorative dashboard preview */
+.abp-visual { position: relative; height: 230px; margin-top: 34px; max-width: 520px; }
+.abp-card {
+  position: absolute; border-radius: 20px; background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .2);
+  backdrop-filter: blur(14px); box-shadow: 0 14px 34px rgba(3, 10, 28, .35);
+}
+.abp-card-chart { left: 0; top: 0; width: 60%; height: 190px; padding: 18px 20px; animation: abp-bob 7s ease-in-out infinite; }
+.abp-card-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; color: #DCE8FB; }
+.abp-card-head em { font-style: normal; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; background: rgba(127, 224, 211, .18); color: #7FE0D3; }
+.abp-bars { display: flex; align-items: flex-end; gap: 10px; height: 112px; margin-top: 16px; }
+.abp-bars b {
+  flex: 1; height: var(--h); border-radius: 8px 8px 3px 3px; background: linear-gradient(180deg, #7FE0D3, #2F7DE0);
+  transform-origin: bottom; animation: abp-grow 1.1s cubic-bezier(.2, .8, .2, 1) both; animation-delay: var(--d);
+}
+.abp-bars b:last-child { box-shadow: 0 0 16px rgba(127, 224, 211, .6); }
+@keyframes abp-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+
+.abp-chip { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
+.abp-chip strong { display: block; font-size: 13.5px; font-weight: 600; color: #fff; }
+.abp-chip small { display: block; margin-top: 1px; font-size: 11.5px; color: #B7C8E6; }
+.abp-chip-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0; }
+.abp-chip-icon svg { width: 18px; height: 18px; }
+.abp-chip-ok { right: 0; top: 16px; animation: abp-bob 6s ease-in-out infinite .6s; }
+.abp-chip-ok .abp-chip-icon { background: rgba(88, 214, 141, .2); color: #6FE3A5; }
+.abp-chip-wait { right: 12px; top: 116px; animation: abp-bob 8s ease-in-out infinite 1.2s; }
+.abp-chip-wait .abp-chip-icon { background: rgba(242, 169, 59, .2); color: #F6C46A; }
+@keyframes abp-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+
+/* feature list */
+.abp-features { list-style: none; margin: 0; padding: 22px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; border-top: 1px solid rgba(255, 255, 255, .14); }
+.abp-features li { display: flex; flex-direction: column; gap: 10px; opacity: 0; animation: abp-rise .7s ease forwards; }
+.abp-features li:nth-child(1) { animation-delay: .35s; }
+.abp-features li:nth-child(2) { animation-delay: .5s; }
+.abp-features li:nth-child(3) { animation-delay: .65s; }
+@keyframes abp-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.abp-f-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .16); color: #7FE0D3; }
+.abp-f-icon svg { width: 19px; height: 19px; }
+.abp-features strong { display: block; font-size: 14px; font-weight: 600; color: #fff; }
+.abp-features small { display: block; margin-top: 3px; font-size: 12.5px; line-height: 1.5; color: #A9BBDB; }
+
+/* smaller laptops: drop the preview so nothing is cramped */
+@media (max-height: 800px) { .abp-visual { display: none; } }
+@media (max-width: 1200px) { .abp { padding: 36px 32px; } .abp-features { grid-template-columns: 1fr; gap: 14px; } .abp-features li { flex-direction: row; align-items: center; gap: 14px; } }
+@media (max-width: 900px) { .abp { display: none; } }
+
+:root[data-theme='dark'] .abp { box-shadow: 0 24px 60px rgba(0, 0, 0, .5); border: 1px solid #1B2D52; background: linear-gradient(150deg, #050F26 0%, #08215A 55%, #0A4F6B 100%); }
