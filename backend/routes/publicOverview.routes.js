@@ -1,6 +1,6 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const { systemOverview } = require('../controllers/publicOverview.controller');
+const { systemOverview, landingSummary } = require('../controllers/publicOverview.controller');
 
 const router = express.Router();
 
@@ -14,5 +14,6 @@ const publicLimiter = rateLimit({
 });
 
 router.get('/system-overview', publicLimiter, systemOverview);
+router.get('/landing-summary', publicLimiter, landingSummary);
 
 module.exports = router;
