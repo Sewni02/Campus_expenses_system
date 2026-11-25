@@ -6,7 +6,6 @@ import Dashboard from './pages/Dashboard';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import WaitingApproval from './pages/WaitingApproval';
 import ForgotPassword from './pages/ForgotPassword';
-import ResetPassword from './pages/ResetPassword';
 import ProtectedRoute from './components/ProtectedRoute';
 import GlobalLoader from './components/GlobalLoader';
 
@@ -20,7 +19,6 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/reset-password/:token" element={<ResetPassword />} />
 
         {/* Anyone logged in and approved can see their dashboard */}
         <Route
