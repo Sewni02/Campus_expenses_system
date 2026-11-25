@@ -2,6 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import ThemeToggle from '../components/ThemeToggle';
+import AuthBrandPanel from '../components/AuthBrandPanel';
 import './Login.css';
 
 
@@ -31,6 +32,7 @@ function ForgotPassword() {
   return (
     <div className="auth-page">
       <ThemeToggle floating />
+      <AuthBrandPanel />
       <div className="auth-card">
         <h2 className="auth-title">Forgot Password</h2>
         <p className="auth-subtitle">Enter your email to receive a reset link</p>
