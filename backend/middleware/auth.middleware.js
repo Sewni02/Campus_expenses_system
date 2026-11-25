@@ -1,7 +1,20 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/user.model');
+const { COOKIE_NAME } = require('../config/auth');
 
-// Checks the "Authorization: Bearer <token>" header sent with the request.
+// Finds the login token on the request.
+//   1. The httpOnly cookie (what the website uses)
+//   2. "Authorization: Bearer <token>" (kept for Postman / scripts / tests)
+const getToken = (req) => {
+  if (req.cookies && req.cookies[COOKIE_NAME]) return req.cookies[COOKIE_NAME];
+
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) return authHeader.split(' ')[1];
+
+  return null;
+};
+
+// Checks the login token sent with the request.
 // If the token is valid AND the user still exists AND hasn't been rejected,
 // attaches the current user info to req.user and lets the request continue.
 // Otherwise it stops the request here.
@@ -12,13 +25,11 @@ const User = require('../models/user.model');
 // working.
 const protect = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
+    const token = getToken(req);
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!token) {
       return res.status(401).json({ message: 'No token provided. Please log in.' });
     }
-
-    const token = authHeader.split(' ')[1];
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
@@ -30,8 +41,16 @@ const protect = async (req, res, next) => {
       return res.status(403).json({ message: 'Your account access has been rejected.' });
     }
 
+    // The password was changed after this token was issued -> the token is dead.
+    // (`iat` is in seconds, so compare in seconds.)
+    if (user.passwordChangedAt && decoded.iat < Math.floor(user.passwordChangedAt.getTime() / 1000)) {
+      return res.status(401).json({ message: 'Your password was changed. Please log in again.' });
+    }
+
     req.user = {
       id: user._id.toString(),
+      name: user.name,
+      email: user.email,
       role: user.role,
       status: user.status,
       permissions: user.permissions,

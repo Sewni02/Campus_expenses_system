@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload');
 const { protect, requireApproved } = require('../middleware/auth.middleware');
+const { requireFinanceAccess } = require('../middleware/permission.middleware');
 const {
   getContractors,
   createContractor,
@@ -16,7 +17,7 @@ const {
   deletePayment,
 } = require('../controllers/contractor.controller');
 
-router.use(protect, requireApproved);
+router.use(protect, requireApproved, requireFinanceAccess);
 
 router.get('/', getContractors);
 router.post('/', createContractor);

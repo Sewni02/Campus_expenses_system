@@ -1,180 +1,101 @@
-const OfficeLocation = require('../models/officeLocation.model');
-const OfficeExpense = require('../models/officeExpense.model');
+const { Readable } = require('stream');
+const { pipeline } = require('stream/promises');
 const asyncHandler = require('../utils/asyncHandler');
-const { ApiError, findOrFail } = require('../utils/ApiError');
-
-// Seeded onto every location the first time it's created (either the
-// built-in starter locations below, or a new one added via "+ Add
-// Location") - each location then keeps its own independent bill-type
-// list from that point on, so adding a bill type under one location never
-// affects another.
-const DEFAULT_BILL_TYPES = ['Electricity Bill', 'Water Bill', 'Telephone Bill', 'System Payment', 'Zoom Payment'];
-const DEFAULT_LOCATIONS = ['KMC', 'Kelani Hostel', '171', 'Home'];
-
-const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const officeExpenseService = require('../services/officeExpense.service');
 
 // GET /api/office-expenses/locations
-// Seeds the four starter locations (each with the default bill types) the
-// first time this is ever called on a fresh database, so the dropdown is
-// never empty out of the box.
 const getLocations = asyncHandler(async (req, res) => {
-  let locations = await OfficeLocation.find().sort({ name: 1 });
-
-  if (locations.length === 0) {
-    await OfficeLocation.insertMany(
-      DEFAULT_LOCATIONS.map((name) => ({
-        name,
-        billTypes: DEFAULT_BILL_TYPES.map((btName) => ({ name: btName })),
-      }))
-    );
-    locations = await OfficeLocation.find().sort({ name: 1 });
-  }
-
+  const locations = await officeExpenseService.getLocations();
   res.json(locations);
 });
 
 // POST /api/office-expenses/locations  { name }
 const addLocation = asyncHandler(async (req, res) => {
-  const { name } = req.body;
-  if (!name || !name.trim()) {
-    throw new ApiError(400, 'Location name is required');
-  }
-
-  const existing = await OfficeLocation.findOne({ name: new RegExp(`^${escapeRegex(name.trim())}$`, 'i') });
-  if (existing) {
-    throw new ApiError(409, 'This location already exists');
-  }
-
-  const location = await OfficeLocation.create({
-    name: name.trim(),
-    billTypes: DEFAULT_BILL_TYPES.map((btName) => ({ name: btName })),
-  });
-
-  res.status(201).json({ message: 'Location added successfully', location });
+  const result = await officeExpenseService.addLocation(req.body);
+  res.status(201).json(result);
 });
 
 // POST /api/office-expenses/locations/:locationId/bill-types  { name }
 const addBillType = asyncHandler(async (req, res) => {
-  const { locationId } = req.params;
-  const { name } = req.body;
-  if (!name || !name.trim()) {
-    throw new ApiError(400, 'Bill type name is required');
-  }
+  const result = await officeExpenseService.addBillType(req.params.locationId, req.body);
+  res.status(201).json(result);
+});
 
-  const location = await findOrFail(OfficeLocation, locationId, 'Location not found');
+// DELETE /api/office-expenses/locations/:locationId
+const deleteLocation = asyncHandler(async (req, res) => {
+  const result = await officeExpenseService.deleteLocation(req.params.locationId);
+  res.json(result);
+});
 
-  const alreadyExists = location.billTypes.some((bt) => bt.name.toLowerCase() === name.trim().toLowerCase());
-  if (alreadyExists) {
-    throw new ApiError(409, 'This bill type already exists for this location');
-  }
-
-  location.billTypes.push({ name: name.trim() });
-  await location.save();
-
-  res.status(201).json({ message: 'Bill type added successfully', location });
+// DELETE /api/office-expenses/locations/:locationId/bill-types/:billTypeId
+const deleteBillType = asyncHandler(async (req, res) => {
+  const result = await officeExpenseService.deleteBillType(req.params.locationId, req.params.billTypeId);
+  res.json(result);
 });
 
 // GET /api/office-expenses?location=<id>
 const getExpenses = asyncHandler(async (req, res) => {
-  const { location } = req.query;
-  const filter = location ? { location } : {};
-  const expenses = await OfficeExpense.find(filter).sort({ createdAt: -1 });
+  const expenses = await officeExpenseService.getExpenses(req.query);
   res.json(expenses);
 });
 
-// POST /api/office-expenses (multipart: location, billType, billCode, bill file)
-// Step 1 of the flow: raise the bill. Only bill-side details exist at this
-// point - status 'pending', no amount/payment info yet.
+// POST /api/office-expenses (multipart: location, billType, billCode, billMonth, billDate, description, bill file)
 const createExpense = asyncHandler(async (req, res) => {
-  const { location, billType, billCode } = req.body;
-
-  if (!location) throw new ApiError(400, 'location is required');
-  if (!billType || !billType.trim()) throw new ApiError(400, 'billType is required');
-  if (!billCode || !billCode.trim()) throw new ApiError(400, 'billCode is required');
-
-  const locationDoc = await findOrFail(OfficeLocation, location, 'Location not found');
-
-  const expense = await OfficeExpense.create({
-    location: locationDoc._id,
-    locationName: locationDoc.name,
-    billType: billType.trim(),
-    billCode: billCode.trim(),
-    billFileUrl: req.file?.path,
-    billFileName: req.file?.originalname,
-    status: 'pending',
-  });
-
-  res.status(201).json({ message: 'Bill added successfully', expense });
+  const result = await officeExpenseService.createExpense(req.body, req.file);
+  res.status(201).json(result);
 });
 
-// PATCH /api/office-expenses/:id/pay
-// Step 2: record the bank payment made against a pending bill - this is
-// also the first time amount is recorded at all. Flips status to 'paid'.
+// PATCH /api/office-expenses/:id/pay (multipart: bank details + optional `slip` file - PDF/JPG)
 const markAsPaid = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const { bankName, accountNumber, referenceNo, date, amount } = req.body;
-
-  if (!amount) throw new ApiError(400, 'amount is required');
-  if (!referenceNo || !referenceNo.trim()) throw new ApiError(400, 'referenceNo is required to mark this as paid');
-
-  const expense = await findOrFail(OfficeExpense, id, 'Bill not found');
-  if (expense.status === 'paid') {
-    throw new ApiError(400, 'This bill has already been marked as paid');
-  }
-
-  expense.status = 'paid';
-  expense.amount = amount;
-  expense.date = date || Date.now();
-  expense.bankName = bankName;
-  expense.accountNumber = accountNumber;
-  expense.referenceNo = referenceNo;
-  await expense.save();
-
-  res.json({ message: 'Bill marked as paid', expense });
+  const result = await officeExpenseService.markAsPaid(req.params.id, req.body, req.file);
+  res.json(result);
 });
 
-// PUT /api/office-expenses/:id — edit the bill code/file (pending or paid)
-// and, once paid, the payment details too.
+// PUT /api/office-expenses/:id — edit the bill code/date/description/file (pending
+// or paid) and, once paid, the payment details and bank slip too.
 const updateExpense = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const { billCode, bankName, accountNumber, referenceNo, date, amount } = req.body;
+  const result = await officeExpenseService.updateExpense(req.params.id, req.body, req.files);
+  res.json(result);
+});
 
-  const expense = await findOrFail(OfficeExpense, id, 'Bill not found');
+// GET /api/office-expenses/:id/download            -> the bill
+// GET /api/office-expenses/:id/download?file=slip  -> the bank slip
+// Streams the uploaded file back to the browser as a real file download.
+// The service resolves WHERE the bytes come from; this controller's job is
+// purely HTTP: set the right headers and pipe the stream to the response.
+const downloadBill = asyncHandler(async (req, res) => {
+  const isSlip = req.query.file === 'slip';
+  const { upstream, fileName } = await officeExpenseService.resolveDownload(req.params.id, isSlip);
 
-  if (billCode !== undefined && billCode !== '') expense.billCode = billCode;
-  if (req.file) {
-    expense.billFileUrl = req.file.path;
-    expense.billFileName = req.file.originalname;
-  }
+  const asciiName = fileName.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
 
-  if (expense.status === 'paid') {
-    if (bankName !== undefined) expense.bankName = bankName;
-    if (accountNumber !== undefined) expense.accountNumber = accountNumber;
-    if (referenceNo !== undefined) expense.referenceNo = referenceNo;
-    if (date) expense.date = date;
-    if (amount !== undefined && amount !== '') expense.amount = amount;
-  }
+  res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/octet-stream');
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`
+  );
+  const length = upstream.headers.get('content-length');
+  if (length) res.setHeader('Content-Length', length);
 
-  await expense.save({ validateModifiedOnly: true });
-
-  res.json({ message: 'Bill updated successfully', expense });
+  await pipeline(Readable.fromWeb(upstream.body), res);
 });
 
 // DELETE /api/office-expenses/:id
 const deleteExpense = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const expense = await OfficeExpense.findByIdAndDelete(id);
-  if (!expense) throw new ApiError(404, 'Bill not found');
-  res.json({ message: 'Bill deleted successfully' });
+  const result = await officeExpenseService.deleteExpense(req.params.id);
+  res.json(result);
 });
 
 module.exports = {
   getLocations,
   addLocation,
   addBillType,
+  deleteLocation,
+  deleteBillType,
   getExpenses,
   createExpense,
   markAsPaid,
   updateExpense,
+  downloadBill,
   deleteExpense,
 };

@@ -4,6 +4,11 @@ import axios from 'axios';
 import { API_BASE_URL } from '../config/api';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import PettyCashAdmin from './PettyCashAdmin';
+import LecturerSalary from './LecturerSalary';
+import StaffSalary from './StaffSalary';
+import GrandTotal from './GrandTotal';
+import Settings from './Settings';
 import './SuperAdminDashboard.css';
 
 // Sidebar icons: inline SVG (Lucide-style line icons). They take the colour of the
@@ -32,6 +37,25 @@ const SIDEBAR_ICONS = {
       <path d="M12 17.5v-11" />
     </>
   ),
+  'petty-cash': (
+    <>
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <circle cx="12" cy="12" r="2.5" />
+      <path d="M6 12h.01M18 12h.01" />
+    </>
+  ),
+  'lecturer-salary': (
+    <>
+      <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+      <path d="M6 12v5c3 3 9 3 12 0v-5" />
+    </>
+  ),
+  'staff-salary': (
+    <>
+      <rect x="2" y="7" width="20" height="14" rx="2" />
+      <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+    </>
+  ),
   'section-c': (
     <>
       <rect x="3" y="3" width="7" height="7" rx="1" />
@@ -40,8 +64,11 @@ const SIDEBAR_ICONS = {
       <rect x="3" y="14" width="7" height="7" rx="1" />
     </>
   ),
-  'section-d': (
-    <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+    </>
   ),
 };
 
@@ -250,6 +277,24 @@ const PERMISSION_GROUPS = [
     ],
   },
   {
+    category: 'Petty Cash',
+    options: [
+      { key: 'petty_cash_manage', label: 'Manage Petty Cash (Accountant)' },
+    ],
+  },
+  {
+    category: 'Lecturer Salary',
+    options: [
+      { key: 'lecturer_salary_manage', label: 'Manage Lecturer Salary (Accountant)' },
+    ],
+  },
+  {
+    category: 'Staff Salary',
+    options: [
+      { key: 'staff_salary_manage', label: 'Manage Staff Salary (Accountant)' },
+    ],
+  },
+  {
     category: 'Academic / Non-Academic Staff',
     options: [
       { key: 'staff_view_salary_receipts', label: 'View Salary Receipts' },
@@ -264,20 +309,22 @@ function SuperAdminDashboard() {
     { key: 'A', label: 'User Management', icon: 'user-management' },
     { key: 'B', label: 'Constructions', icon: 'constructions' },
     { key: 'E', label: 'Office Expenses', icon: 'office-expenses' },
-    { key: 'C', label: 'Section C', icon: 'section-c' },
-    { key: 'D', label: 'Section D', icon: 'section-d' },
+    { key: 'P', label: 'Petty Cash', icon: 'petty-cash' },
+    { key: 'L', label: 'Lecturer Salary', icon: 'lecturer-salary' },
+    { key: 'S', label: 'Staff Salary', icon: 'staff-salary' },
+    { key: 'C', label: 'Grand Total', icon: 'section-c' },
+    { key: 'D', label: 'Settings', icon: 'settings' },
   ];
 
   return (
     <div className="sa-container">
       <div className="sa-sidebar">
         <div className="sa-sidebar-header">
-          <div className="sa-avatar">
-            <img
-              src="/admin-avatar.jpg"
-              alt="Super Admin"
-              onError={(e) => { e.currentTarget.style.display = 'none'; }}
-            />
+          <div className="sa-avatar" role="img" aria-label="Super Admin">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="8.5" r="3.6" />
+              <path d="M4.5 20c0-4.1 3.4-6.6 7.5-6.6s7.5 2.5 7.5 6.6" />
+            </svg>
           </div>
           <p>Super Admin</p>
         </div>
@@ -303,8 +350,11 @@ function SuperAdminDashboard() {
         <div style={{ display: activeTab === 'E' ? 'block' : 'none' }}>
           <OfficeExpenses />
         </div>
-        {activeTab === 'C' && <ComingSoon label="Section C" />}
-        {activeTab === 'D' && <ComingSoon label="Section D" />}
+        {activeTab === 'P' && <PettyCashAdmin />}
+        {activeTab === 'L' && <LecturerSalary />}
+        {activeTab === 'S' && <StaffSalary />}
+        {activeTab === 'C' && <GrandTotal />}
+        {activeTab === 'D' && <Settings />}
       </div>
     </div>
   );
@@ -331,10 +381,382 @@ function ComingSoon({ label }) {
 // file, status 'pending' - no amount yet), then "Mark as Paid" attaches
 // the bank/payment details (bank, account no, reference no, date, amount)
 // and flips it to 'paid'.
+// Downloads an uploaded file (the bill, or the bank slip with kind='slip') through the backend
+// (GET /api/office-expenses/:id/download[?file=slip])
+// instead of linking straight to Cloudinary. A direct link fails whenever Cloudinary
+// blocks PDF delivery / unsigned transformations, and a plain <a download> is ignored
+// for cross-origin files anyway. Going through the API also sends the login token.
+const downloadOfficeBill = async (expense, kind = 'bill') => {
+  const isSlip = kind === 'slip';
+  try {
+    const res = await axios.get(`${API_BASE_URL}/api/office-expenses/${expense._id}/download`, {
+      params: isSlip ? { file: 'slip' } : undefined,
+      responseType: 'blob',
+    });
+
+    const fileUrl = isSlip ? expense.slipUrl : expense.billFileUrl;
+    const storedName = isSlip ? expense.slipFileName : expense.billFileName;
+    const urlExt = (String(fileUrl || '').split('?')[0].match(/\.([A-Za-z0-9]{2,5})$/) || [])[1];
+    let fileName = (storedName || '').trim() || `${expense.billCode || 'bill'}${isSlip ? '-slip' : ''}`;
+    if (!/\.[A-Za-z0-9]{2,5}$/.test(fileName) && urlExt) fileName += `.${urlExt}`;
+
+    const blobUrl = window.URL.createObjectURL(res.data);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(blobUrl);
+  } catch (err) {
+    console.error(err);
+    // With responseType 'blob' the error body arrives as a Blob - read the JSON message out of it.
+    let message = 'Could not download the file. Please try again.';
+    try {
+      if (err.response?.data instanceof Blob) {
+        const parsed = JSON.parse(await err.response.data.text());
+        if (parsed?.message) message = parsed.message;
+      } else if (err.response?.data?.message) {
+        message = err.response.data.message;
+      }
+    } catch {
+      /* keep the default message */
+    }
+    alert(message);
+  }
+};
+
+// Today's date as YYYY-MM-DD in the user's own timezone (for <input type="date">).
+const todayInputValue = () => {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
+// 'YYYY-MM' -> 'August 2026' ('-' when the bill has no month, e.g. older records).
+const formatBillMonth = (value) => {
+  const match = /^(\d{4})-(\d{2})$/.exec(value || '');
+  if (!match) return '-';
+  return new Date(Number(match[1]), Number(match[2]) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+};
+
+// The "Bill month" field is a month dropdown + a year the user types in.
+const BILL_MONTHS = [
+  ['01', 'January'], ['02', 'February'], ['03', 'March'], ['04', 'April'],
+  ['05', 'May'], ['06', 'June'], ['07', 'July'], ['08', 'August'],
+  ['09', 'September'], ['10', 'October'], ['11', 'November'], ['12', 'December'],
+];
+
+// ('08', '2026') -> '2026-08', or '' when either part is missing/invalid.
+const joinBillMonth = (monthNumber, year) =>
+  monthNumber && /^\d{4}$/.test(year) && Number(year) >= 2000 && Number(year) <= 2100
+    ? `${year}-${monthNumber}`
+    : '';
+
+// View + Download links for an uploaded bill / bank slip ('-' when nothing was uploaded).
+const OfficeFileLinks = ({ url, onDownload }) =>
+  url ? (
+    <span className="oe-bill-links">
+      <a href={url} target="_blank" rel="noreferrer" className="ge-slip-link">View</a>
+      <button type="button" className="ge-slip-link oe-download-btn" onClick={onDownload}>Download</button>
+    </span>
+  ) : '-';
+
+// ---------- Office Expenses: monthly Summary tab ----------
+// Pick a month + year (the month each bill is FOR, i.e. its Bill Month - not the
+// date it was paid), optionally narrow to one location, and see the totals.
+// With "All locations" the breakdown is location-wise; with one location picked
+// it becomes bill-type-wise for that location.
+// The month a bill counts towards in the summary: its Bill Month when it has one. Bills
+// saved without one (older bills, or ones created before the field existed) are placed by
+// their bill date, else the date they were added, else their payment date - and flagged
+// as estimated so the month can be corrected by editing the bill.
+const getSummaryMonth = (exp) => {
+  if (/^\d{4}-\d{2}$/.test(exp.billMonth || '')) return { key: exp.billMonth, estimated: false };
+  const source = exp.billDate || exp.createdAt || exp.date;
+  const d = source ? new Date(source) : null;
+  if (!d || Number.isNaN(d.getTime())) return null;
+  return { key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, estimated: true };
+};
+
+const summaryMonthLabel = (exp) => {
+  if (exp.billMonth) return formatBillMonth(exp.billMonth);
+  const info = getSummaryMonth(exp);
+  return info ? `${formatBillMonth(info.key)} (est.)` : '-';
+};
+
+function OfficeExpenseSummary({ expenses, locations }) {
+  const now = new Date();
+  const [monthNumber, setMonthNumber] = useState(String(now.getMonth() + 1).padStart(2, '0')); // '' = whole year
+  const [year, setYear] = useState(String(now.getFullYear()));
+  const [locationId, setLocationId] = useState('');
+
+  const yearValid = /^\d{4}$/.test(year);
+  const inLocation = (exp) => !locationId || String(exp.location) === locationId;
+
+  // Live, all-time totals for the selected location (or every location) - NOT limited to
+  // the month/year below, so they always reflect what's actually pending/paid right now
+  // and update the instant a bill is added, paid, edited or deleted.
+  const liveScope = expenses.filter(inLocation);
+  const livePendingRows = liveScope
+    .filter((exp) => exp.status !== 'paid')
+    .sort(
+      (a, b) =>
+        (a.locationName || '').localeCompare(b.locationName || '', undefined, { sensitivity: 'base' }) ||
+        (getSummaryMonth(a)?.key || '').localeCompare(getSummaryMonth(b)?.key || '')
+    );
+  const liveTotalPaidAmount = liveScope.reduce((sum, exp) => (exp.status === 'paid' ? sum + (exp.amount || 0) : sum), 0);
+
+  const rows = expenses.filter((exp) => {
+    if (!yearValid || !inLocation(exp)) return false;
+    const info = getSummaryMonth(exp);
+    if (!info) return false;
+    const [billYear, billMonth] = info.key.split('-');
+    return billYear === year && (!monthNumber || billMonth === monthNumber);
+  });
+  const estimatedCount = rows.filter((exp) => !exp.billMonth).length;
+
+  const paidRows = rows.filter((exp) => exp.status === 'paid');
+  const totalPaid = paidRows.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+
+  const groupByLocation = !locationId;
+  const groups = {};
+  rows.forEach((exp) => {
+    const key = (groupByLocation ? exp.locationName : exp.billType) || '-';
+    if (!groups[key]) groups[key] = { name: key, bills: 0, paid: 0, pending: 0, total: 0 };
+    groups[key].bills += 1;
+    if (exp.status === 'paid') {
+      groups[key].paid += 1;
+      groups[key].total += exp.amount || 0;
+    } else {
+      groups[key].pending += 1;
+    }
+  });
+  const groupList = Object.values(groups).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
+  const detailRows = [...rows].sort(
+    (a, b) =>
+      (a.locationName || '').localeCompare(b.locationName || '', undefined, { sensitivity: 'base' }) ||
+      (a.billType || '').localeCompare(b.billType || '', undefined, { sensitivity: 'base' }) ||
+      (a.billMonth || '').localeCompare(b.billMonth || '')
+  );
+
+  const monthName = BILL_MONTHS.find(([value]) => value === monthNumber)?.[1];
+  const periodLabel = monthName ? `${monthName} ${year}` : `Whole year ${year}`;
+  const locationLabel = locationId ? locations.find((loc) => loc._id === locationId)?.name || 'Selected location' : 'All locations';
+
+  return (
+    <div className="oe-summary">
+      <div className="ge-form oe-summary-filters">
+        <div className="ge-form-row upload-row">
+          <div className="oe-period-group">
+            <span className="oe-period-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
+                <path d="M3 9.5h18M8 3v3M16 3v3" />
+              </svg>
+            </span>
+            <div className="upload-field">
+              <label className="upload-field-label">Month</label>
+              <select value={monthNumber} onChange={(e) => setMonthNumber(e.target.value)}>
+                <option value="">Whole year</option>
+                {BILL_MONTHS.map(([value, name]) => (
+                  <option key={value} value={value}>{name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="oe-period-divider" aria-hidden="true" />
+            <div className="upload-field">
+              <label className="upload-field-label">Year</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={4}
+                placeholder="e.g. 2026"
+                value={year}
+                onChange={(e) => setYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              />
+            </div>
+          </div>
+          <div className="upload-field oe-location-field">
+            <label className="upload-field-label">Location</label>
+            <select value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+              <option value="">All locations</option>
+              {[...locations].sort((a, b) => a.name.localeCompare(b.name)).map((loc) => (
+                <option key={loc._id} value={loc._id}>{loc.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {!yearValid ? (
+        <p className="hw-empty-text">Enter a 4-digit year (e.g. 2026) to see the summary.</p>
+      ) : (
+        <>
+          <p className="sa-group-title project-section-title">Current status - {locationLabel}</p>
+          <p className="oe-summary-note">
+            Always live for {locationLabel} - not limited to the month/year below. Updates immediately when a bill is
+            added, marked as paid, edited or deleted.
+          </p>
+          <div className="project-summary-totals">
+            <div className="sa-stat-card sa-stat-rejected">
+              <p>Pending Bills</p>
+              <h2>{livePendingRows.length}</h2>
+            </div>
+            <div className="sa-stat-card sa-stat-total">
+              <p>Total Bills</p>
+              <h2>{liveScope.length}</h2>
+            </div>
+            <div className="sa-stat-card sa-stat-approved">
+              <p>Total Paid (All Time)</p>
+              <h2>{formatLKR(liveTotalPaidAmount)}</h2>
+            </div>
+          </div>
+
+          <p className="sa-group-title project-section-title oe-summary-period-title">{periodLabel} - {locationLabel}</p>
+          <div className="project-summary-totals">
+            <div className="sa-stat-card sa-stat-approved">
+              <p>Total Paid (This Period)</p>
+              <h2>{formatLKR(totalPaid)}</h2>
+            </div>
+            <div className="sa-stat-card">
+              <p>Paid Bills (This Period)</p>
+              <h2>{paidRows.length}</h2>
+            </div>
+          </div>
+
+          <p className="oe-summary-note">
+            The month is the month each bill is for (its Bill Month), not the date it was paid. Pending bills have no
+            amount yet, so only paid bills count towards the total.
+            {estimatedCount > 0 && ` ${estimatedCount} bill(s) below have no bill month yet, so they are placed by their bill date / date added (marked "est.") - edit them to set the correct month.`}
+          </p>
+
+          {rows.length === 0 ? (
+            <p className="hw-empty-text">No bills found for {periodLabel}{locationId ? ` at ${locationLabel}` : ''}.</p>
+          ) : (
+            <>
+              <p className="sa-group-title project-section-title">{groupByLocation ? 'Location-wise' : `Bill types at ${locationLabel}`}</p>
+              <table className="sa-table hw-items-table">
+                <thead>
+                  <tr>
+                    <th>{groupByLocation ? 'Location' : 'Bill Type'}</th>
+                    <th>Bills</th>
+                    <th>Paid</th>
+                    <th>Pending</th>
+                    <th>Total Paid (LKR)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groupList.map((g) => (
+                    <tr key={g.name}>
+                      <td>{g.name}</td>
+                      <td>{g.bills}</td>
+                      <td>{g.paid}</td>
+                      <td>{g.pending}</td>
+                      <td>{formatLKR(g.total)}</td>
+                    </tr>
+                  ))}
+                  <tr className="oe-summary-total-row">
+                    <td>Total</td>
+                    <td>{rows.length}</td>
+                    <td>{paidRows.length}</td>
+                    <td>{rows.length - paidRows.length}</td>
+                    <td>{formatLKR(totalPaid)}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <p className="sa-group-title project-section-title oe-summary-detail-title">Bills</p>
+              <div className="hw-table-scroll">
+                <table className="sa-table hw-items-table">
+                  <thead>
+                    <tr>
+                      <th>Location</th>
+                      <th>Bill Type</th>
+                      <th>Bill Code</th>
+                      <th>Bill Month</th>
+                      <th>Amount (LKR)</th>
+                      <th>Payment Date</th>
+                      <th>Status</th>
+                      <th>Bill</th>
+                      <th>Bank Slip</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detailRows.map((exp) => (
+                      <tr key={exp._id}>
+                        <td>{exp.locationName}</td>
+                        <td>{exp.billType}</td>
+                        <td>{exp.billCode}</td>
+                        <td>{summaryMonthLabel(exp)}</td>
+                        <td>{exp.status === 'paid' ? formatLKR(exp.amount) : '-'}</td>
+                        <td>{exp.status === 'paid' && exp.date ? new Date(exp.date).toLocaleDateString() : '-'}</td>
+                        <td>
+                          {exp.status === 'paid' ? (
+                            <span className="sa-badge sa-badge-approved">Paid</span>
+                          ) : (
+                            <span className="sa-badge sa-badge-pending">Pending</span>
+                          )}
+                        </td>
+                        <td><OfficeFileLinks url={exp.billFileUrl} onDownload={() => downloadOfficeBill(exp)} /></td>
+                        <td><OfficeFileLinks url={exp.slipUrl} onDownload={() => downloadOfficeBill(exp, 'slip')} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          <p className="sa-group-title project-section-title oe-summary-detail-title">
+            Pending bills - {locationLabel} (behind the Pending Bills count above)
+          </p>
+          <p className="oe-summary-note">
+            Every bill that is still unpaid, whichever month it is for. Mark them as paid from the Pending tab and they
+            drop off this list and move into the totals above.
+          </p>
+          {livePendingRows.length === 0 ? (
+            <p className="hw-empty-text">No pending bills.</p>
+          ) : (
+            <div className="hw-table-scroll">
+              <table className="sa-table hw-items-table">
+                <thead>
+                  <tr>
+                    <th>Location</th>
+                    <th>Bill Type</th>
+                    <th>Bill Code</th>
+                    <th>Bill Month</th>
+                    <th>Description</th>
+                    <th>Bill Date</th>
+                    <th>Bill</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {livePendingRows.map((exp) => (
+                    <tr key={exp._id}>
+                      <td>{exp.locationName}</td>
+                      <td>{exp.billType}</td>
+                      <td>{exp.billCode}</td>
+                      <td>{summaryMonthLabel(exp)}</td>
+                      <td className="oe-desc-cell">{exp.description || '-'}</td>
+                      <td>{(exp.billDate || exp.createdAt) ? new Date(exp.billDate || exp.createdAt).toLocaleDateString() : '-'}</td>
+                      <td><OfficeFileLinks url={exp.billFileUrl} onDownload={() => downloadOfficeBill(exp)} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function OfficeExpenses() {
   const [locations, setLocations] = useState([]);
   const [expenses, setExpenses] = useState([]);
-  const [expenseTab, setExpenseTab] = useTabState('oe', 'pending'); // 'pending' | 'paid'
+  const [expenseTab, setExpenseTab] = useTabState('oe', 'pending'); // 'pending' | 'paid' | 'summary'
 
   // The "+ Add New Bill" form: location -> bill type -> bill code + file
   const [showBillForm, setShowBillForm] = useState(false);
@@ -342,6 +764,10 @@ function OfficeExpenses() {
   const [selectedBillType, setSelectedBillType] = useState('');
   const [billCode, setBillCode] = useState('');
   const [billFile, setBillFile] = useState(null);
+  const [billMonthNumber, setBillMonthNumber] = useState('');
+  const [billYear, setBillYear] = useState('');
+  const [billDate, setBillDate] = useState(todayInputValue());
+  const [billDescription, setBillDescription] = useState('');
   const [isBillSubmitting, setIsBillSubmitting] = useState(false);
 
   // Inline "+ Add Location" / "+ Add Bill Type" mini-forms
@@ -359,7 +785,24 @@ function OfficeExpenses() {
   const [payReferenceNo, setPayReferenceNo] = useState('');
   const [payDate, setPayDate] = useState('');
   const [payAmount, setPayAmount] = useState('');
+  const [paySlipFile, setPaySlipFile] = useState(null);
   const [isPaySubmitting, setIsPaySubmitting] = useState(false);
+
+  // "Edit Bill" form (bill code / file, plus the payment details once paid)
+  const [editingExpense, setEditingExpense] = useState(null); // { id, label, paid }
+  const [editBillCode, setEditBillCode] = useState('');
+  const [editFile, setEditFile] = useState(null);
+  const [editBillMonthNumber, setEditBillMonthNumber] = useState('');
+  const [editBillYear, setEditBillYear] = useState('');
+  const [editBillDate, setEditBillDate] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editSlipFile, setEditSlipFile] = useState(null);
+  const [editBankName, setEditBankName] = useState('');
+  const [editAccountNumber, setEditAccountNumber] = useState('');
+  const [editReferenceNo, setEditReferenceNo] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [isEditSubmitting, setIsEditSubmitting] = useState(false);
 
   useEffect(() => {
     fetchLocations();
@@ -392,6 +835,10 @@ function OfficeExpenses() {
     setSelectedBillType('');
     setBillCode('');
     setBillFile(null);
+    setBillMonthNumber('');
+    setBillYear('');
+    setBillDate(todayInputValue());
+    setBillDescription('');
     setShowAddLocation(false);
     setShowAddBillType(false);
   };
@@ -439,12 +886,20 @@ function OfficeExpenses() {
   const handleCreateBill = async (e) => {
     e.preventDefault();
     if (!selectedLocationId || !selectedBillType || isBillSubmitting) return;
+    const billMonth = joinBillMonth(billMonthNumber, billYear);
+    if (!billMonth) {
+      alert('Please select the bill month and enter a valid 4-digit year (e.g. 2026).');
+      return;
+    }
     setIsBillSubmitting(true);
     try {
       const data = new FormData();
       data.append('location', selectedLocationId);
       data.append('billType', selectedBillType);
       data.append('billCode', billCode);
+      data.append('billMonth', billMonth);
+      if (billDate) data.append('billDate', billDate);
+      if (billDescription.trim()) data.append('description', billDescription.trim());
       if (billFile) data.append('bill', billFile);
 
       await axios.post(`${API_BASE_URL}/api/office-expenses`, data, {
@@ -470,11 +925,13 @@ function OfficeExpenses() {
     setPayReferenceNo('');
     setPayDate('');
     setPayAmount('');
+    setPaySlipFile(null);
   };
 
   const startPayingExpense = (expense) => {
     resetPayForm();
-    setPayingExpense({ id: expense._id, label: `${expense.locationName} - ${expense.billType} (${expense.billCode})` });
+    resetEditForm();
+    setPayingExpense({ id: expense._id, label: `${expense.locationName} - ${expense.billType} (${expense.billCode})${expense.billMonth ? ` - ${formatBillMonth(expense.billMonth)}` : ''}` });
   };
 
   // STEP 2: record the bank payment against a pending bill - amount is
@@ -484,12 +941,16 @@ function OfficeExpenses() {
     if (!payingExpense || isPaySubmitting) return;
     setIsPaySubmitting(true);
     try {
-      await axios.patch(`${API_BASE_URL}/api/office-expenses/${payingExpense.id}/pay`, {
-        bankName: payBankName,
-        accountNumber: payAccountNumber,
-        referenceNo: payReferenceNo,
-        date: payDate,
-        amount: payAmount,
+      const data = new FormData();
+      data.append('bankName', payBankName);
+      data.append('accountNumber', payAccountNumber);
+      data.append('referenceNo', payReferenceNo);
+      if (payDate) data.append('date', payDate);
+      data.append('amount', payAmount);
+      if (paySlipFile) data.append('slip', paySlipFile);
+
+      await axios.patch(`${API_BASE_URL}/api/office-expenses/${payingExpense.id}/pay`, data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
       resetPayForm();
       setExpenseTab('paid');
@@ -499,6 +960,118 @@ function OfficeExpenses() {
       alert(err.response?.data?.message || 'Could not mark this bill as paid. Please try again.');
     } finally {
       setIsPaySubmitting(false);
+    }
+  };
+
+  const handleDeleteLocation = async () => {
+    if (!selectedLocation) return;
+    if (!window.confirm(`Delete location "${selectedLocation.name}" and all its bill types? Existing bills for this location will be kept.`)) return;
+    try {
+      await axios.delete(`${API_BASE_URL}/api/office-expenses/locations/${selectedLocation._id}`);
+      setSelectedLocationId('');
+      setSelectedBillType('');
+      setShowAddBillType(false);
+      await fetchLocations();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not delete the location. Please try again.');
+    }
+  };
+
+  const handleDeleteBillType = async () => {
+    const billTypeToDelete = billTypeOptions.find((bt) => bt.name === selectedBillType);
+    if (!selectedLocation || !billTypeToDelete) return;
+    if (!window.confirm(`Delete bill type "${billTypeToDelete.name}" from ${selectedLocation.name}? Existing bills will be kept.`)) return;
+    try {
+      await axios.delete(
+        `${API_BASE_URL}/api/office-expenses/locations/${selectedLocation._id}/bill-types/${billTypeToDelete._id}`
+      );
+      setSelectedBillType('');
+      await fetchLocations();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not delete the bill type. Please try again.');
+    }
+  };
+
+  const resetEditForm = () => {
+    setEditingExpense(null);
+    setEditBillCode('');
+    setEditFile(null);
+    setEditBillMonthNumber('');
+    setEditBillYear('');
+    setEditBillDate('');
+    setEditDescription('');
+    setEditSlipFile(null);
+    setEditBankName('');
+    setEditAccountNumber('');
+    setEditReferenceNo('');
+    setEditDate('');
+    setEditAmount('');
+  };
+
+  const startEditingExpense = (expense) => {
+    resetPayForm();
+    resetEditForm();
+    const paid = expense.status === 'paid';
+    setEditingExpense({
+      id: expense._id,
+      paid,
+      label: `${expense.locationName} - ${expense.billType}${expense.billMonth ? ` - ${formatBillMonth(expense.billMonth)}` : ''}`,
+    });
+    setEditBillCode(expense.billCode || '');
+    const [savedYear = '', savedMonth = ''] = (expense.billMonth || '').split('-');
+    setEditBillYear(savedYear);
+    setEditBillMonthNumber(savedMonth);
+    setEditBillDate(expense.billDate ? new Date(expense.billDate).toISOString().slice(0, 10) : '');
+    setEditDescription(expense.description || '');
+    if (paid) {
+      setEditBankName(expense.bankName || '');
+      setEditAccountNumber(expense.accountNumber || '');
+      setEditReferenceNo(expense.referenceNo || '');
+      setEditDate(expense.date ? new Date(expense.date).toISOString().slice(0, 10) : '');
+      setEditAmount(expense.amount !== undefined && expense.amount !== null ? String(expense.amount) : '');
+    }
+    // The form sits above the tables - bring it into view.
+    setTimeout(() => document.getElementById('oe-edit-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  };
+
+  // Save changes to an existing bill (any status). Payment fields are only
+  // sent - and only accepted by the server - once the bill is paid.
+  const handleUpdateExpense = async (e) => {
+    e.preventDefault();
+    if (!editingExpense || isEditSubmitting) return;
+    const editBillMonth = joinBillMonth(editBillMonthNumber, editBillYear);
+    if ((editBillMonthNumber || editBillYear) && !editBillMonth) {
+      alert('Please select the bill month and enter a valid 4-digit year (e.g. 2026).');
+      return;
+    }
+    setIsEditSubmitting(true);
+    try {
+      const data = new FormData();
+      data.append('billCode', editBillCode);
+      if (editBillMonth) data.append('billMonth', editBillMonth);
+      if (editBillDate) data.append('billDate', editBillDate);
+      data.append('description', editDescription);
+      if (editFile) data.append('bill', editFile);
+      if (editingExpense.paid) {
+        if (editSlipFile) data.append('slip', editSlipFile);
+        data.append('bankName', editBankName);
+        data.append('accountNumber', editAccountNumber);
+        data.append('referenceNo', editReferenceNo);
+        if (editDate) data.append('date', editDate);
+        data.append('amount', editAmount);
+      }
+      await axios.put(`${API_BASE_URL}/api/office-expenses/${editingExpense.id}`, data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      resetEditForm();
+      fetchExpenses();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not update the bill. Please try again.');
+    } finally {
+      setIsEditSubmitting(false);
     }
   };
 
@@ -527,7 +1100,7 @@ function OfficeExpenses() {
           <ReportButton
             title="Office Expenses Report"
             subtitleText={`Pending: ${pendingExpenses.length} · Paid: ${paidExpenses.length}`}
-            columns={['Location', 'Bill Type', 'Bill Code', 'Amount (LKR)', 'Submitted On', 'Payment Date', 'Reference No.', 'Bank / Account', 'Status']}
+            columns={['Location', 'Bill Type', 'Bill Code', 'Bill Month', 'Description', 'Amount (LKR)', 'Bill Date', 'Payment Date', 'Reference No.', 'Bank / Account', 'Status']}
             entries={expenses}
             getDate={(exp) => exp.status === 'paid' ? exp.date : exp.createdAt}
             buildRow={(exp) => {
@@ -536,8 +1109,10 @@ function OfficeExpenses() {
                 exp.locationName,
                 exp.billType,
                 exp.billCode,
+                formatBillMonth(exp.billMonth),
+                exp.description || '-',
                 paid ? formatLKR(exp.amount) : '-',
-                exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : '-',
+                (exp.billDate || exp.createdAt) ? new Date(exp.billDate || exp.createdAt).toLocaleDateString() : '-',
                 paid && exp.date ? new Date(exp.date).toLocaleDateString() : '-',
                 paid ? exp.referenceNo : '-',
                 paid ? [exp.bankName, exp.accountNumber].filter(Boolean).join(' / ') : '-',
@@ -545,7 +1120,7 @@ function OfficeExpenses() {
               ];
             }}
             buildTotals={(filtered) => [
-              '', '', '',
+              '', '', '', '', '',
               formatLKR(filtered.filter((exp) => exp.status === 'paid').reduce((s, exp) => s + (exp.amount || 0), 0)),
               '', '', '', '', '',
             ]}
@@ -558,7 +1133,7 @@ function OfficeExpenses() {
       </div>
 
       <div className="ge-summary">
-        <span>{expenses.length} bill(s)</span>
+        <span>{expenses.length} bill(s) ({pendingExpenses.length} pending, {paidExpenses.length} paid)</span>
         <span>Total Paid: {formatLKR(totalPaid)}</span>
       </div>
 
@@ -586,6 +1161,11 @@ function OfficeExpenses() {
             >
               {showAddLocation ? 'Cancel' : '+ Add Location'}
             </button>
+            {selectedLocation && (
+              <button type="button" className="hw-delete-btn" onClick={handleDeleteLocation}>
+                Delete Location
+              </button>
+            )}
           </div>
 
           {showAddLocation && (
@@ -630,6 +1210,11 @@ function OfficeExpenses() {
             >
               {showAddBillType ? 'Cancel' : '+ Add Bill Type'}
             </button>
+            {selectedBillType && (
+              <button type="button" className="hw-delete-btn" onClick={handleDeleteBillType}>
+                Delete Bill Type
+              </button>
+            )}
           </div>
 
           {showAddBillType && (
@@ -665,6 +1250,49 @@ function OfficeExpenses() {
                   required
                 />
               </div>
+
+              <div className="ge-form-row upload-row">
+                <div className="upload-field">
+                  <label className="upload-field-label">Bill month (the month this bill is for)</label>
+                  <select value={billMonthNumber} onChange={(e) => setBillMonthNumber(e.target.value)} required>
+                    <option value="">Select month...</option>
+                    {BILL_MONTHS.map(([value, name]) => (
+                      <option key={value} value={value}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="upload-field">
+                  <label className="upload-field-label">Year</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={4}
+                    placeholder="e.g. 2026"
+                    value={billYear}
+                    onChange={(e) => setBillYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="ge-form-row upload-row">
+                <div className="upload-field">
+                  <label className="upload-field-label">Bill date</label>
+                  <input
+                    type="date"
+                    value={billDate}
+                    onChange={(e) => setBillDate(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <textarea
+                rows="2"
+                placeholder="Description (optional)"
+                value={billDescription}
+                onChange={(e) => setBillDescription(e.target.value)}
+              />
 
               <div className="ge-form-row upload-row">
                 <div className="upload-field">
@@ -723,11 +1351,141 @@ function OfficeExpenses() {
               required
             />
           </div>
+          <div className="ge-form-row upload-row">
+            <div className="upload-field">
+              <label className="upload-field-label">Bank slip (PDF or JPG, optional)</label>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf"
+                onChange={(e) => setPaySlipFile(e.target.files[0] || null)}
+              />
+            </div>
+          </div>
           <div className="sa-panel-actions">
             <button type="submit" className="ge-save-btn" disabled={isPaySubmitting}>
               {isPaySubmitting ? 'Saving...' : 'Mark as Paid'}
             </button>
             <button type="button" className="sa-reject-btn" onClick={resetPayForm}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      {editingExpense && (
+        <form id="oe-edit-form" className="ge-form pay-invoice-form" onSubmit={handleUpdateExpense}>
+          <p className="sa-group-title plan-preview-title">
+            Edit Bill - {editingExpense.label}
+          </p>
+          <div className="ge-form-row">
+            <input
+              type="text"
+              placeholder="Bill code"
+              value={editBillCode}
+              onChange={(e) => setEditBillCode(e.target.value)}
+              required
+            />
+          </div>
+          <div className="ge-form-row upload-row">
+            <div className="upload-field">
+              <label className="upload-field-label">Bill month (the month this bill is for)</label>
+              <select value={editBillMonthNumber} onChange={(e) => setEditBillMonthNumber(e.target.value)}>
+                <option value="">Select month...</option>
+                {BILL_MONTHS.map(([value, name]) => (
+                  <option key={value} value={value}>{name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="upload-field">
+              <label className="upload-field-label">Year</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={4}
+                placeholder="e.g. 2026"
+                value={editBillYear}
+                onChange={(e) => setEditBillYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              />
+            </div>
+          </div>
+          <div className="ge-form-row upload-row">
+            <div className="upload-field">
+              <label className="upload-field-label">Bill date</label>
+              <input
+                type="date"
+                value={editBillDate}
+                onChange={(e) => setEditBillDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <textarea
+            rows="2"
+            placeholder="Description (optional)"
+            value={editDescription}
+            onChange={(e) => setEditDescription(e.target.value)}
+          />
+          {editingExpense.paid && (
+            <>
+              <div className="ge-form-row">
+                <BankNameField value={editBankName} onChange={setEditBankName} required />
+                <input
+                  type="text"
+                  placeholder="Account number"
+                  value={editAccountNumber}
+                  onChange={(e) => setEditAccountNumber(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="ge-form-row">
+                <input
+                  type="text"
+                  placeholder="Reference No."
+                  value={editReferenceNo}
+                  onChange={(e) => setEditReferenceNo(e.target.value)}
+                  required
+                />
+                <input
+                  type="date"
+                  value={editDate}
+                  onChange={(e) => setEditDate(e.target.value)}
+                />
+              </div>
+              <div className="ge-form-row">
+                <input
+                  type="number"
+                  placeholder="Amount (LKR)"
+                  value={editAmount}
+                  onChange={(e) => setEditAmount(sanitizeAmountInput(e.target.value))}
+                  required
+                />
+              </div>
+              <div className="ge-form-row upload-row">
+                <div className="upload-field">
+                  <label className="upload-field-label">Replace bank slip (PDF or JPG, optional)</label>
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.pdf"
+                    onChange={(e) => setEditSlipFile(e.target.files[0] || null)}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+          <div className="ge-form-row upload-row">
+            <div className="upload-field">
+              <label className="upload-field-label">Replace bill file (optional)</label>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.pdf"
+                onChange={(e) => setEditFile(e.target.files[0])}
+              />
+            </div>
+          </div>
+          <div className="sa-panel-actions">
+            <button type="submit" className="ge-save-btn" disabled={isEditSubmitting}>
+              {isEditSubmitting ? 'Saving...' : 'Save Changes'}
+            </button>
+            <button type="button" className="sa-reject-btn" onClick={resetEditForm}>
               Cancel
             </button>
           </div>
@@ -749,16 +1507,27 @@ function OfficeExpenses() {
         >
           Paid ({paidExpenses.length})
         </button>
+        <button
+          type="button"
+          className={`hw-subtab-btn ${expenseTab === 'summary' ? 'active' : ''}`}
+          onClick={() => setExpenseTab('summary')}
+        >
+          Summary
+        </button>
       </div>
 
-      {expenseTab === 'pending' ? (
+      {expenseTab === 'summary' ? (
+        <OfficeExpenseSummary expenses={expenses} locations={locations} />
+      ) : expenseTab === 'pending' ? (
         <table className="sa-table hw-items-table">
           <thead>
             <tr>
               <th>Location</th>
               <th>Bill Type</th>
               <th>Bill Code</th>
-              <th>Submitted On</th>
+              <th>Bill Month</th>
+              <th>Description</th>
+              <th>Bill Date</th>
               <th>Bill</th>
               <th>Status</th>
               <th></th>
@@ -767,7 +1536,7 @@ function OfficeExpenses() {
           <tbody>
             {pendingExpenses.length === 0 ? (
               <tr>
-                <td colSpan="7" className="hw-empty-text">No pending bills</td>
+                <td colSpan="9" className="hw-empty-text">No pending bills</td>
               </tr>
             ) : (
               pendingExpenses.map((exp) => (
@@ -775,17 +1544,20 @@ function OfficeExpenses() {
                   <td>{exp.locationName}</td>
                   <td>{exp.billType}</td>
                   <td>{exp.billCode}</td>
-                  <td>{exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : '-'}</td>
+                  <td>{formatBillMonth(exp.billMonth)}</td>
+                  <td className="oe-desc-cell">{exp.description || '-'}</td>
+                  <td>{(exp.billDate || exp.createdAt) ? new Date(exp.billDate || exp.createdAt).toLocaleDateString() : '-'}</td>
                   <td>
-                    {exp.billFileUrl ? (
-                      <a href={exp.billFileUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a>
-                    ) : '-'}
+                    <OfficeFileLinks url={exp.billFileUrl} onDownload={() => downloadOfficeBill(exp)} />
                   </td>
                   <td><span className="sa-badge sa-badge-pending">Pending</span></td>
                   <td>
                     <div className="hw-supplier-actions">
                       <button className="sa-manage-btn" onClick={() => startPayingExpense(exp)}>
                         Mark as Paid
+                      </button>
+                      <button className="sa-manage-btn" onClick={() => startEditingExpense(exp)}>
+                        Edit
                       </button>
                       <button className="hw-delete-btn" onClick={() => handleDeleteExpense(exp._id)}>
                         Delete
@@ -804,12 +1576,16 @@ function OfficeExpenses() {
               <th>Location</th>
               <th>Bill Type</th>
               <th>Bill Code</th>
+              <th>Bill Month</th>
+              <th>Description</th>
               <th>Amount (LKR)</th>
+              <th>Bill Date</th>
               <th>Payment Date</th>
               <th>Reference No.</th>
               <th>Account No.</th>
               <th>Bank</th>
               <th>Bill</th>
+              <th>Bank Slip</th>
               <th>Status</th>
               <th></th>
             </tr>
@@ -817,7 +1593,7 @@ function OfficeExpenses() {
           <tbody>
             {paidExpenses.length === 0 ? (
               <tr>
-                <td colSpan="11" className="hw-empty-text">No paid bills yet</td>
+                <td colSpan="15" className="hw-empty-text">No paid bills yet</td>
               </tr>
             ) : (
               paidExpenses.map((exp) => (
@@ -825,19 +1601,26 @@ function OfficeExpenses() {
                   <td>{exp.locationName}</td>
                   <td>{exp.billType}</td>
                   <td>{exp.billCode}</td>
+                  <td>{formatBillMonth(exp.billMonth)}</td>
+                  <td className="oe-desc-cell">{exp.description || '-'}</td>
                   <td>{formatLKR(exp.amount)}</td>
+                  <td>{(exp.billDate || exp.createdAt) ? new Date(exp.billDate || exp.createdAt).toLocaleDateString() : '-'}</td>
                   <td>{exp.date ? new Date(exp.date).toLocaleDateString() : '-'}</td>
                   <td>{exp.referenceNo || '-'}</td>
                   <td>{exp.accountNumber || '-'}</td>
                   <td>{exp.bankName || '-'}</td>
                   <td>
-                    {exp.billFileUrl ? (
-                      <a href={exp.billFileUrl} target="_blank" rel="noreferrer" className="ge-slip-link">View</a>
-                    ) : '-'}
+                    <OfficeFileLinks url={exp.billFileUrl} onDownload={() => downloadOfficeBill(exp)} />
+                  </td>
+                  <td>
+                    <OfficeFileLinks url={exp.slipUrl} onDownload={() => downloadOfficeBill(exp, 'slip')} />
                   </td>
                   <td><span className="sa-badge sa-badge-approved">Paid</span></td>
                   <td>
                     <div className="hw-supplier-actions">
+                      <button className="sa-manage-btn" onClick={() => startEditingExpense(exp)}>
+                        Edit
+                      </button>
                       <button className="hw-delete-btn" onClick={() => handleDeleteExpense(exp._id)}>
                         Delete
                       </button>

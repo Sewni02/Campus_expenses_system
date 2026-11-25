@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload');
 const { protect, requireApproved } = require('../middleware/auth.middleware');
+const { requireFinanceAccess, requireFinanceRead } = require('../middleware/permission.middleware');
 const {
   getHardware,
   createHardware,
@@ -24,11 +25,18 @@ const {
 
 router.use(protect, requireApproved);
 
+// The price finder is a POST but only READS data, so it needs a read permission
+// (any finance permission), not 'add'. It must stay ABOVE the guard below.
+router.post('/quote', requireFinanceRead, getQuote);
+
+// Everything below is guarded by HTTP method: GET -> read, POST -> add,
+// PUT/PATCH -> edit, DELETE -> delete (see middleware/permission.middleware.js).
+router.use(requireFinanceAccess);
+
 router.get('/', getHardware);
 router.post('/', createHardware);
 router.put('/:id', updateHardware);
 router.delete('/:id', deleteHardware);
-router.post('/quote', getQuote);
 router.post('/:id/items', addItem);
 router.put('/:id/items/:itemId', updateItem);
 router.delete('/:id/items/:itemId', deleteItem);

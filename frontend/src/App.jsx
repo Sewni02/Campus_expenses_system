@@ -8,10 +8,13 @@ import WaitingApproval from './pages/WaitingApproval';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import ProtectedRoute from './components/ProtectedRoute';
+import GlobalLoader from './components/GlobalLoader';
 
 function App() {
   return (
     <BrowserRouter>
+      {/* Shows a progress bar / spinner while any API request is running */}
+      <GlobalLoader />
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />

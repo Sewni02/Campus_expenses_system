@@ -1,8 +1,11 @@
+import { logout } from '../utils/session';
+import ThemeToggle from '../components/ThemeToggle';
 import './WaitingApproval.css';
 
 function WaitingApproval() {
   return (
     <div className="wa-page">
+      <ThemeToggle floating />
       <div className="wa-icon">⏳</div>
       <h2 className="wa-title">Waiting for Approval</h2>
       <p className="wa-text">
@@ -11,8 +14,8 @@ function WaitingApproval() {
       </p>
       <button
         className="wa-back-btn"
-        onClick={() => {
-          localStorage.clear();
+        onClick={async () => {
+          await logout();
           window.location.href = '/login';
         }}
       >

@@ -18,6 +18,13 @@ const officeExpenseSchema = new mongoose.Schema(
     billCode: { type: String, required: true, trim: true },
     billFileUrl: { type: String },
     billFileName: { type: String },
+    // The date printed on the bill (chosen in the "Add New Bill" form) and a
+    // free-text note about what the bill is for.
+    billDate: { type: Date },
+    // Which month the bill is FOR, stored as 'YYYY-MM' (e.g. '2026-08' for the
+    // August bill) - so an August bill paid in September is still easy to tell apart.
+    billMonth: { type: String, match: /^\d{4}-(0[1-9]|1[0-2])$/ },
+    description: { type: String, trim: true },
     status: { type: String, enum: ['pending', 'paid'], default: 'pending' },
 
     // --- Payment-side details, filled in by "Mark as Paid" ---
@@ -26,6 +33,9 @@ const officeExpenseSchema = new mongoose.Schema(
     bankName: { type: String },
     accountNumber: { type: String },
     referenceNo: { type: String },
+    // Optional bank slip (PDF / JPG) uploaded when the bill is marked as paid.
+    slipUrl: { type: String },
+    slipFileName: { type: String },
   },
   { timestamps: true }
 );

@@ -1,0 +1,12 @@
+.tt-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 42px; height: 42px; padding: 0; border-radius: 50%; cursor: pointer;
+  border: 1px solid rgba(31, 181, 164, .45); background: transparent; color: #0F7A6F;
+  transition: background .2s, color .2s, border-color .2s;
+}
+.tt-btn svg { width: 20px; height: 20px; }
+.tt-btn:hover { background: linear-gradient(135deg, #1FB5A4, #2469C9); border-color: transparent; color: #fff; }
+.tt-floating { position: fixed; top: 18px; right: 20px; z-index: 50; background: rgba(255, 255, 255, .85); backdrop-filter: blur(8px); }
+:root[data-theme='dark'] .tt-btn { color: #7FE0D3; border-color: rgba(127, 224, 211, .4); }
+:root[data-theme='dark'] .tt-floating { background: rgba(16, 29, 56, .85); }
+:root[data-theme='dark'] .tt-btn:hover { color: #fff; }
