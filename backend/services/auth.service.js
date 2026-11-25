@@ -1,8 +1,9 @@
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const User = require('../models/user.model');
 const transporter = require('../config/email');
+const { signToken } = require('../config/auth');
+const { recordAudit } = require('../utils/audit');
 const { ApiError } = require('../utils/ApiError');
 const { exactRegex } = require('../utils/escapeRegex');
 const {
@@ -15,6 +16,12 @@ const {
 
 // All auth business logic lives here. Controllers only translate
 // HTTP <-> service calls; nothing in this file knows about req/res.
+// `meta` = { ip, userAgent } passed in by the controller, used for the audit log.
+
+// Account lockout: this many wrong passwords in a row locks the account for a while.
+// (The IP rate limit in server.js still applies on top of this.)
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCK_MINUTES = 15;
 
 // Used only to keep login timing the same whether or not the email exists
 // (see loginUser). Never matches a real password.
@@ -33,7 +40,7 @@ const safeEqual = (a, b) => {
   return crypto.timingSafeEqual(hashA, hashB);
 };
 
-const signupUser = async ({ name, email, password, role, department, adminCode }) => {
+const signupUser = async ({ name, email, password, department, adminCode }, meta = {}) => {
   const cleanName = requireString(name, 'name', { max: 100 });
   const cleanEmail = validateEmail(email);
   validatePassword(password);
@@ -55,13 +62,19 @@ const signupUser = async ({ name, email, password, role, department, adminCode }
     name: cleanName,
     email: cleanEmail,
     password: hashedPassword,
-    // TODO(security): `role` still comes straight from the request body, so a
-    // client can ask for 'super_admin'. Left unchanged on purpose for now -
-    // this is the known role-selection issue that is being handled separately.
-    role: isSuperAdmin ? 'super_admin' : (role || 'employee'),
+    // The role is decided HERE, never by the request. The only way to become a
+    // super admin is the secret ADMIN_SIGNUP_CODE; everyone else starts as an
+    // 'employee' and the super admin gives them access afterwards.
+    role: isSuperAdmin ? 'super_admin' : 'employee',
     department: cleanDepartment,
     status: isSuperAdmin ? 'approved' : 'pending',
     permissions: isSuperAdmin ? ['*'] : [],
+  });
+
+  recordAudit({
+    action: isSuperAdmin ? 'SIGNUP_SUPER_ADMIN' : 'SIGNUP',
+    user: newUser,
+    meta,
   });
 
   return {
@@ -78,7 +91,26 @@ const signupUser = async ({ name, email, password, role, department, adminCode }
   };
 };
 
-const loginUser = async ({ email, password }) => {
+// Counts one wrong password. Returns true if this attempt locked the account.
+// Uses $inc so two simultaneous wrong guesses cannot be counted as one.
+const registerFailedLogin = async (user) => {
+  const updated = await User.findByIdAndUpdate(
+    user._id,
+    { $inc: { failedLoginAttempts: 1 } },
+    { new: true }
+  );
+
+  if (updated && updated.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { lockUntil: new Date(Date.now() + LOCK_MINUTES * 60 * 1000), failedLoginAttempts: 0 } }
+    );
+    return true;
+  }
+  return false;
+};
+
+const loginUser = async ({ email, password }, meta = {}) => {
   // Login only checks TYPES (so an object can't be smuggled into the query).
   // It deliberately does not apply the new password rules - older accounts
   // may have shorter passwords and must still be able to sign in.
@@ -86,25 +118,52 @@ const loginUser = async ({ email, password }) => {
     throw new ApiError(400, 'Email and password are required');
   }
 
-  const user = await findUserByEmail(email.trim());
+  const cleanEmail = email.trim();
+  const user = await findUserByEmail(cleanEmail);
+
+  // Locked account: stop before even checking the password.
+  if (user && user.lockUntil && user.lockUntil.getTime() > Date.now()) {
+    const minutesLeft = Math.ceil((user.lockUntil.getTime() - Date.now()) / 60000);
+    recordAudit({ action: 'LOGIN_BLOCKED_LOCKED', outcome: 'failed', user, meta });
+    throw new ApiError(429, `Too many failed attempts. Try again in ${minutesLeft} minute(s).`);
+  }
 
   // Always run one bcrypt comparison, even when the email doesn't exist.
   // Otherwise "unknown email" answers instantly while "wrong password" takes
   // ~100ms, which lets an attacker discover which emails are registered.
   const isMatch = await bcrypt.compare(password, user ? user.password : DUMMY_PASSWORD_HASH);
   if (!user || !isMatch) {
+    if (user) {
+      const nowLocked = await registerFailedLogin(user);
+      recordAudit({ action: nowLocked ? 'ACCOUNT_LOCKED' : 'LOGIN_FAILED', outcome: 'failed', user, meta });
+      if (nowLocked) {
+        throw new ApiError(429, `Too many failed attempts. Account locked for ${LOCK_MINUTES} minutes.`);
+      }
+    } else {
+      recordAudit({
+        action: 'LOGIN_FAILED',
+        outcome: 'failed',
+        meta,
+        details: { email: cleanEmail.slice(0, 254), reason: 'unknown email' },
+      });
+    }
     throw new ApiError(400, 'Invalid email or password');
   }
 
-  const token = jwt.sign(
-    { id: user._id, role: user.role },
-    process.env.JWT_SECRET,
-    { expiresIn: '8h' }
-  );
+  // Correct password: clear any earlier failed attempts / expired lock.
+  if (user.failedLoginAttempts || user.lockUntil) {
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { failedLoginAttempts: 0 }, $unset: { lockUntil: '' } }
+    );
+  }
+
+  recordAudit({ action: 'LOGIN_SUCCESS', user, meta });
 
   return {
     message: 'Login successful',
-    token,
+    // The controller puts this in an httpOnly cookie and does NOT send it to the browser's JS.
+    token: signToken(user),
     user: {
       id: user._id,
       name: user.name,
@@ -116,10 +175,23 @@ const loginUser = async ({ email, password }) => {
   };
 };
 
+// ---- Forgot password (OTP flow) ----
+// Step 1: user enters email -> we email a 6-digit OTP (valid 10 minutes).
+// Step 2: user enters email + OTP + new password on the same page -> password changes.
+const OTP_MINUTES = 10;
+const MAX_OTP_ATTEMPTS = 5;
+
+// The OTP is stored hashed (HMAC with the email mixed in), never in plain text.
+const hashOtp = (email, otp) =>
+  crypto
+    .createHmac('sha256', process.env.JWT_SECRET || 'otp-secret')
+    .update(`${email.toLowerCase()}:${otp}`)
+    .digest('hex');
+
 // Deliberately never reveals whether the email exists - always returns the
-// same generic message, whether or not a reset email was actually sent.
-const requestPasswordReset = async ({ email }) => {
-  const genericMessage = { message: 'If that email is registered, a reset link has been sent.' };
+// same generic message, whether or not an OTP was actually sent.
+const requestPasswordReset = async ({ email }, meta = {}) => {
+  const genericMessage = { message: 'If that email is registered, a 6-digit OTP has been sent.' };
 
   const cleanEmail = validateEmail(email);
 
@@ -128,51 +200,77 @@ const requestPasswordReset = async ({ email }) => {
     return genericMessage;
   }
 
-  const resetToken = crypto.randomBytes(32).toString('hex');
-  const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+  // crypto.randomInt is cryptographically secure (Math.random is not).
+  const otp = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
 
-  user.resetPasswordToken = hashedToken;
-  user.resetPasswordExpires = Date.now() + 15 * 60 * 1000;
+  user.resetPasswordToken = hashOtp(user.email, otp);
+  user.resetPasswordExpires = Date.now() + OTP_MINUTES * 60 * 1000;
+  user.resetPasswordAttempts = 0;
   await user.save();
 
-  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-
-  await transporter.sendMail({
-    from: `"Campus Expense System" <${process.env.EMAIL_USER}>`,
-    to: user.email,
-    subject: 'Password Reset Request',
-    html: `
+  try {
+    await transporter.sendMail({
+      from: `"Campus Expense System" <${process.env.EMAIL_USER}>`,
+      to: user.email,
+      subject: 'Your Password Reset OTP',
+      html: `
       <p>Hi ${escapeHtml(user.name)},</p>
-      <p>You requested a password reset. Click the link below to set a new password. This link expires in 15 minutes.</p>
-      <p><a href="${resetUrl}">${resetUrl}</a></p>
+      <p>Use this OTP to reset your password. It expires in ${OTP_MINUTES} minutes.</p>
+      <p style="font-size:28px;font-weight:bold;letter-spacing:6px;">${otp}</p>
       <p>If you did not request this, please ignore this email.</p>
     `,
-  });
+    });
+    recordAudit({ action: 'PASSWORD_RESET_REQUESTED', user, meta });
+  } catch (err) {
+    // If the mail server fails we still answer with the generic message.
+    // Returning an error here would tell a stranger "this email IS registered".
+    console.error('Password reset email failed:', err.message);
+    recordAudit({ action: 'PASSWORD_RESET_REQUESTED', outcome: 'failed', user, meta, details: { reason: 'email send failed' } });
+  }
 
   return genericMessage;
 };
 
-const resetPassword = async ({ token, password }) => {
-  if (typeof token !== 'string' || !token) {
-    throw new ApiError(400, 'Reset link is invalid or has expired');
-  }
+const resetPassword = async ({ email, otp, password }, meta = {}) => {
+  const invalid = () => new ApiError(400, 'OTP is invalid or has expired');
+
+  const cleanEmail = validateEmail(email);
+  if (typeof otp !== 'string' && typeof otp !== 'number') throw invalid();
+  const cleanOtp = String(otp).trim();
+  if (!/^\d{6}$/.test(cleanOtp)) throw invalid();
   validatePassword(password);
 
-  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+  const user = await findUserByEmail(cleanEmail);
+  if (!user || !user.resetPasswordToken || !user.resetPasswordExpires || user.resetPasswordExpires.getTime() < Date.now()) {
+    throw invalid();
+  }
 
-  const user = await User.findOne({
-    resetPasswordToken: hashedToken,
-    resetPasswordExpires: { $gt: Date.now() },
-  });
+  // Too many wrong guesses: kill this OTP so a new one must be requested.
+  if ((user.resetPasswordAttempts || 0) >= MAX_OTP_ATTEMPTS) {
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    user.resetPasswordAttempts = 0;
+    await user.save();
+    throw new ApiError(400, 'Too many wrong attempts. Please request a new OTP.');
+  }
 
-  if (!user) {
-    throw new ApiError(400, 'Reset link is invalid or has expired');
+  if (!safeEqual(hashOtp(user.email, cleanOtp), user.resetPasswordToken)) {
+    await User.updateOne({ _id: user._id }, { $inc: { resetPasswordAttempts: 1 } });
+    recordAudit({ action: 'PASSWORD_RESET', outcome: 'failed', user, meta, details: { reason: 'wrong otp' } });
+    throw invalid();
   }
 
   user.password = await bcrypt.hash(password, 10);
   user.resetPasswordToken = undefined;
   user.resetPasswordExpires = undefined;
+  user.resetPasswordAttempts = 0;
+  // Log out every device that was using the old password, and unlock the account.
+  user.passwordChangedAt = new Date();
+  user.failedLoginAttempts = 0;
+  user.lockUntil = undefined;
   await user.save();
+
+  recordAudit({ action: 'PASSWORD_RESET', user, meta });
 
   return { message: 'Password has been reset successfully. You can now log in.' };
 };
