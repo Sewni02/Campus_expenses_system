@@ -204,10 +204,6 @@
 :root[data-theme='dark'] .lp-btn-light:hover { background: #fff; }
 
 /* ---- sign in / sign up / forgot / reset ---- */
-:root[data-theme='dark'] .auth-page::before {
-  background: linear-gradient(180deg, rgba(3, 10, 24, .35) 30%, rgba(3, 10, 24, .9)), url('./assets/image1.jpg') center / cover no-repeat;
-}
-:root[data-theme='dark'] .auth-page::after { color: #F4F7FB; }
 :root[data-theme='dark'] .auth-field input { background: #101D38; border-color: #2F4470; color: #E6ECF5; }
 :root[data-theme='dark'] .auth-field input:focus { border-color: #5B93F0; box-shadow: 0 0 0 4px rgba(91, 147, 240, .18); }
 :root[data-theme='dark'] .auth-field input:-webkit-autofill {

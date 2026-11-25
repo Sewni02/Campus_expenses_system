@@ -2,6 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import { Link, useNavigate } from 'react-router-dom';
 import ThemeToggle from '../components/ThemeToggle';
+import AuthBrandPanel from '../components/AuthBrandPanel';
 import './Login.css';
 
 function Signup() {
@@ -34,6 +35,7 @@ function Signup() {
   return (
     <div className="auth-page">
       <ThemeToggle floating />
+      <AuthBrandPanel title="Join your campus finance workspace." subtitle="Create your account to submit expenses, track budgets and follow approvals in one place." />
       <div className="auth-card">
         <h2 className="auth-title">Sign Up</h2>
         <p className="auth-subtitle">Create a new account</p>

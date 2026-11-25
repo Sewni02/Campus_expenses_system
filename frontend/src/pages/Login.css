@@ -1,5 +1,5 @@
 /* Shared by Login, Signup, Forgot Password and Reset Password.
-   Split layout: photo panel (::before + ::after) on the left, form on the right. */
+   Split layout: brand panel (components/AuthBrandPanel) on the left, form on the right. */
 .auth-page {
   position: relative;
   min-height: 100vh;
@@ -9,28 +9,6 @@
   padding: 16px;
   background: var(--slate-50);
   font-family: var(--font-main);
-}
-
-.auth-page::before {
-  content: '';
-  min-height: calc(100vh - 32px);
-  border-radius: 32px;
-  background:
-    linear-gradient(180deg, rgba(10, 31, 68, 0.15) 30%, rgba(10, 31, 68, 0.82)),
-    url('../assets/image1.jpg') center / cover no-repeat;
-}
-
-.auth-page::after {
-  content: 'Manage every expense with total clarity.';
-  position: absolute;
-  left: 56px;
-  bottom: 56px;
-  max-width: 34%;
-  font-size: clamp(26px, 2.8vw, 40px);
-  font-weight: 300;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-  color: var(--slate-50);
 }
 
 .auth-card {
@@ -128,8 +106,6 @@
 
 @media (max-width: 900px) {
   .auth-page { grid-template-columns: 1fr; }
-  .auth-page::before,
-  .auth-page::after { display: none; }
 }
 /* Success / error notices (were inline styles in Forgot / Reset password) - same light colours as before */
 .auth-message-ok { background: #f0f7f1; border-color: #cfe6d3; color: #2f7a3d; }
