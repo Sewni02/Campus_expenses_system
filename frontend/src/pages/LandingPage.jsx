@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import image1 from '../assets/image1.jpg';
 import wordmark from '../assets/xpendly-wordmark.png';
+import ThemeToggle from '../components/ThemeToggle';
 import './LandingPage.css';
 
 const features = [
@@ -30,6 +31,7 @@ function LandingPage() {
           <a href="#contact" className="lp-nav-link">Contact</a>
         </nav>
         <div className="lp-nav-actions">
+          <ThemeToggle />
           <button onClick={() => navigate('/login')} className="lp-btn-outline">Sign In</button>
           <button onClick={() => navigate('/signup')} className="lp-btn-solid">Sign Up</button>
         </div>

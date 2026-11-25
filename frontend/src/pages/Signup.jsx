@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { Link, useNavigate } from 'react-router-dom';
+import ThemeToggle from '../components/ThemeToggle';
 import './Login.css';
 
 function Signup() {
@@ -32,6 +33,7 @@ function Signup() {
 
   return (
     <div className="auth-page">
+      <ThemeToggle floating />
       <div className="auth-card">
         <h2 className="auth-title">Sign Up</h2>
         <p className="auth-subtitle">Create a new account</p>
