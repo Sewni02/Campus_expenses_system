@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
+import image1 from '../assets/image1.jpg';
 import wordmark from '../assets/xpendly-wordmark.png';
 import ThemeToggle from '../components/ThemeToggle';
-import LiveOverview from '../components/LiveOverview';
 import './LandingPage.css';
 
 const features = [
@@ -52,7 +52,17 @@ function LandingPage() {
           <button onClick={() => navigate('/login')} className="lp-btn-outline lp-btn-large">Sign In</button>
         </div>
 
-        <LiveOverview />
+        <div className="lp-hero-visual">
+          <img src={image1} alt="Campus building" className="lp-hero-image" />
+          <div className="lp-glass-card">
+            <span className="lp-glass-label">This Month</span>
+            <div className="lp-glass-row">
+              <div><h4>128</h4><p>Approved</p></div>
+              <div><h4>14</h4><p>Pending</p></div>
+              <span className="lp-glass-up">+12%</span>
+            </div>
+          </div>
+        </div>
 
         <div className="lp-stats">
           {stats.map((s) => (
