@@ -1,10 +1,103 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { logout } from '../utils/session';
 import useTabState from '../hooks/useTabState';
 import axios from 'axios';
 import { API_BASE_URL } from '../config/api';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import PettyCashAdmin from './PettyCashAdmin';
+import LecturerSalary from './LecturerSalary';
+import StaffSalary from './StaffSalary';
+import GrandTotal from './GrandTotal';
+import Settings from './Settings';
 import './SuperAdminDashboard.css';
+import './UserDashboard.css';
+
+// Sidebar icons: inline SVG (Lucide-style line icons). They take the colour of the
+// tab text automatically, so no image files are needed.
+const SIDEBAR_ICONS = {
+  'user-management': (
+    <>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </>
+  ),
+  constructions: (
+    <>
+      <path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5" />
+      <path d="M14 6a6 6 0 0 1 6 6v3" />
+      <path d="M4 15v-3a6 6 0 0 1 6-6" />
+      <rect x="2" y="15" width="20" height="4" rx="1" />
+    </>
+  ),
+  'office-expenses': (
+    <>
+      <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
+      <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" />
+      <path d="M12 17.5v-11" />
+    </>
+  ),
+  'petty-cash': (
+    <>
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <circle cx="12" cy="12" r="2.5" />
+      <path d="M6 12h.01M18 12h.01" />
+    </>
+  ),
+  'lecturer-salary': (
+    <>
+      <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+      <path d="M6 12v5c3 3 9 3 12 0v-5" />
+    </>
+  ),
+  'staff-salary': (
+    <>
+      <rect x="2" y="7" width="20" height="14" rx="2" />
+      <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+    </>
+  ),
+  'section-c': (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+    </>
+  ),
+  logout: (
+    <>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </>
+  ),
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+    </>
+  ),
+};
+
+function SidebarIcon({ name }) {
+  return (
+    <svg
+      className="sa-sidebar-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {SIDEBAR_ICONS[name]}
+    </svg>
+  );
+}
 
 // ---------- Shared input sanitizers & formatters ----------
 // Name fields: letters and spaces only (no digits, no special characters)
@@ -169,53 +262,78 @@ function ProjectNameField({ value, onChange, projectNames, required = true }) {
   );
 }
 
+// One group per page of the system (same order as the sidebar). Settings is not
+// here on purpose: every user always gets Settings.
+const areaOptions = (prefix) => [
+  { key: `${prefix}_view`, label: 'View' },
+  { key: `${prefix}_add`, label: 'Add' },
+  { key: `${prefix}_edit`, label: 'Edit' },
+  { key: `${prefix}_delete`, label: 'Delete' },
+];
+
 const PERMISSION_GROUPS = [
+  { category: 'Constructions', options: areaOptions('constructions') },
+  { category: 'Office Expenses', options: areaOptions('office_expenses') },
   {
-    category: 'Audit',
-    options: [
-      { key: 'audit_view_calculations', label: 'View Calculations' },
-      { key: 'audit_add_comments', label: 'Add Comments' },
-    ],
+    category: 'Lecturer Salary',
+    options: [{ key: 'lecturer_salary_manage', label: 'Manage Lecturer Salary (Accountant)' }],
   },
   {
-    category: 'Human Resources',
-    options: [
-      { key: 'hr_view_expenses', label: 'View Expenses' },
-      { key: 'hr_calculate_expenses', label: 'Calculate Expenses' },
-    ],
+    category: 'Staff Salary',
+    options: [{ key: 'staff_salary_manage', label: 'Manage Staff Salary (Accountant)' }],
   },
   {
-    category: 'Finance',
-    options: [
-      { key: 'finance_add_payments', label: 'Add Payments' },
-      { key: 'finance_view_payments', label: 'View Payments' },
-      { key: 'finance_edit_payments', label: 'Edit Payments' },
-      { key: 'finance_delete_payments', label: 'Delete Payments' },
-    ],
-  },
-  {
-    category: 'Academic / Non-Academic Staff',
-    options: [
-      { key: 'staff_view_salary_receipts', label: 'View Salary Receipts' },
-    ],
+    category: 'Grand Total',
+    options: [{ key: 'grand_total_view', label: 'View Grand Total' }],
   },
 ];
 
+// Users saved before Constructions / Office Expenses had their own permissions
+// hold the old finance_* keys. Show them as the matching new keys (and drop the
+// old ones) so the checkboxes are correct and the next Save upgrades them.
+const KNOWN_PERMISSIONS = PERMISSION_GROUPS.flatMap((g) => g.options.map((o) => o.key));
+const migrateLegacyPermissions = (permissions = []) => {
+  const out = new Set(permissions.filter((k) => KNOWN_PERMISSIONS.includes(k)));
+  ['view', 'add', 'edit', 'delete'].forEach((action) => {
+    const old = permissions.includes(`finance_${action}_payments`);
+    if (old) {
+      out.add(`constructions_${action}`);
+      out.add(`office_expenses_${action}`);
+    }
+  });
+  return [...out];
+};
+
 function SuperAdminDashboard() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useTabState('tab', 'A');
 
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
+  };
+
   const sidebarItems = [
-    { key: 'A', label: 'User Management' },
-    { key: 'B', label: 'Constructions' },
-    { key: 'C', label: 'Section C' },
-    { key: 'D', label: 'Section D' },
+    { key: 'A', label: 'User Management', icon: 'user-management' },
+    { key: 'B', label: 'Constructions', icon: 'constructions' },
+    { key: 'E', label: 'Office Expenses', icon: 'office-expenses' },
+    { key: 'P', label: 'Petty Cash', icon: 'petty-cash' },
+    { key: 'L', label: 'Lecturer Salary', icon: 'lecturer-salary' },
+    { key: 'S', label: 'Staff Salary', icon: 'staff-salary' },
+    { key: 'C', label: 'Grand Total', icon: 'section-c' },
+    { key: 'D', label: 'Settings', icon: 'settings' },
   ];
 
   return (
     <div className="sa-container">
-      <div className="sa-sidebar">
+      <div className="sa-sidebar ud-sidebar">
         <div className="sa-sidebar-header">
-          <div className="sa-avatar" />
+          <div className="sa-avatar" role="img" aria-label="Super Admin">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="8.5" r="3.6" />
+              <path d="M4.5 20c0-4.1 3.4-6.6 7.5-6.6s7.5 2.5 7.5 6.6" />
+            </svg>
+          </div>
           <p>Super Admin</p>
         </div>
         {sidebarItems.map((item) => (
@@ -224,9 +342,14 @@ function SuperAdminDashboard() {
             onClick={() => setActiveTab(item.key)}
             className={`sa-sidebar-item ${activeTab === item.key ? 'active' : ''}`}
           >
-            {item.label}
+            <SidebarIcon name={item.icon} />
+            <span>{item.label}</span>
           </div>
         ))}
+        <div className="sa-sidebar-item ud-logout" onClick={handleLogout}>
+          <SidebarIcon name="logout" />
+          <span>Log out</span>
+        </div>
       </div>
 
       <div className="sa-content">
@@ -236,8 +359,14 @@ function SuperAdminDashboard() {
         <div style={{ display: activeTab === 'B' ? 'block' : 'none' }}>
           <Constructions />
         </div>
-        {activeTab === 'C' && <ComingSoon label="Section C" />}
-        {activeTab === 'D' && <ComingSoon label="Section D" />}
+        <div style={{ display: activeTab === 'E' ? 'block' : 'none' }}>
+          <OfficeExpenses />
+        </div>
+        {activeTab === 'P' && <PettyCashAdmin />}
+        {activeTab === 'L' && <LecturerSalary />}
+        {activeTab === 'S' && <StaffSalary />}
+        {activeTab === 'C' && <GrandTotal />}
+        {activeTab === 'D' && <Settings />}
       </div>
     </div>
   );
@@ -252,14 +381,1443 @@ function ComingSoon({ label }) {
   );
 }
 
+// ---------- Sub-section: Office Expenses ----------
+// Recurring office bills (electricity, water, telephone, system/Zoom
+// subscriptions, etc.), tracked per location. Each location keeps its own
+// independent list of bill types (seeded with 5 common ones, expandable
+// via "+ Add Bill Type"), so picking a location first narrows the bill
+// type dropdown to only what's relevant there.
+//
+// Same two-step flow as every other payment area in this app: a bill is
+// raised first (location + bill type + bill code + the uploaded bill
+// file, status 'pending' - no amount yet), then "Mark as Paid" attaches
+// the bank/payment details (bank, account no, reference no, date, amount)
+// and flips it to 'paid'.
+// Downloads an uploaded file (the bill, or the bank slip with kind='slip') through the backend
+// (GET /api/office-expenses/:id/download[?file=slip])
+// instead of linking straight to Cloudinary. A direct link fails whenever Cloudinary
+// blocks PDF delivery / unsigned transformations, and a plain <a download> is ignored
+// for cross-origin files anyway. Going through the API also sends the login token.
+const downloadOfficeBill = async (expense, kind = 'bill') => {
+  const isSlip = kind === 'slip';
+  try {
+    const res = await axios.get(`${API_BASE_URL}/api/office-expenses/${expense._id}/download`, {
+      params: isSlip ? { file: 'slip' } : undefined,
+      responseType: 'blob',
+    });
+
+    const fileUrl = isSlip ? expense.slipUrl : expense.billFileUrl;
+    const storedName = isSlip ? expense.slipFileName : expense.billFileName;
+    const urlExt = (String(fileUrl || '').split('?')[0].match(/\.([A-Za-z0-9]{2,5})$/) || [])[1];
+    let fileName = (storedName || '').trim() || `${expense.billCode || 'bill'}${isSlip ? '-slip' : ''}`;
+    if (!/\.[A-Za-z0-9]{2,5}$/.test(fileName) && urlExt) fileName += `.${urlExt}`;
+
+    const blobUrl = window.URL.createObjectURL(res.data);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(blobUrl);
+  } catch (err) {
+    console.error(err);
+    // With responseType 'blob' the error body arrives as a Blob - read the JSON message out of it.
+    let message = 'Could not download the file. Please try again.';
+    try {
+      if (err.response?.data instanceof Blob) {
+        const parsed = JSON.parse(await err.response.data.text());
+        if (parsed?.message) message = parsed.message;
+      } else if (err.response?.data?.message) {
+        message = err.response.data.message;
+      }
+    } catch {
+      /* keep the default message */
+    }
+    alert(message);
+  }
+};
+
+// Today's date as YYYY-MM-DD in the user's own timezone (for <input type="date">).
+const todayInputValue = () => {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
+// 'YYYY-MM' -> 'August 2026' ('-' when the bill has no month, e.g. older records).
+const formatBillMonth = (value) => {
+  const match = /^(\d{4})-(\d{2})$/.exec(value || '');
+  if (!match) return '-';
+  return new Date(Number(match[1]), Number(match[2]) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+};
+
+// The "Bill month" field is a month dropdown + a year the user types in.
+const BILL_MONTHS = [
+  ['01', 'January'], ['02', 'February'], ['03', 'March'], ['04', 'April'],
+  ['05', 'May'], ['06', 'June'], ['07', 'July'], ['08', 'August'],
+  ['09', 'September'], ['10', 'October'], ['11', 'November'], ['12', 'December'],
+];
+
+// ('08', '2026') -> '2026-08', or '' when either part is missing/invalid.
+const joinBillMonth = (monthNumber, year) =>
+  monthNumber && /^\d{4}$/.test(year) && Number(year) >= 2000 && Number(year) <= 2100
+    ? `${year}-${monthNumber}`
+    : '';
+
+// View + Download links for an uploaded bill / bank slip ('-' when nothing was uploaded).
+const OfficeFileLinks = ({ url, onDownload }) =>
+  url ? (
+    <span className="oe-bill-links">
+      <a href={url} target="_blank" rel="noreferrer" className="ge-slip-link">View</a>
+      <button type="button" className="ge-slip-link oe-download-btn" onClick={onDownload}>Download</button>
+    </span>
+  ) : '-';
+
+// ---------- Office Expenses: monthly Summary tab ----------
+// Pick a month + year (the month each bill is FOR, i.e. its Bill Month - not the
+// date it was paid), optionally narrow to one location, and see the totals.
+// With "All locations" the breakdown is location-wise; with one location picked
+// it becomes bill-type-wise for that location.
+// The month a bill counts towards in the summary: its Bill Month when it has one. Bills
+// saved without one (older bills, or ones created before the field existed) are placed by
+// their bill date, else the date they were added, else their payment date - and flagged
+// as estimated so the month can be corrected by editing the bill.
+const getSummaryMonth = (exp) => {
+  if (/^\d{4}-\d{2}$/.test(exp.billMonth || '')) return { key: exp.billMonth, estimated: false };
+  const source = exp.billDate || exp.createdAt || exp.date;
+  const d = source ? new Date(source) : null;
+  if (!d || Number.isNaN(d.getTime())) return null;
+  return { key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, estimated: true };
+};
+
+const summaryMonthLabel = (exp) => {
+  if (exp.billMonth) return formatBillMonth(exp.billMonth);
+  const info = getSummaryMonth(exp);
+  return info ? `${formatBillMonth(info.key)} (est.)` : '-';
+};
+
+function OfficeExpenseSummary({ expenses, locations }) {
+  const now = new Date();
+  const [monthNumber, setMonthNumber] = useState(String(now.getMonth() + 1).padStart(2, '0')); // '' = whole year
+  const [year, setYear] = useState(String(now.getFullYear()));
+  const [locationId, setLocationId] = useState('');
+
+  const yearValid = /^\d{4}$/.test(year);
+  const inLocation = (exp) => !locationId || String(exp.location) === locationId;
+
+  // Live, all-time totals for the selected location (or every location) - NOT limited to
+  // the month/year below, so they always reflect what's actually pending/paid right now
+  // and update the instant a bill is added, paid, edited or deleted.
+  const liveScope = expenses.filter(inLocation);
+  const livePendingRows = liveScope
+    .filter((exp) => exp.status !== 'paid')
+    .sort(
+      (a, b) =>
+        (a.locationName || '').localeCompare(b.locationName || '', undefined, { sensitivity: 'base' }) ||
+        (getSummaryMonth(a)?.key || '').localeCompare(getSummaryMonth(b)?.key || '')
+    );
+  const liveTotalPaidAmount = liveScope.reduce((sum, exp) => (exp.status === 'paid' ? sum + (exp.amount || 0) : sum), 0);
+
+  const rows = expenses.filter((exp) => {
+    if (!yearValid || !inLocation(exp)) return false;
+    const info = getSummaryMonth(exp);
+    if (!info) return false;
+    const [billYear, billMonth] = info.key.split('-');
+    return billYear === year && (!monthNumber || billMonth === monthNumber);
+  });
+  const estimatedCount = rows.filter((exp) => !exp.billMonth).length;
+
+  const paidRows = rows.filter((exp) => exp.status === 'paid');
+  const totalPaid = paidRows.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+
+  const groupByLocation = !locationId;
+  const groups = {};
+  rows.forEach((exp) => {
+    const key = (groupByLocation ? exp.locationName : exp.billType) || '-';
+    if (!groups[key]) groups[key] = { name: key, bills: 0, paid: 0, pending: 0, total: 0 };
+    groups[key].bills += 1;
+    if (exp.status === 'paid') {
+      groups[key].paid += 1;
+      groups[key].total += exp.amount || 0;
+    } else {
+      groups[key].pending += 1;
+    }
+  });
+  const groupList = Object.values(groups).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
+  const detailRows = [...rows].sort(
+    (a, b) =>
+      (a.locationName || '').localeCompare(b.locationName || '', undefined, { sensitivity: 'base' }) ||
+      (a.billType || '').localeCompare(b.billType || '', undefined, { sensitivity: 'base' }) ||
+      (a.billMonth || '').localeCompare(b.billMonth || '')
+  );
+
+  const monthName = BILL_MONTHS.find(([value]) => value === monthNumber)?.[1];
+  const periodLabel = monthName ? `${monthName} ${year}` : `Whole year ${year}`;
+  const locationLabel = locationId ? locations.find((loc) => loc._id === locationId)?.name || 'Selected location' : 'All locations';
+
+  return (
+    <div className="oe-summary">
+      <div className="ge-form oe-summary-filters">
+        <div className="ge-form-row upload-row">
+          <div className="oe-period-group">
+            <span className="oe-period-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
+                <path d="M3 9.5h18M8 3v3M16 3v3" />
+              </svg>
+            </span>
+            <div className="upload-field">
+              <label className="upload-field-label">Month</label>
+              <select value={monthNumber} onChange={(e) => setMonthNumber(e.target.value)}>
+                <option value="">Whole year</option>
+                {BILL_MONTHS.map(([value, name]) => (
+                  <option key={value} value={value}>{name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="oe-period-divider" aria-hidden="true" />
+            <div className="upload-field">
+              <label className="upload-field-label">Year</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={4}
+                placeholder="e.g. 2026"
+                value={year}
+                onChange={(e) => setYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              />
+            </div>
+          </div>
+          <div className="upload-field oe-location-field">
+            <label className="upload-field-label">Location</label>
+            <select value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+              <option value="">All locations</option>
+              {[...locations].sort((a, b) => a.name.localeCompare(b.name)).map((loc) => (
+                <option key={loc._id} value={loc._id}>{loc.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {!yearValid ? (
+        <p className="hw-empty-text">Enter a 4-digit year (e.g. 2026) to see the summary.</p>
+      ) : (
+        <>
+          <p className="sa-group-title project-section-title">Current status - {locationLabel}</p>
+          <p className="oe-summary-note">
+            Always live for {locationLabel} - not limited to the month/year below. Updates immediately when a bill is
+            added, marked as paid, edited or deleted.
+          </p>
+          <div className="project-summary-totals">
+            <div className="sa-stat-card sa-stat-rejected">
+              <p>Pending Bills</p>
+              <h2>{livePendingRows.length}</h2>
+            </div>
+            <div className="sa-stat-card sa-stat-total">
+              <p>Total Bills</p>
+              <h2>{liveScope.length}</h2>
+            </div>
+            <div className="sa-stat-card sa-stat-approved">
+              <p>Total Paid (All Time)</p>
+              <h2>{formatLKR(liveTotalPaidAmount)}</h2>
+            </div>
+          </div>
+
+          <p className="sa-group-title project-section-title oe-summary-period-title">{periodLabel} - {locationLabel}</p>
+          <div className="project-summary-totals">
+            <div className="sa-stat-card sa-stat-approved">
+              <p>Total Paid (This Period)</p>
+              <h2>{formatLKR(totalPaid)}</h2>
+            </div>
+            <div className="sa-stat-card">
+              <p>Paid Bills (This Period)</p>
+              <h2>{paidRows.length}</h2>
+            </div>
+          </div>
+
+          <p className="oe-summary-note">
+            The month is the month each bill is for (its Bill Month), not the date it was paid. Pending bills have no
+            amount yet, so only paid bills count towards the total.
+            {estimatedCount > 0 && ` ${estimatedCount} bill(s) below have no bill month yet, so they are placed by their bill date / date added (marked "est.") - edit them to set the correct month.`}
+          </p>
+
+          {rows.length === 0 ? (
+            <p className="hw-empty-text">No bills found for {periodLabel}{locationId ? ` at ${locationLabel}` : ''}.</p>
+          ) : (
+            <>
+              <p className="sa-group-title project-section-title">{groupByLocation ? 'Location-wise' : `Bill types at ${locationLabel}`}</p>
+              <table className="sa-table hw-items-table">
+                <thead>
+                  <tr>
+                    <th>{groupByLocation ? 'Location' : 'Bill Type'}</th>
+                    <th>Bills</th>
+                    <th>Paid</th>
+                    <th>Pending</th>
+                    <th>Total Paid (LKR)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groupList.map((g) => (
+                    <tr key={g.name}>
+                      <td>{g.name}</td>
+                      <td>{g.bills}</td>
+                      <td>{g.paid}</td>
+                      <td>{g.pending}</td>
+                      <td>{formatLKR(g.total)}</td>
+                    </tr>
+                  ))}
+                  <tr className="oe-summary-total-row">
+                    <td>Total</td>
+                    <td>{rows.length}</td>
+                    <td>{paidRows.length}</td>
+                    <td>{rows.length - paidRows.length}</td>
+                    <td>{formatLKR(totalPaid)}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <p className="sa-group-title project-section-title oe-summary-detail-title">Bills</p>
+              <div className="hw-table-scroll">
+                <table className="sa-table hw-items-table">
+                  <thead>
+                    <tr>
+                      <th>Location</th>
+                      <th>Bill Type</th>
+                      <th>Bill Code</th>
+                      <th>Bill Month</th>
+                      <th>Amount (LKR)</th>
+                      <th>Payment Date</th>
+                      <th>Status</th>
+                      <th>Bill</th>
+                      <th>Bank Slip</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detailRows.map((exp) => (
+                      <tr key={exp._id}>
+                        <td>{exp.locationName}</td>
+                        <td>{exp.billType}</td>
+                        <td>{exp.billCode}</td>
+                        <td>{summaryMonthLabel(exp)}</td>
+                        <td>{exp.status === 'paid' ? formatLKR(exp.amount) : '-'}</td>
+                        <td>{exp.status === 'paid' && exp.date ? new Date(exp.date).toLocaleDateString() : '-'}</td>
+                        <td>
+                          {exp.status === 'paid' ? (
+                            <span className="sa-badge sa-badge-approved">Paid</span>
+                          ) : (
+                            <span className="sa-badge sa-badge-pending">Pending</span>
+                          )}
+                        </td>
+                        <td><OfficeFileLinks url={exp.billFileUrl} onDownload={() => downloadOfficeBill(exp)} /></td>
+                        <td><OfficeFileLinks url={exp.slipUrl} onDownload={() => downloadOfficeBill(exp, 'slip')} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          <p className="sa-group-title project-section-title oe-summary-detail-title">
+            Pending bills - {locationLabel} (behind the Pending Bills count above)
+          </p>
+          <p className="oe-summary-note">
+            Every bill that is still unpaid, whichever month it is for. Mark them as paid from the Pending tab and they
+            drop off this list and move into the totals above.
+          </p>
+          {livePendingRows.length === 0 ? (
+            <p className="hw-empty-text">No pending bills.</p>
+          ) : (
+            <div className="hw-table-scroll">
+              <table className="sa-table hw-items-table">
+                <thead>
+                  <tr>
+                    <th>Location</th>
+                    <th>Bill Type</th>
+                    <th>Bill Code</th>
+                    <th>Bill Month</th>
+                    <th>Description</th>
+                    <th>Bill Date</th>
+                    <th>Bill</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {livePendingRows.map((exp) => (
+                    <tr key={exp._id}>
+                      <td>{exp.locationName}</td>
+                      <td>{exp.billType}</td>
+                      <td>{exp.billCode}</td>
+                      <td>{summaryMonthLabel(exp)}</td>
+                      <td className="oe-desc-cell">{exp.description || '-'}</td>
+                      <td>{(exp.billDate || exp.createdAt) ? new Date(exp.billDate || exp.createdAt).toLocaleDateString() : '-'}</td>
+                      <td><OfficeFileLinks url={exp.billFileUrl} onDownload={() => downloadOfficeBill(exp)} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function OfficeExpenses() {
+  const [locations, setLocations] = useState([]);
+  const [expenses, setExpenses] = useState([]);
+  const [expenseTab, setExpenseTab] = useTabState('oe', 'pending'); // 'pending' | 'paid' | 'summary'
+
+  // The "+ Add New Bill" form: location -> bill type -> bill code + file
+  const [showBillForm, setShowBillForm] = useState(false);
+  const [selectedLocationId, setSelectedLocationId] = useState('');
+  const [selectedBillType, setSelectedBillType] = useState('');
+  const [billCode, setBillCode] = useState('');
+  const [billFile, setBillFile] = useState(null);
+  const [billMonthNumber, setBillMonthNumber] = useState('');
+  const [billYear, setBillYear] = useState('');
+  const [billDate, setBillDate] = useState(todayInputValue());
+  const [billDescription, setBillDescription] = useState('');
+  const [isBillSubmitting, setIsBillSubmitting] = useState(false);
+
+  // Inline "+ Add Location" / "+ Add Bill Type" mini-forms
+  const [showAddLocation, setShowAddLocation] = useState(false);
+  const [newLocationName, setNewLocationName] = useState('');
+  const [isAddingLocation, setIsAddingLocation] = useState(false);
+  const [showAddBillType, setShowAddBillType] = useState(false);
+  const [newBillTypeName, setNewBillTypeName] = useState('');
+  const [isAddingBillType, setIsAddingBillType] = useState(false);
+
+  // "Mark as Paid" form
+  const [payingExpense, setPayingExpense] = useState(null); // { id, label }
+  const [payBankName, setPayBankName] = useState('');
+  const [payAccountNumber, setPayAccountNumber] = useState('');
+  const [payReferenceNo, setPayReferenceNo] = useState('');
+  const [payDate, setPayDate] = useState('');
+  const [payAmount, setPayAmount] = useState('');
+  const [paySlipFile, setPaySlipFile] = useState(null);
+  const [isPaySubmitting, setIsPaySubmitting] = useState(false);
+
+  // "Edit Bill" form (bill code / file, plus the payment details once paid)
+  const [editingExpense, setEditingExpense] = useState(null); // { id, label, paid }
+  const [editBillCode, setEditBillCode] = useState('');
+  const [editFile, setEditFile] = useState(null);
+  const [editBillMonthNumber, setEditBillMonthNumber] = useState('');
+  const [editBillYear, setEditBillYear] = useState('');
+  const [editBillDate, setEditBillDate] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editSlipFile, setEditSlipFile] = useState(null);
+  const [editBankName, setEditBankName] = useState('');
+  const [editAccountNumber, setEditAccountNumber] = useState('');
+  const [editReferenceNo, setEditReferenceNo] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [isEditSubmitting, setIsEditSubmitting] = useState(false);
+
+  useEffect(() => {
+    fetchLocations();
+    fetchExpenses();
+  }, []);
+
+  const fetchLocations = async () => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/api/office-expenses/locations`);
+      setLocations(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchExpenses = async () => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/api/office-expenses`);
+      setExpenses(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const selectedLocation = locations.find((loc) => loc._id === selectedLocationId) || null;
+  const billTypeOptions = selectedLocation?.billTypes || [];
+
+  const resetBillForm = () => {
+    setSelectedLocationId('');
+    setSelectedBillType('');
+    setBillCode('');
+    setBillFile(null);
+    setBillMonthNumber('');
+    setBillYear('');
+    setBillDate(todayInputValue());
+    setBillDescription('');
+    setShowAddLocation(false);
+    setShowAddBillType(false);
+  };
+
+  const handleAddLocation = async () => {
+    if (!newLocationName.trim() || isAddingLocation) return;
+    setIsAddingLocation(true);
+    try {
+      const res = await axios.post(`${API_BASE_URL}/api/office-expenses/locations`, { name: newLocationName.trim() });
+      setNewLocationName('');
+      setShowAddLocation(false);
+      await fetchLocations();
+      setSelectedLocationId(res.data.location._id);
+      setSelectedBillType('');
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not add the location. Please try again.');
+    } finally {
+      setIsAddingLocation(false);
+    }
+  };
+
+  const handleAddBillType = async () => {
+    if (!newBillTypeName.trim() || isAddingBillType || !selectedLocationId) return;
+    setIsAddingBillType(true);
+    try {
+      await axios.post(`${API_BASE_URL}/api/office-expenses/locations/${selectedLocationId}/bill-types`, {
+        name: newBillTypeName.trim(),
+      });
+      const addedName = newBillTypeName.trim();
+      setNewBillTypeName('');
+      setShowAddBillType(false);
+      await fetchLocations();
+      setSelectedBillType(addedName);
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not add the bill type. Please try again.');
+    } finally {
+      setIsAddingBillType(false);
+    }
+  };
+
+  // STEP 1: raise the bill - location, bill type, bill code, the bill
+  // file. No amount/payment info yet - created as 'pending'.
+  const handleCreateBill = async (e) => {
+    e.preventDefault();
+    if (!selectedLocationId || !selectedBillType || isBillSubmitting) return;
+    const billMonth = joinBillMonth(billMonthNumber, billYear);
+    if (!billMonth) {
+      alert('Please select the bill month and enter a valid 4-digit year (e.g. 2026).');
+      return;
+    }
+    setIsBillSubmitting(true);
+    try {
+      const data = new FormData();
+      data.append('location', selectedLocationId);
+      data.append('billType', selectedBillType);
+      data.append('billCode', billCode);
+      data.append('billMonth', billMonth);
+      if (billDate) data.append('billDate', billDate);
+      if (billDescription.trim()) data.append('description', billDescription.trim());
+      if (billFile) data.append('bill', billFile);
+
+      await axios.post(`${API_BASE_URL}/api/office-expenses`, data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      resetBillForm();
+      setShowBillForm(false);
+      setExpenseTab('pending');
+      fetchExpenses();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not add the bill. Please try again.');
+    } finally {
+      setIsBillSubmitting(false);
+    }
+  };
+
+  const resetPayForm = () => {
+    setPayingExpense(null);
+    setPayBankName('');
+    setPayAccountNumber('');
+    setPayReferenceNo('');
+    setPayDate('');
+    setPayAmount('');
+    setPaySlipFile(null);
+  };
+
+  const startPayingExpense = (expense) => {
+    resetPayForm();
+    resetEditForm();
+    setPayingExpense({ id: expense._id, label: `${expense.locationName} - ${expense.billType} (${expense.billCode})${expense.billMonth ? ` - ${formatBillMonth(expense.billMonth)}` : ''}` });
+  };
+
+  // STEP 2: record the bank payment against a pending bill - amount is
+  // first entered here. Flips status to 'paid'.
+  const handlePayExpense = async (e) => {
+    e.preventDefault();
+    if (!payingExpense || isPaySubmitting) return;
+    setIsPaySubmitting(true);
+    try {
+      const data = new FormData();
+      data.append('bankName', payBankName);
+      data.append('accountNumber', payAccountNumber);
+      data.append('referenceNo', payReferenceNo);
+      if (payDate) data.append('date', payDate);
+      data.append('amount', payAmount);
+      if (paySlipFile) data.append('slip', paySlipFile);
+
+      await axios.patch(`${API_BASE_URL}/api/office-expenses/${payingExpense.id}/pay`, data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      resetPayForm();
+      setExpenseTab('paid');
+      fetchExpenses();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not mark this bill as paid. Please try again.');
+    } finally {
+      setIsPaySubmitting(false);
+    }
+  };
+
+  const handleDeleteLocation = async () => {
+    if (!selectedLocation) return;
+    if (!window.confirm(`Delete location "${selectedLocation.name}" and all its bill types? Existing bills for this location will be kept.`)) return;
+    try {
+      await axios.delete(`${API_BASE_URL}/api/office-expenses/locations/${selectedLocation._id}`);
+      setSelectedLocationId('');
+      setSelectedBillType('');
+      setShowAddBillType(false);
+      await fetchLocations();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not delete the location. Please try again.');
+    }
+  };
+
+  const handleDeleteBillType = async () => {
+    const billTypeToDelete = billTypeOptions.find((bt) => bt.name === selectedBillType);
+    if (!selectedLocation || !billTypeToDelete) return;
+    if (!window.confirm(`Delete bill type "${billTypeToDelete.name}" from ${selectedLocation.name}? Existing bills will be kept.`)) return;
+    try {
+      await axios.delete(
+        `${API_BASE_URL}/api/office-expenses/locations/${selectedLocation._id}/bill-types/${billTypeToDelete._id}`
+      );
+      setSelectedBillType('');
+      await fetchLocations();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not delete the bill type. Please try again.');
+    }
+  };
+
+  const resetEditForm = () => {
+    setEditingExpense(null);
+    setEditBillCode('');
+    setEditFile(null);
+    setEditBillMonthNumber('');
+    setEditBillYear('');
+    setEditBillDate('');
+    setEditDescription('');
+    setEditSlipFile(null);
+    setEditBankName('');
+    setEditAccountNumber('');
+    setEditReferenceNo('');
+    setEditDate('');
+    setEditAmount('');
+  };
+
+  const startEditingExpense = (expense) => {
+    resetPayForm();
+    resetEditForm();
+    const paid = expense.status === 'paid';
+    setEditingExpense({
+      id: expense._id,
+      paid,
+      label: `${expense.locationName} - ${expense.billType}${expense.billMonth ? ` - ${formatBillMonth(expense.billMonth)}` : ''}`,
+    });
+    setEditBillCode(expense.billCode || '');
+    const [savedYear = '', savedMonth = ''] = (expense.billMonth || '').split('-');
+    setEditBillYear(savedYear);
+    setEditBillMonthNumber(savedMonth);
+    setEditBillDate(expense.billDate ? new Date(expense.billDate).toISOString().slice(0, 10) : '');
+    setEditDescription(expense.description || '');
+    if (paid) {
+      setEditBankName(expense.bankName || '');
+      setEditAccountNumber(expense.accountNumber || '');
+      setEditReferenceNo(expense.referenceNo || '');
+      setEditDate(expense.date ? new Date(expense.date).toISOString().slice(0, 10) : '');
+      setEditAmount(expense.amount !== undefined && expense.amount !== null ? String(expense.amount) : '');
+    }
+    // The form sits above the tables - bring it into view.
+    setTimeout(() => document.getElementById('oe-edit-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  };
+
+  // Save changes to an existing bill (any status). Payment fields are only
+  // sent - and only accepted by the server - once the bill is paid.
+  const handleUpdateExpense = async (e) => {
+    e.preventDefault();
+    if (!editingExpense || isEditSubmitting) return;
+    const editBillMonth = joinBillMonth(editBillMonthNumber, editBillYear);
+    if ((editBillMonthNumber || editBillYear) && !editBillMonth) {
+      alert('Please select the bill month and enter a valid 4-digit year (e.g. 2026).');
+      return;
+    }
+    setIsEditSubmitting(true);
+    try {
+      const data = new FormData();
+      data.append('billCode', editBillCode);
+      if (editBillMonth) data.append('billMonth', editBillMonth);
+      if (editBillDate) data.append('billDate', editBillDate);
+      data.append('description', editDescription);
+      if (editFile) data.append('bill', editFile);
+      if (editingExpense.paid) {
+        if (editSlipFile) data.append('slip', editSlipFile);
+        data.append('bankName', editBankName);
+        data.append('accountNumber', editAccountNumber);
+        data.append('referenceNo', editReferenceNo);
+        if (editDate) data.append('date', editDate);
+        data.append('amount', editAmount);
+      }
+      await axios.put(`${API_BASE_URL}/api/office-expenses/${editingExpense.id}`, data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      resetEditForm();
+      fetchExpenses();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not update the bill. Please try again.');
+    } finally {
+      setIsEditSubmitting(false);
+    }
+  };
+
+  const handleDeleteExpense = async (id) => {
+    if (!window.confirm('Delete this bill? This cannot be undone.')) return;
+    try {
+      await axios.delete(`${API_BASE_URL}/api/office-expenses/${id}`);
+      setExpenses((prev) => prev.filter((exp) => exp._id !== id));
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Could not delete the bill. Please try again.');
+    }
+  };
+
+  const pendingExpenses = expenses.filter((exp) => exp.status !== 'paid');
+  const paidExpenses = expenses.filter((exp) => exp.status === 'paid');
+  const totalPaid = paidExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+
+  return (
+    <div className="sa-page">
+      <h1 className="sa-page-title">Office Expenses</h1>
+
+      <div className="ge-header">
+        <h3 className="hw-inline-heading">Bills</h3>
+        <div className="report-header-actions">
+          <ReportButton
+            title="Office Expenses Report"
+            subtitleText={`Pending: ${pendingExpenses.length} · Paid: ${paidExpenses.length}`}
+            columns={['Location', 'Bill Type', 'Bill Code', 'Bill Month', 'Description', 'Amount (LKR)', 'Bill Date', 'Payment Date', 'Reference No.', 'Bank / Account', 'Status']}
+            entries={expenses}
+            getDate={(exp) => exp.status === 'paid' ? exp.date : exp.createdAt}
+            buildRow={(exp) => {
+              const paid = exp.status === 'paid';
+              return [
+                exp.locationName,
+                exp.billType,
+                exp.billCode,
+                formatBillMonth(exp.billMonth),
+                exp.description || '-',
+                paid ? formatLKR(exp.amount) : '-',
+                (exp.billDate || exp.createdAt) ? new Date(exp.billDate || exp.createdAt).toLocaleDateString() : '-',
+                paid && exp.date ? new Date(exp.date).toLocaleDateString() : '-',
+                paid ? exp.referenceNo : '-',
+                paid ? [exp.bankName, exp.accountNumber].filter(Boolean).join(' / ') : '-',
+                paid ? 'Paid' : 'Pending',
+              ];
+            }}
+            buildTotals={(filtered) => [
+              '', '', '', '', '',
+              formatLKR(filtered.filter((exp) => exp.status === 'paid').reduce((s, exp) => s + (exp.amount || 0), 0)),
+              '', '', '', '', '',
+            ]}
+            disabled={expenses.length === 0}
+          />
+          <button data-perm="add" className="ge-add-btn" onClick={() => { setShowBillForm(!showBillForm); resetBillForm(); }}>
+            {showBillForm ? 'Cancel' : '+ Add New Bill'}
+          </button>
+        </div>
+      </div>
+
+      <div className="ge-summary">
+        <span>{expenses.length} bill(s) ({pendingExpenses.length} pending, {paidExpenses.length} paid)</span>
+        <span>Total Paid: {formatLKR(totalPaid)}</span>
+      </div>
+
+      {showBillForm && (
+        <form className="ge-form" onSubmit={handleCreateBill}>
+          <div className="ge-form-row">
+            <select
+              value={selectedLocationId}
+              onChange={(e) => {
+                setSelectedLocationId(e.target.value);
+                setSelectedBillType('');
+                setShowAddBillType(false);
+              }}
+              required
+            >
+              <option value="">Select location...</option>
+              {[...locations].sort((a, b) => a.name.localeCompare(b.name)).map((loc) => (
+                <option key={loc._id} value={loc._id}>{loc.name}</option>
+              ))}
+            </select>
+            <button data-perm="add"
+              type="button"
+              className="hw-finder-add-btn"
+              onClick={() => setShowAddLocation(!showAddLocation)}
+            >
+              {showAddLocation ? 'Cancel' : '+ Add Location'}
+            </button>
+            {selectedLocation && (
+              <button data-perm="delete" type="button" className="hw-delete-btn" onClick={handleDeleteLocation}>
+                Delete Location
+              </button>
+            )}
+          </div>
+
+          {showAddLocation && (
+            <div className="hw-item-form new-plan-inline-form">
+              <p className="sa-group-title plan-preview-title">New Location</p>
+              <div className="ge-form-row">
+                <input
+                  type="text"
+                  placeholder="Location name"
+                  value={newLocationName}
+                  onChange={(e) => setNewLocationName(e.target.value)}
+                />
+                <button data-perm="add"
+                  type="button"
+                  className="ge-save-btn"
+                  disabled={isAddingLocation || !newLocationName.trim()}
+                  onClick={handleAddLocation}
+                >
+                  {isAddingLocation ? 'Saving...' : 'Save Location'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="ge-form-row">
+            <select
+              value={selectedBillType}
+              onChange={(e) => setSelectedBillType(e.target.value)}
+              required={!showAddBillType}
+              disabled={!selectedLocation}
+            >
+              <option value="">{selectedLocation ? 'Select bill type...' : 'Select a location first'}</option>
+              {billTypeOptions.map((bt) => (
+                <option key={bt._id || bt.name} value={bt.name}>{bt.name}</option>
+              ))}
+            </select>
+            <button data-perm="add"
+              type="button"
+              className="hw-finder-add-btn"
+              disabled={!selectedLocation}
+              onClick={() => setShowAddBillType(!showAddBillType)}
+            >
+              {showAddBillType ? 'Cancel' : '+ Add Bill Type'}
+            </button>
+            {selectedBillType && (
+              <button data-perm="delete" type="button" className="hw-delete-btn" onClick={handleDeleteBillType}>
+                Delete Bill Type
+              </button>
+            )}
+          </div>
+
+          {showAddBillType && (
+            <div className="hw-item-form new-plan-inline-form">
+              <p className="sa-group-title plan-preview-title">New Bill Type - {selectedLocation?.name}</p>
+              <div className="ge-form-row">
+                <input
+                  type="text"
+                  placeholder="Bill type name"
+                  value={newBillTypeName}
+                  onChange={(e) => setNewBillTypeName(e.target.value)}
+                />
+                <button data-perm="add"
+                  type="button"
+                  className="ge-save-btn"
+                  disabled={isAddingBillType || !newBillTypeName.trim()}
+                  onClick={handleAddBillType}
+                >
+                  {isAddingBillType ? 'Saving...' : 'Save Bill Type'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {selectedBillType && (
+            <>
+              <div className="ge-form-row">
+                <input
+                  type="text"
+                  placeholder="Bill code"
+                  value={billCode}
+                  onChange={(e) => setBillCode(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="ge-form-row upload-row">
+                <div className="upload-field">
+                  <label className="upload-field-label">Bill month (the month this bill is for)</label>
+                  <select value={billMonthNumber} onChange={(e) => setBillMonthNumber(e.target.value)} required>
+                    <option value="">Select month...</option>
+                    {BILL_MONTHS.map(([value, name]) => (
+                      <option key={value} value={value}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="upload-field">
+                  <label className="upload-field-label">Year</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={4}
+                    placeholder="e.g. 2026"
+                    value={billYear}
+                    onChange={(e) => setBillYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="ge-form-row upload-row">
+                <div className="upload-field">
+                  <label className="upload-field-label">Bill date</label>
+                  <input
+                    type="date"
+                    value={billDate}
+                    onChange={(e) => setBillDate(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <textarea
+                rows="2"
+                placeholder="Description (optional)"
+                value={billDescription}
+                onChange={(e) => setBillDescription(e.target.value)}
+              />
+
+              <div className="ge-form-row upload-row">
+                <div className="upload-field">
+                  <label className="upload-field-label">Bill</label>
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.pdf"
+                    onChange={(e) => setBillFile(e.target.files[0])}
+                  />
+                </div>
+              </div>
+
+              <button type="submit" className="ge-save-btn" disabled={isBillSubmitting}>
+                {isBillSubmitting ? 'Saving...' : 'Add Bill'}
+              </button>
+            </>
+          )}
+        </form>
+      )}
+
+      {payingExpense && (
+        <form className="ge-form pay-invoice-form" onSubmit={handlePayExpense}>
+          <p className="sa-group-title plan-preview-title">
+            Mark as Paid - {payingExpense.label}
+          </p>
+          <div className="ge-form-row">
+            <BankNameField value={payBankName} onChange={setPayBankName} required />
+            <input
+              type="text"
+              placeholder="Account number"
+              value={payAccountNumber}
+              onChange={(e) => setPayAccountNumber(e.target.value)}
+              required
+            />
+          </div>
+          <div className="ge-form-row">
+            <input
+              type="text"
+              placeholder="Reference No."
+              value={payReferenceNo}
+              onChange={(e) => setPayReferenceNo(e.target.value)}
+              required
+            />
+            <input
+              type="date"
+              value={payDate}
+              onChange={(e) => setPayDate(e.target.value)}
+            />
+          </div>
+          <div className="ge-form-row">
+            <input
+              type="number"
+              placeholder="Amount (LKR)"
+              value={payAmount}
+              onChange={(e) => setPayAmount(sanitizeAmountInput(e.target.value))}
+              required
+            />
+          </div>
+          <div className="ge-form-row upload-row">
+            <div className="upload-field">
+              <label className="upload-field-label">Bank slip (PDF or JPG, optional)</label>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf"
+                onChange={(e) => setPaySlipFile(e.target.files[0] || null)}
+              />
+            </div>
+          </div>
+          <div className="sa-panel-actions">
+            <button type="submit" className="ge-save-btn" disabled={isPaySubmitting}>
+              {isPaySubmitting ? 'Saving...' : 'Mark as Paid'}
+            </button>
+            <button type="button" className="sa-reject-btn" onClick={resetPayForm}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      {editingExpense && (
+        <form id="oe-edit-form" className="ge-form pay-invoice-form" onSubmit={handleUpdateExpense}>
+          <p className="sa-group-title plan-preview-title">
+            Edit Bill - {editingExpense.label}
+          </p>
+          <div className="ge-form-row">
+            <input
+              type="text"
+              placeholder="Bill code"
+              value={editBillCode}
+              onChange={(e) => setEditBillCode(e.target.value)}
+              required
+            />
+          </div>
+          <div className="ge-form-row upload-row">
+            <div className="upload-field">
+              <label className="upload-field-label">Bill month (the month this bill is for)</label>
+              <select value={editBillMonthNumber} onChange={(e) => setEditBillMonthNumber(e.target.value)}>
+                <option value="">Select month...</option>
+                {BILL_MONTHS.map(([value, name]) => (
+                  <option key={value} value={value}>{name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="upload-field">
+              <label className="upload-field-label">Year</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={4}
+                placeholder="e.g. 2026"
+                value={editBillYear}
+                onChange={(e) => setEditBillYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              />
+            </div>
+          </div>
+          <div className="ge-form-row upload-row">
+            <div className="upload-field">
+              <label className="upload-field-label">Bill date</label>
+              <input
+                type="date"
+                value={editBillDate}
+                onChange={(e) => setEditBillDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <textarea
+            rows="2"
+            placeholder="Description (optional)"
+            value={editDescription}
+            onChange={(e) => setEditDescription(e.target.value)}
+          />
+          {editingExpense.paid && (
+            <>
+              <div className="ge-form-row">
+                <BankNameField value={editBankName} onChange={setEditBankName} required />
+                <input
+                  type="text"
+                  placeholder="Account number"
+                  value={editAccountNumber}
+                  onChange={(e) => setEditAccountNumber(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="ge-form-row">
+                <input
+                  type="text"
+                  placeholder="Reference No."
+                  value={editReferenceNo}
+                  onChange={(e) => setEditReferenceNo(e.target.value)}
+                  required
+                />
+                <input
+                  type="date"
+                  value={editDate}
+                  onChange={(e) => setEditDate(e.target.value)}
+                />
+              </div>
+              <div className="ge-form-row">
+                <input
+                  type="number"
+                  placeholder="Amount (LKR)"
+                  value={editAmount}
+                  onChange={(e) => setEditAmount(sanitizeAmountInput(e.target.value))}
+                  required
+                />
+              </div>
+              <div className="ge-form-row upload-row">
+                <div className="upload-field">
+                  <label className="upload-field-label">Replace bank slip (PDF or JPG, optional)</label>
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.pdf"
+                    onChange={(e) => setEditSlipFile(e.target.files[0] || null)}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+          <div className="ge-form-row upload-row">
+            <div className="upload-field">
+              <label className="upload-field-label">Replace bill file (optional)</label>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.pdf"
+                onChange={(e) => setEditFile(e.target.files[0])}
+              />
+            </div>
+          </div>
+          <div className="sa-panel-actions">
+            <button type="submit" className="ge-save-btn" disabled={isEditSubmitting}>
+              {isEditSubmitting ? 'Saving...' : 'Save Changes'}
+            </button>
+            <button type="button" className="sa-reject-btn" onClick={resetEditForm}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      <div className="hw-subtabs">
+        <button
+          type="button"
+          className={`hw-subtab-btn ${expenseTab === 'pending' ? 'active' : ''}`}
+          onClick={() => setExpenseTab('pending')}
+        >
+          Pending ({pendingExpenses.length})
+        </button>
+        <button
+          type="button"
+          className={`hw-subtab-btn ${expenseTab === 'paid' ? 'active' : ''}`}
+          onClick={() => setExpenseTab('paid')}
+        >
+          Paid ({paidExpenses.length})
+        </button>
+        <button
+          type="button"
+          className={`hw-subtab-btn ${expenseTab === 'summary' ? 'active' : ''}`}
+          onClick={() => setExpenseTab('summary')}
+        >
+          Summary
+        </button>
+      </div>
+
+      {expenseTab === 'summary' ? (
+        <OfficeExpenseSummary expenses={expenses} locations={locations} />
+      ) : expenseTab === 'pending' ? (
+        <table className="sa-table hw-items-table">
+          <thead>
+            <tr>
+              <th>Location</th>
+              <th>Bill Type</th>
+              <th>Bill Code</th>
+              <th>Bill Month</th>
+              <th>Description</th>
+              <th>Bill Date</th>
+              <th>Bill</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {pendingExpenses.length === 0 ? (
+              <tr>
+                <td colSpan="9" className="hw-empty-text">No pending bills</td>
+              </tr>
+            ) : (
+              pendingExpenses.map((exp) => (
+                <tr key={exp._id}>
+                  <td>{exp.locationName}</td>
+                  <td>{exp.billType}</td>
+                  <td>{exp.billCode}</td>
+                  <td>{formatBillMonth(exp.billMonth)}</td>
+                  <td className="oe-desc-cell">{exp.description || '-'}</td>
+                  <td>{(exp.billDate || exp.createdAt) ? new Date(exp.billDate || exp.createdAt).toLocaleDateString() : '-'}</td>
+                  <td>
+                    <OfficeFileLinks url={exp.billFileUrl} onDownload={() => downloadOfficeBill(exp)} />
+                  </td>
+                  <td><span className="sa-badge sa-badge-pending">Pending</span></td>
+                  <td>
+                    <div className="hw-supplier-actions">
+                      <button data-perm="edit" className="sa-manage-btn" onClick={() => startPayingExpense(exp)}>
+                        Mark as Paid
+                      </button>
+                      <button data-perm="edit" className="sa-manage-btn" onClick={() => startEditingExpense(exp)}>
+                        Edit
+                      </button>
+                      <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeleteExpense(exp._id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      ) : (
+        <table className="sa-table hw-items-table">
+          <thead>
+            <tr>
+              <th>Location</th>
+              <th>Bill Type</th>
+              <th>Bill Code</th>
+              <th>Bill Month</th>
+              <th>Description</th>
+              <th>Amount (LKR)</th>
+              <th>Bill Date</th>
+              <th>Payment Date</th>
+              <th>Reference No.</th>
+              <th>Account No.</th>
+              <th>Bank</th>
+              <th>Bill</th>
+              <th>Bank Slip</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {paidExpenses.length === 0 ? (
+              <tr>
+                <td colSpan="15" className="hw-empty-text">No paid bills yet</td>
+              </tr>
+            ) : (
+              paidExpenses.map((exp) => (
+                <tr key={exp._id}>
+                  <td>{exp.locationName}</td>
+                  <td>{exp.billType}</td>
+                  <td>{exp.billCode}</td>
+                  <td>{formatBillMonth(exp.billMonth)}</td>
+                  <td className="oe-desc-cell">{exp.description || '-'}</td>
+                  <td>{formatLKR(exp.amount)}</td>
+                  <td>{(exp.billDate || exp.createdAt) ? new Date(exp.billDate || exp.createdAt).toLocaleDateString() : '-'}</td>
+                  <td>{exp.date ? new Date(exp.date).toLocaleDateString() : '-'}</td>
+                  <td>{exp.referenceNo || '-'}</td>
+                  <td>{exp.accountNumber || '-'}</td>
+                  <td>{exp.bankName || '-'}</td>
+                  <td>
+                    <OfficeFileLinks url={exp.billFileUrl} onDownload={() => downloadOfficeBill(exp)} />
+                  </td>
+                  <td>
+                    <OfficeFileLinks url={exp.slipUrl} onDownload={() => downloadOfficeBill(exp, 'slip')} />
+                  </td>
+                  <td><span className="sa-badge sa-badge-approved">Paid</span></td>
+                  <td>
+                    <div className="hw-supplier-actions">
+                      <button data-perm="edit" className="sa-manage-btn" onClick={() => startEditingExpense(exp)}>
+                        Edit
+                      </button>
+                      <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeleteExpense(exp._id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// ---------- Shared: report period filtering ----------
+// Every report can be generated for one of three rolling periods. "All"
+// (all-time, no filtering) is only offered on the Project Summary report -
+// every other report always shows one of these three.
+const REPORT_PERIODS = [
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'yearly', label: 'Yearly' },
+];
+
+// Given a period and the current reference selections ({ weekDate, year,
+// month }), returns the [start, end) boundaries of that period. Weekly
+// runs Mon-Sun, based on weekDate; Monthly uses year+month; Yearly uses
+// year only.
+const getPeriodRange = (period, refValues) => {
+  const { weekDate, year, month } = refValues || {};
+
+  if (period === 'weekly') {
+    const ref = new Date(weekDate);
+    if (Number.isNaN(ref.getTime())) return null;
+    const day = ref.getDay(); // 0=Sun..6=Sat
+    const diffToMonday = (day === 0 ? -6 : 1) - day;
+    const start = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate());
+    start.setDate(start.getDate() + diffToMonday);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    return { start, end };
+  }
+  if (period === 'monthly') {
+    if (!year || !month) return null;
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 1);
+    return { start, end };
+  }
+  if (period === 'yearly') {
+    if (!year) return null;
+    const start = new Date(year, 0, 1);
+    const end = new Date(year + 1, 0, 1);
+    return { start, end };
+  }
+  return null; // 'all'
+};
+
+// True if `dateValue` falls inside the period + reference selections given.
+// Period 'all' (or no period at all) always matches - used for the Project
+// Summary's "Overall" option and as a safe default for records with no date.
+const isWithinPeriod = (dateValue, period, refValues) => {
+  if (!period || period === 'all') return true;
+  if (!dateValue) return false;
+  const range = getPeriodRange(period, refValues);
+  if (!range) return true;
+  const d = new Date(dateValue);
+  if (Number.isNaN(d.getTime())) return false;
+  return d >= range.start && d < range.end;
+};
+
+// A short human-readable label for the selected period, used as part of the
+// report subtitle so it's clear on-screen/print/PDF exactly what range it
+// covers, e.g. "Week of 9/8/2026 – 9/14/2026", "September 2026", "2026".
+const describePeriod = (period, refValues) => {
+  if (!period || period === 'all') return 'Overall (all time)';
+  const range = getPeriodRange(period, refValues);
+  if (!range) return '';
+  if (period === 'weekly') {
+    const endInclusive = new Date(range.end);
+    endInclusive.setDate(endInclusive.getDate() - 1);
+    return `Week of ${range.start.toLocaleDateString()} – ${endInclusive.toLocaleDateString()}`;
+  }
+  if (period === 'monthly') {
+    return range.start.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  }
+  return String(range.start.getFullYear());
+};
+
+// Shared period-picker shown inside every report modal: Weekly / Monthly /
+// Yearly (plus "Overall" when allowAll is set, for the Project Summary
+// report). Weekly still uses a plain date input (pick any date inside the
+// desired week); Monthly and Yearly use proper Month/Year dropdowns instead
+// of asking for an arbitrary date, so picking e.g. "March 2025" or just
+// "2024" is direct.
+const CURRENT_REPORT_YEAR = new Date().getFullYear();
+// A handful of years back plus one ahead - covers normal use; the dropdown
+// still works for any year already in that range.
+const REPORT_YEAR_OPTIONS = Array.from({ length: 8 }, (_, i) => CURRENT_REPORT_YEAR - 6 + i);
+const REPORT_MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+function PeriodSelector({ period, setPeriod, weekDate, setWeekDate, year, setYear, month, setMonth, allowAll = false }) {
+  return (
+    <div className="report-period-selector">
+      <div className="report-period-options">
+        {allowAll && (
+          <label className="report-period-option">
+            <input
+              type="radio"
+              name="report-period"
+              value="all"
+              checked={period === 'all'}
+              onChange={() => setPeriod('all')}
+            />
+            Overall
+          </label>
+        )}
+        {REPORT_PERIODS.map((opt) => (
+          <label key={opt.value} className="report-period-option">
+            <input
+              type="radio"
+              name="report-period"
+              value={opt.value}
+              checked={period === opt.value}
+              onChange={() => setPeriod(opt.value)}
+            />
+            {opt.label}
+          </label>
+        ))}
+      </div>
+
+      {period === 'weekly' && (
+        <label className="report-period-refdate">
+          Any date in the week:
+          <input type="date" value={weekDate} onChange={(e) => setWeekDate(e.target.value)} />
+        </label>
+      )}
+
+      {period === 'monthly' && (
+        <div className="report-period-refdate">
+          <label>
+            Month:
+            <select value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+              {REPORT_MONTH_NAMES.map((name, i) => (
+                <option key={name} value={i + 1}>{name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Year:
+            <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+              {REPORT_YEAR_OPTIONS.map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+
+      {period === 'yearly' && (
+        <label className="report-period-refdate">
+          Year:
+          <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            {REPORT_YEAR_OPTIONS.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </label>
+      )}
+    </div>
+  );
+}
+
 // ---------- Shared: report generation ----------
 // A reusable "Generate Report" button + modal. Every tab / sub-tab that
-// lists records can drop this in: pass it the report title, an optional
-// subtitle/context line, the column headers, and the rows (each row is an
+// lists records can drop this in: pass it the report title, the column
+// headers, the raw records (`entries`), a `getDate` accessor (used for the
+// Weekly/Monthly/Yearly period filter), and a `buildRow` mapper (record ->
 // array of cell values, same order as columns). It renders a full-detail,
-// on-screen report that can also be printed or saved as a PDF straight
-// from the browser's print dialog.
-function ReportButton({ label = 'Generate Report', title, subtitle, subtitleText, columns, rows, totals, disabled = false }) {
+// on-screen report - scoped to the selected period - that can also be
+// printed or saved as a PDF straight from the browser.
+function ReportButton({ label = 'Generate Report', title, subtitleText, columns, entries, getDate, buildRow, buildTotals, disabled = false }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -277,11 +1835,12 @@ function ReportButton({ label = 'Generate Report', title, subtitle, subtitleText
       {open && (
         <ReportModal
           title={title}
-          subtitle={subtitle}
           subtitleText={subtitleText}
           columns={columns}
-          rows={rows}
-          totals={totals}
+          entries={entries}
+          getDate={getDate}
+          buildRow={buildRow}
+          buildTotals={buildTotals}
           onClose={() => setOpen(false)}
         />
       )}
@@ -294,8 +1853,22 @@ function ReportButton({ label = 'Generate Report', title, subtitle, subtitleText
 const toFileName = (title) =>
   `${(title || 'report').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '')}.pdf`;
 
-function ReportModal({ title, subtitle, subtitleText, columns, rows, totals, onClose }) {
+function ReportModal({ title, subtitleText, columns, entries, getDate, buildRow, buildTotals, onClose }) {
+  const now = new Date();
+  // Every flat report defaults to Monthly - a sensible middle ground
+  // between Weekly (too narrow for most review purposes) and Yearly.
+  const [period, setPeriod] = useState('monthly');
+  const [weekDate, setWeekDate] = useState(() => now.toISOString().slice(0, 10));
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
   const generatedOn = new Date().toLocaleString();
+
+  const refValues = { weekDate, year, month };
+  const filteredEntries = entries.filter((entry) => isWithinPeriod(getDate(entry), period, refValues));
+  const rows = filteredEntries.map(buildRow);
+  const totals = buildTotals ? buildTotals(filteredEntries) : undefined;
+  const periodLabel = describePeriod(period, refValues);
+  const subtitleLine = [subtitleText, periodLabel].filter(Boolean).join(' · ');
 
   // Builds an actual PDF file client-side (jsPDF + autoTable) and triggers
   // a browser download - no print dialog involved, works the same on
@@ -307,7 +1880,6 @@ function ReportModal({ title, subtitle, subtitleText, columns, rows, totals, onC
     doc.text(title || 'Report', 14, 16);
 
     let cursorY = 24;
-    const subtitleLine = subtitleText || (typeof subtitle === 'string' ? subtitle : '');
     if (subtitleLine) {
       doc.setFontSize(10);
       doc.text(subtitleLine, 14, cursorY);
@@ -349,10 +1921,21 @@ function ReportModal({ title, subtitle, subtitleText, columns, rows, totals, onC
           </button>
         </div>
 
+        <PeriodSelector
+          period={period}
+          setPeriod={setPeriod}
+          weekDate={weekDate}
+          setWeekDate={setWeekDate}
+          year={year}
+          setYear={setYear}
+          month={month}
+          setMonth={setMonth}
+        />
+
         <div id="report-print-area">
           <div className="report-header">
             <h2>{title}</h2>
-            {subtitle && <p className="report-subtitle">{subtitle}</p>}
+            {subtitleLine && <p className="report-subtitle">{subtitleLine}</p>}
             <p className="report-meta">Generated on {generatedOn} &middot; {rows.length} record{rows.length === 1 ? '' : 's'}</p>
           </div>
 
@@ -368,7 +1951,7 @@ function ReportModal({ title, subtitle, subtitleText, columns, rows, totals, onC
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length} className="hw-empty-text">
-                    No records found
+                    No records found for this period
                   </td>
                 </tr>
               ) : (
@@ -403,6 +1986,10 @@ function ReportModal({ title, subtitle, subtitleText, columns, rows, totals, onC
 // other payments) plus a set of totals. This renders - and prints to PDF -
 // the same section-by-section layout as the live page itself, however many
 // pages that ends up taking.
+//
+// Unlike the flat reports, this one also offers "Overall" (all-time, no
+// filtering) alongside Weekly/Monthly/Yearly, since seeing the whole
+// project's progress against its estimate is the main reason to open it.
 function ProjectSummaryReportButton({ searchedFor, result }) {
   const [open, setOpen] = useState(false);
   const hasAnyData =
@@ -420,7 +2007,64 @@ function ProjectSummaryReportButton({ searchedFor, result }) {
   );
 }
 
-function ProjectSummaryReportModal({ searchedFor, result, onClose }) {
+// Recomputes the Project Summary result for a given period ('all' |
+// 'weekly' | 'monthly' | 'yearly') + reference date - filters every
+// payment/invoice list down to that period and rebuilds the totals from
+// what's left. Plan estimates aren't period-based (a plan doesn't recur
+// weekly/monthly), so totalEstimate always stays the overall figure.
+const filterProjectSummaryByPeriod = (result, period, refValues) => {
+  if (!period || period === 'all') return result;
+
+  const contractors = result.contractors.map((c) => {
+    const payments = c.payments.filter((p) => isWithinPeriod(p.invoiceDate, period, refValues));
+    const totalPaid = payments.filter((p) => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0);
+    return { ...c, payments, totalPaid, remaining: c.totalEstimate - totalPaid };
+  });
+
+  const hardware = result.hardware
+    .map((hw) => {
+      const payments = hw.payments.filter((p) => isWithinPeriod(p.date, period, refValues));
+      const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+      return { ...hw, payments, totalPaid };
+    })
+    .filter((hw) => hw.payments.length > 0);
+
+  const otherPayments = (result.otherPayments || []).filter((p) => isWithinPeriod(p.date, period, refValues));
+
+  const totalEstimate = result.summary.totalEstimate;
+  const totalContractorPaid = contractors.reduce((sum, c) => sum + c.totalPaid, 0);
+  const totalHardwarePaid = hardware.reduce((sum, hw) => sum + hw.totalPaid, 0);
+  const totalOtherPaid = otherPayments
+    .filter((p) => p.status !== 'pending')
+    .reduce((sum, p) => sum + p.amount, 0);
+
+  return {
+    ...result,
+    contractors,
+    hardware,
+    otherPayments,
+    summary: {
+      totalEstimate,
+      totalContractorPaid,
+      totalHardwarePaid,
+      totalOtherPaid,
+      totalPaidOverall: totalContractorPaid + totalHardwarePaid + totalOtherPaid,
+      remaining: totalEstimate - totalContractorPaid,
+    },
+  };
+};
+
+function ProjectSummaryReportModal({ searchedFor, result: rawResult, onClose }) {
+  const now = new Date();
+  // Project Summary defaults to Overall, unlike the flat reports - it's
+  // most useful as a whole-project progress view.
+  const [period, setPeriod] = useState('all');
+  const [weekDate, setWeekDate] = useState(() => now.toISOString().slice(0, 10));
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const refValues = { weekDate, year, month };
+  const result = filterProjectSummaryByPeriod(rawResult, period, refValues);
+  const periodLabel = describePeriod(period, refValues);
   const generatedOn = new Date().toLocaleString();
   const s = result.summary;
 
@@ -446,7 +2090,7 @@ function ProjectSummaryReportModal({ searchedFor, result, onClose }) {
 
     doc.setFontSize(11);
     doc.setTextColor(70);
-    doc.text(`Project: ${searchedFor}`, marginX, y);
+    doc.text(`Project: ${searchedFor} · ${periodLabel}`, marginX, y);
     doc.setTextColor(0);
     y += 6;
 
@@ -613,10 +2257,22 @@ function ProjectSummaryReportModal({ searchedFor, result, onClose }) {
           </button>
         </div>
 
+        <PeriodSelector
+          period={period}
+          setPeriod={setPeriod}
+          weekDate={weekDate}
+          setWeekDate={setWeekDate}
+          year={year}
+          setYear={setYear}
+          month={month}
+          setMonth={setMonth}
+          allowAll
+        />
+
         <div id="report-print-area">
           <div className="report-header">
             <h2>Project Summary Report</h2>
-            <p className="report-subtitle">Project: {searchedFor}</p>
+            <p className="report-subtitle">Project: {searchedFor} &middot; {periodLabel}</p>
             <p className="report-meta">Generated on {generatedOn}</p>
           </div>
 
@@ -778,6 +2434,7 @@ function UserManagement() {
   const [stats, setStats] = useState({ total: 0, approved: 0, rejected: 0 });
   const [managingUser, setManagingUser] = useState(null);
   const [checkedPermissions, setCheckedPermissions] = useState([]);
+  const [role, setRole] = useState('employee');
 
   useEffect(() => {
     fetchUsers();
@@ -804,7 +2461,9 @@ function UserManagement() {
 
   const openManagePanel = (user) => {
     setManagingUser(user);
-    setCheckedPermissions(user.permissions || []);
+    setCheckedPermissions(migrateLegacyPermissions(user.permissions || []));
+    // Users who had the old "Petty Cash" permission become Accountants
+    setRole(user.role === 'accountant' || (user.permissions || []).includes('petty_cash_manage') ? 'accountant' : 'employee');
   };
 
   const closeManagePanel = () => {
@@ -823,7 +2482,7 @@ function UserManagement() {
     try {
       await axios.put(
         `${API_BASE_URL}/api/admin/users/${managingUser._id}/approve`,
-        { permissions: checkedPermissions }
+        { permissions: checkedPermissions, role }
       );
       closeManagePanel();
       fetchUsers();
@@ -908,6 +2567,18 @@ function UserManagement() {
             <p className="sa-panel-email">{managingUser.email}</p>
 
             <div className="sa-permission-list">
+              <div className="sa-permission-group">
+                <p className="sa-group-title">Role</p>
+                <label className="sa-checkbox-row">
+                  <select value={role} onChange={(e) => setRole(e.target.value)}>
+                    <option value="employee">Employee</option>
+                    <option value="accountant">Accountant (Petty Cash)</option>
+                  </select>
+                </label>
+                {role === 'accountant' && (
+                  <p className="sa-panel-email">An Accountant always has Petty Cash. Tick the other sections below if needed.</p>
+                )}
+              </div>
               {PERMISSION_GROUPS.map((group) => (
                 <div key={group.category} className="sa-permission-group">
                   <p className="sa-group-title">{group.category}</p>
@@ -932,6 +2603,10 @@ function UserManagement() {
                   })}
                 </div>
               ))}
+              <div className="sa-permission-group">
+                <p className="sa-group-title">Settings</p>
+                <p className="sa-panel-email">Every user gets Settings automatically.</p>
+              </div>
             </div>
 
             <div className="sa-panel-actions">
@@ -1205,9 +2880,11 @@ function Contractors() {
         <div className="report-header-actions">
           <ReportButton
             title="Registered Contractors Report"
-            subtitle={searchTerm ? `Filtered by: "${searchTerm}"` : 'All contractors'}
+            subtitleText={searchTerm ? `Filtered by: "${searchTerm}"` : 'All contractors'}
             columns={['Name', 'Phone', 'Registered On', 'Account No.', 'Bank / Branch', 'Estimation Plans', 'Total Estimated (LKR)', 'Total Paid (LKR)']}
-            rows={contractors.map((c) => [
+            entries={contractors}
+            getDate={(c) => c.registrationDate}
+            buildRow={(c) => [
               c.name,
               c.phone,
               c.registrationDate ? new Date(c.registrationDate).toLocaleDateString() : '-',
@@ -1216,10 +2893,10 @@ function Contractors() {
               c.estimationPlans.length,
               formatLKR(totalEstimated(c)),
               formatLKR(totalPaid(c)),
-            ])}
+            ]}
             disabled={contractors.length === 0}
           />
-          <button className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
+          <button data-perm="add" className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
             {showForm ? 'Cancel' : '+ Add Contractor'}
           </button>
         </div>
@@ -1336,15 +3013,15 @@ function Contractors() {
                 </div>
 
                 <div className="sa-panel-actions">
-                  <button className="sa-save-btn" onClick={startEdit}>Update</button>
-                  <button className="sa-reject-btn" onClick={handleDeleteContractor}>Delete</button>
+                  <button data-perm="edit" className="sa-save-btn" onClick={startEdit}>Update</button>
+                  <button data-perm="delete" className="sa-reject-btn" onClick={handleDeleteContractor}>Delete</button>
                 </div>
 
                 {/* ---------- Estimation Plans ---------- */}
                 <div className="plan-section">
                   <div className="ge-header plan-section-header">
                     <p className="sa-group-title plan-section-title">Estimation Plans</p>
-                    <button
+                    <button data-perm="add"
                       type="button"
                       className="hw-finder-add-btn"
                       onClick={() => setShowPlanForm(!showPlanForm)}
@@ -1444,10 +3121,10 @@ function Contractors() {
                                     View Plan
                                   </a>
                                 )}
-                                <button className="hw-edit-btn" onClick={() => startEditPlan(plan)}>
+                                <button data-perm="edit" className="hw-edit-btn" onClick={() => startEditPlan(plan)}>
                                   Edit
                                 </button>
-                                <button className="hw-delete-btn" onClick={() => handleDeletePlan(plan._id)}>
+                                <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeletePlan(plan._id)}>
                                   Delete
                                 </button>
                               </div>
@@ -1792,9 +3469,11 @@ function ConstructionPayments() {
         <div className="report-header-actions">
           <ReportButton
             title="Construction Payments Report"
-            subtitle={`Pending: ${pendingInvoices.length} &middot; Paid: ${paidInvoices.length}`.replace('&middot;', '·')}
+            subtitleText={`Pending: ${pendingInvoices.length} · Paid: ${paidInvoices.length}`}
             columns={['Invoice No.', 'Title', 'Paid To', 'Project', 'Amount (LKR)', 'Invoice Date', 'Payment Date', 'Reference No.', 'Account No.', 'Bank / Branch', 'Status']}
-            rows={payments.map((p) => {
+            entries={payments}
+            getDate={(p) => p.date}
+            buildRow={(p) => {
               const paid = isInvoicePaid(p);
               return [
                 p.invoiceNo,
@@ -1809,11 +3488,11 @@ function ConstructionPayments() {
                 paid ? [p.bankName, p.bankBranch].filter(Boolean).join(' / ') : '-',
                 paid ? 'Paid' : 'Pending',
               ];
-            })}
-            totals={['', '', '', '', formatLKR(payments.reduce((s, p) => s + p.amount, 0)), '', '', '', '', '', '']}
+            }}
+            buildTotals={(filtered) => ['', '', '', '', formatLKR(filtered.reduce((s, p) => s + p.amount, 0)), '', '', '', '', '', '']}
             disabled={payments.length === 0}
           />
-          <button className="ge-add-btn" onClick={() => setShowInvoiceForm(!showInvoiceForm)}>
+          <button data-perm="add" className="ge-add-btn" onClick={() => setShowInvoiceForm(!showInvoiceForm)}>
             {showInvoiceForm ? 'Cancel' : '+ Raise Invoice'}
           </button>
         </div>
@@ -2084,13 +3763,13 @@ function ConstructionPayments() {
                   <td><span className="sa-badge sa-badge-pending">Pending</span></td>
                   <td>
                     <div className="hw-supplier-actions">
-                      <button className="sa-manage-btn" onClick={() => startPayingInvoice(p)}>
+                      <button data-perm="edit" className="sa-manage-btn" onClick={() => startPayingInvoice(p)}>
                         Mark as Paid
                       </button>
-                      <button className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
+                      <button data-perm="edit" className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
                         Edit
                       </button>
-                      <button className="hw-delete-btn" onClick={() => handleDeletePayment(p._id)}>
+                      <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeletePayment(p._id)}>
                         Delete
                       </button>
                     </div>
@@ -2147,10 +3826,10 @@ function ConstructionPayments() {
                   <td><span className="sa-badge sa-badge-approved">Paid</span></td>
                   <td>
                     <div className="hw-supplier-actions">
-                      <button className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
+                      <button data-perm="edit" className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
                         Edit
                       </button>
-                      <button className="hw-delete-btn" onClick={() => handleDeletePayment(p._id)}>
+                      <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeletePayment(p._id)}>
                         Delete
                       </button>
                     </div>
@@ -2473,9 +4152,11 @@ function ContractorPayments() {
         <div className="report-header-actions">
           <ReportButton
             title="Contractor Payments Report"
-            subtitle={`Pending: ${pendingInvoices.length} · Paid: ${paidInvoices.length}`}
+            subtitleText={`Pending: ${pendingInvoices.length} · Paid: ${paidInvoices.length}`}
             columns={['Invoice No.', 'Contractor', 'Project', 'Reason', 'Amount (LKR)', 'Invoice Date', 'Payment Date', 'Reference No.', 'Account No.', 'Bank / Branch', 'Status']}
-            rows={allInvoices.map((p) => {
+            entries={allInvoices}
+            getDate={(p) => p.invoiceDate}
+            buildRow={(p) => {
               const paid = isInvoicePaid(p);
               return [
                 p.invoiceNo,
@@ -2490,11 +4171,11 @@ function ContractorPayments() {
                 paid ? [p.bankName, p.bankBranch].filter(Boolean).join(' / ') : '-',
                 paid ? 'Paid' : 'Pending',
               ];
-            })}
-            totals={['', '', '', '', formatLKR(allInvoices.reduce((s, p) => s + p.amount, 0)), '', '', '', '', '', '']}
+            }}
+            buildTotals={(filtered) => ['', '', '', '', formatLKR(filtered.reduce((s, p) => s + p.amount, 0)), '', '', '', '', '', '']}
             disabled={allInvoices.length === 0}
           />
-          <button className="ge-add-btn" onClick={() => setShowInvoiceForm(!showInvoiceForm)}>
+          <button data-perm="add" className="ge-add-btn" onClick={() => setShowInvoiceForm(!showInvoiceForm)}>
             {showInvoiceForm ? 'Cancel' : '+ Raise Invoice'}
           </button>
         </div>
@@ -2538,7 +4219,7 @@ function ContractorPayments() {
                 </option>
               ))}
             </select>
-            <button
+            <button data-perm="add"
               type="button"
               className="hw-finder-add-btn"
               disabled={!selectedContractor}
@@ -2584,7 +4265,7 @@ function ContractorPayments() {
                 onChange={(e) => setNewPlanForm({ ...newPlanForm, note: e.target.value })}
                 rows={2}
               />
-              <button
+              <button data-perm="add"
                 type="button"
                 className="ge-save-btn"
                 disabled={isNewPlanSubmitting || !newPlanForm.projectName || !newPlanForm.totalEstimate}
@@ -2829,13 +4510,13 @@ function ContractorPayments() {
                   <td><span className="sa-badge sa-badge-pending">Pending</span></td>
                   <td>
                     <div className="hw-supplier-actions">
-                      <button className="sa-manage-btn" onClick={() => startPayingInvoice(p)}>
+                      <button data-perm="edit" className="sa-manage-btn" onClick={() => startPayingInvoice(p)}>
                         Mark as Paid
                       </button>
-                      <button className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
+                      <button data-perm="edit" className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
                         Edit
                       </button>
-                      <button className="hw-delete-btn" onClick={() => handleDeletePayment(p)}>
+                      <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeletePayment(p)}>
                         Delete
                       </button>
                     </div>
@@ -2892,10 +4573,10 @@ function ContractorPayments() {
                   <td><span className="sa-badge sa-badge-approved">Paid</span></td>
                   <td>
                     <div className="hw-supplier-actions">
-                      <button className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
+                      <button data-perm="edit" className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
                         Edit
                       </button>
-                      <button className="hw-delete-btn" onClick={() => handleDeletePayment(p)}>
+                      <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeletePayment(p)}>
                         Delete
                       </button>
                     </div>
@@ -3472,9 +5153,11 @@ function Hardware() {
           <div className="report-header-actions">
             <ReportButton
               title="Hardware Invoices Report"
-              subtitle={`Pending: ${hwReportEntries.filter((e) => !e._isPaid).length} · Paid: ${hwReportEntries.filter((e) => e._isPaid).length}`}
+              subtitleText={`Pending: ${hwReportEntries.filter((e) => !e._isPaid).length} · Paid: ${hwReportEntries.filter((e) => e._isPaid).length}`}
               columns={['Supplier', 'Project', 'Reason', 'Amount (LKR)', 'Invoice Date', 'Payment Date', 'Reference No.', 'Status']}
-              rows={hwReportEntries.map((e) => [
+              entries={hwReportEntries}
+              getDate={(e) => e.invoiceDate}
+              buildRow={(e) => [
                 e.supplierName,
                 e.projectName,
                 e.reason,
@@ -3483,11 +5166,11 @@ function Hardware() {
                 e._isPaid && e.paymentDate ? new Date(e.paymentDate).toLocaleDateString() : '-',
                 e._isPaid ? e.referenceNo : '-',
                 e._isPaid ? 'Paid' : 'Pending',
-              ])}
-              totals={['', '', '', formatLKR(hwReportEntries.reduce((s, e) => s + e.amount, 0)), '', '', '', '']}
+              ]}
+              buildTotals={(filtered) => ['', '', '', formatLKR(filtered.reduce((s, e) => s + e.amount, 0)), '', '', '', '']}
               disabled={hwReportEntries.length === 0}
             />
-            <button className="ge-add-btn" onClick={() => setShowHwInvoiceForm(!showHwInvoiceForm)}>
+            <button data-perm="add" className="ge-add-btn" onClick={() => setShowHwInvoiceForm(!showHwInvoiceForm)}>
               {showHwInvoiceForm ? 'Cancel' : '+ Raise Invoice'}
             </button>
           </div>
@@ -3920,20 +5603,20 @@ function Hardware() {
                           <td>
                             <div className="hw-supplier-actions">
                               {inv._source === 'invoice' ? (
-                                <button className="sa-manage-btn" onClick={() => startPayingHwInvoice(inv.hardwareObj, inv)}>
+                                <button data-perm="edit" className="sa-manage-btn" onClick={() => startPayingHwInvoice(inv.hardwareObj, inv)}>
                                   Mark Paid
                                 </button>
                               ) : (
-                                <button className="sa-manage-btn" onClick={() => handleConfirmHardwarePayment(inv.hardwareId, inv._id)}>
+                                <button data-perm="edit" className="sa-manage-btn" onClick={() => handleConfirmHardwarePayment(inv.hardwareId, inv._id)}>
                                   Confirm
                                 </button>
                               )}
                               {inv._source === 'invoice' && (
-                                <button className="hw-edit-btn" onClick={() => startEditHwInvoice(inv.hardwareObj, inv)}>
+                                <button data-perm="edit" className="hw-edit-btn" onClick={() => startEditHwInvoice(inv.hardwareObj, inv)}>
                                   Edit
                                 </button>
                               )}
-                              <button
+                              <button data-perm="delete"
                                 className="hw-delete-btn"
                                 onClick={() => (inv._source === 'invoice'
                                   ? handleDeleteHwInvoice(inv.hardwareId, inv._id)
@@ -3996,11 +5679,11 @@ function Hardware() {
                           <td>
                             <div className="hw-supplier-actions">
                               {inv._source === 'invoice' && (
-                                <button className="hw-edit-btn" onClick={() => startEditHwInvoice(inv.hardwareObj, inv)}>
+                                <button data-perm="edit" className="hw-edit-btn" onClick={() => startEditHwInvoice(inv.hardwareObj, inv)}>
                                   Edit
                                 </button>
                               )}
-                              <button
+                              <button data-perm="delete"
                                 className="hw-delete-btn"
                                 onClick={() => (inv._source === 'invoice'
                                   ? handleDeleteHwInvoice(inv.hardwareId, inv._id)
@@ -4032,9 +5715,11 @@ function Hardware() {
             <div className="report-header-actions">
               <ReportButton
                 title="Hardware Suppliers Report"
-                subtitle="All registered hardware suppliers"
+                subtitleText="All registered hardware suppliers"
                 columns={['Supplier', 'Phone', 'Account No.', 'Bank / Branch', 'Items', 'Total Value of Items (LKR)', 'Total Paid (LKR)']}
-                rows={hardwareList.map((hw) => [
+                entries={hardwareList}
+                getDate={(hw) => hw.createdAt}
+                buildRow={(hw) => [
                   hw.supplierName,
                   hw.phone,
                   hw.accountNumber,
@@ -4042,10 +5727,10 @@ function Hardware() {
                   hw.items.length,
                   formatLKR(hardwareTotal(hw)),
                   formatLKR(paymentsTotal(hw)),
-                ])}
+                ]}
                 disabled={hardwareList.length === 0}
               />
-              <button className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
+              <button data-perm="add" className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
                 {showForm ? 'Cancel' : '+ Add Hardware Supplier'}
               </button>
             </div>
@@ -4128,10 +5813,10 @@ function Hardware() {
                     <p className="hw-supplier-phone">A/C: {hw.accountNumber || '-'} &nbsp; | &nbsp; Bank: {hw.bankName || '-'} &nbsp; | &nbsp; Branch: {hw.bankBranch || '-'}</p>
                   </div>
                   <div className="hw-supplier-actions">
-                    <button className="sa-manage-btn" onClick={() => openItemForm(hw)}>+ Add Item</button>
-                    <button className="sa-manage-btn" onClick={() => openOrderForm(hw)}>Place Order</button>
-                    <button className="sa-manage-btn" onClick={() => startEditSupplier(hw)}>Edit</button>
-                    <button className="hw-delete-btn" onClick={() => handleDeleteSupplier(hw._id)}>Delete</button>
+                    <button data-perm="add" className="sa-manage-btn" onClick={() => openItemForm(hw)}>+ Add Item</button>
+                    <button data-perm="add" className="sa-manage-btn" onClick={() => openOrderForm(hw)}>Place Order</button>
+                    <button data-perm="edit" className="sa-manage-btn" onClick={() => startEditSupplier(hw)}>Edit</button>
+                    <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeleteSupplier(hw._id)}>Delete</button>
                   </div>
                 </div>
               )}
@@ -4281,10 +5966,10 @@ function Hardware() {
                         <td>{item.quantity}</td>
                         <td>{formatLKR(itemTotal(item))}</td>
                         <td className="hw-item-actions-cell">
-                          <button className="hw-edit-btn" onClick={() => openEditItem(hw._id, item)}>
+                          <button data-perm="edit" className="hw-edit-btn" onClick={() => openEditItem(hw._id, item)}>
                             Edit
                           </button>
-                          <button className="hw-delete-btn" onClick={() => handleDeleteItem(hw._id, item._id)}>
+                          <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeleteItem(hw._id, item._id)}>
                             Delete
                           </button>
                         </td>
@@ -4354,14 +6039,14 @@ function Hardware() {
                           <td>
                             <div className="hw-supplier-actions">
                               {inv.status !== 'paid' && (
-                                <button className="sa-manage-btn" onClick={() => startPayingHwInvoice(hw, inv)}>
+                                <button data-perm="edit" className="sa-manage-btn" onClick={() => startPayingHwInvoice(hw, inv)}>
                                   Mark Paid
                                 </button>
                               )}
-                              <button className="hw-edit-btn" onClick={() => startEditHwInvoice(hw, inv)}>
+                              <button data-perm="edit" className="hw-edit-btn" onClick={() => startEditHwInvoice(hw, inv)}>
                                 Edit
                               </button>
-                              <button className="hw-delete-btn" onClick={() => handleDeleteHwInvoice(hw._id, inv._id)}>
+                              <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeleteHwInvoice(hw._id, inv._id)}>
                                 Delete
                               </button>
                             </div>
@@ -4722,13 +6407,13 @@ function ProjectSummary() {
         <div className="ge-header project-quick-actions-header">
           <p className="sa-group-title project-section-title">Add to "{searchedFor}"</p>
           <div className="project-quick-actions">
-            <button type="button" className="hw-finder-add-btn" onClick={() => setQuickAction(quickAction === 'plan' ? null : 'plan')}>
+            <button data-perm="add" type="button" className="hw-finder-add-btn" onClick={() => setQuickAction(quickAction === 'plan' ? null : 'plan')}>
               {quickAction === 'plan' ? 'Cancel' : '+ Upload Estimation Plan'}
             </button>
-            <button type="button" className="hw-finder-add-btn" onClick={() => setQuickAction(quickAction === 'hardware' ? null : 'hardware')}>
+            <button data-perm="add" type="button" className="hw-finder-add-btn" onClick={() => setQuickAction(quickAction === 'hardware' ? null : 'hardware')}>
               {quickAction === 'hardware' ? 'Cancel' : '+ Raise Hardware Invoice'}
             </button>
-            <button type="button" className="hw-finder-add-btn" onClick={() => setQuickAction(quickAction === 'other' ? null : 'other')}>
+            <button data-perm="add" type="button" className="hw-finder-add-btn" onClick={() => setQuickAction(quickAction === 'other' ? null : 'other')}>
               {quickAction === 'other' ? 'Cancel' : '+ Other Payment'}
             </button>
           </div>
@@ -5089,4 +6774,5 @@ function ProjectSummary() {
   );
 }
 
+export { Constructions, OfficeExpenses, SidebarIcon };
 export default SuperAdminDashboard;
