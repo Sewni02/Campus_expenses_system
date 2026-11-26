@@ -54,14 +54,22 @@ const getUserStats = async () => {
   return { total, approved, rejected };
 };
 
-const approveUser = async (id, permissions) => {
+// Roles a super admin can give here. 'accountant' always has Petty Cash.
+// (super_admin can never be given from this screen.)
+const ASSIGNABLE_ROLES = ['employee', 'accountant'];
+
+const approveUser = async (id, permissions, role) => {
   const cleanPermissions = normalizePermissions(permissions);
+  if (role !== undefined && !ASSIGNABLE_ROLES.includes(role)) {
+    throw new ApiError(400, `Role must be one of: ${ASSIGNABLE_ROLES.join(', ')}`);
+  }
 
   const user = await findOrFail(User, id, 'User not found');
   assertNotSuperAdmin(user);
 
   user.status = 'approved';
   user.permissions = cleanPermissions;
+  if (role !== undefined) user.role = role;
   await user.save();
 
   return { message: 'User permissions saved successfully', user: sanitizeUser(user) };
