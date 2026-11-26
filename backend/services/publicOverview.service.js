@@ -52,7 +52,7 @@ const countModules = async () => {
     listProjectNames(),
     OfficeLocation.countDocuments(),
     OfficeExpense.countDocuments(),
-    User.countDocuments({ status: 'approved', permissions: PETTY_CASH_PERMISSION }),
+    User.countDocuments({ status: 'approved', $or: [{ permissions: PETTY_CASH_PERMISSION }, { role: 'accountant' }] }),
     PettyCashAllocation.countDocuments(),
     PettyCashExpense.countDocuments(),
   ]);

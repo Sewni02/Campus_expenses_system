@@ -133,7 +133,7 @@ const getFigures = async (accountantId, month) => {
 const getAccountants = async () => {
   const users = await User.find({
     status: 'approved',
-    $or: [{ permissions: PERMISSION }, { permissions: '*' }],
+    $or: [{ permissions: PERMISSION }, { permissions: '*' }, { role: 'accountant' }],
     role: { $ne: 'super_admin' },
   })
     .select('name email department')
@@ -156,8 +156,8 @@ const createAllocation = async (adminUser, body, file) => {
 
   if (!mongoose.isValidObjectId(accountantId)) throw new ApiError(404, 'Accountant not found');
   const accountant = await User.findById(accountantId).select('name status permissions role');
-  if (!accountant || accountant.status !== 'approved' || !(accountant.permissions || []).includes(PERMISSION)) {
-    throw new ApiError(400, 'That user is not an approved accountant (needs the "Petty Cash" permission)');
+  if (!accountant || accountant.status !== 'approved' || !((accountant.permissions || []).includes(PERMISSION) || accountant.role === 'accountant')) {
+    throw new ApiError(400, 'That user is not an approved accountant (needs the Accountant role)');
   }
 
   const admin = await User.findById(adminUser.id).select('name');

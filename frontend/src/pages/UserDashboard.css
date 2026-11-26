@@ -1,5 +1,8 @@
 /* Permission-driven user dashboard. Layout classes (sa-*) come from SuperAdminDashboard.css. */
-.ud-logout { margin-top: 28px; color: #F5A3A3; }
+/* Sidebar is a column so Log out can sit at the very bottom */
+.ud-sidebar { display: flex; flex-direction: column; }
+.ud-sidebar > .sa-sidebar-item { flex-shrink: 0; }
+.ud-logout { margin-top: auto !important; margin-bottom: 8px !important; color: #F5A3A3; }
 .ud-logout:hover { background: rgba(248,113,113,.14); color: #fff; }
 .ud-sub { color: #4A6288; margin: 0 0 24px; font-size: 14px; }
 .ud-role { display: inline-block; margin-left: 8px; padding: 3px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; color: #0F7A6F; background: rgba(31,181,164,.14); vertical-align: middle; }
@@ -20,3 +23,19 @@
 .ud-actions button:disabled { border-color: #D3DCEB; color: #A8B5CC; cursor: not-allowed; background: #F4F7FB; }
 .ud-demo-note { padding: 14px 18px; border-radius: 6px; background: #FFF6E0; border: 1px solid #F1D79A; color: #8A5A0F; font-size: 14px; }
 .ud-empty { text-align: center; padding: 60px 20px; color: #4A6288; }
+
+/* Actions the user was not given are shown greyed out and cannot be clicked
+   (see blockedActions in Dashboard.jsx). The server refuses them as well. */
+.perm-no-add [data-perm="add"],
+.perm-no-edit [data-perm="edit"],
+.perm-no-delete [data-perm="delete"] {
+  opacity: 0.35;
+  filter: grayscale(1);
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+/* A section the user has no access to at all */
+.ud-locked { text-align: center; padding: 70px 20px; color: #4A6288; }
+.ud-locked .ud-lock-icon { font-size: 42px; margin-bottom: 10px; }
+.ud-locked h2 { margin: 0 0 8px; }
