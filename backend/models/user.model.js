@@ -19,6 +19,8 @@ const userSchema = new mongoose.Schema({
 
   resetPasswordToken: { type: String },
   resetPasswordExpires: { type: Date },
+  // Wrong OTP guesses for the current OTP (see auth.service.js)
+  resetPasswordAttempts: { type: Number, default: 0 },
 
   // Login protection (see auth.service.js): after too many wrong passwords in
   // a row the account is locked until `lockUntil`.

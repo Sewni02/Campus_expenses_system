@@ -4,13 +4,14 @@ const { ALLOWED_PERMISSIONS } = require('../config/permissions');
 
 // Fields that must never be sent to the browser - not even to a super admin.
 // (The reset token is a live credential for the account while it's valid.)
-const HIDDEN_FIELDS = '-password -resetPasswordToken -resetPasswordExpires';
+const HIDDEN_FIELDS = '-password -resetPasswordToken -resetPasswordExpires -resetPasswordAttempts';
 
 const sanitizeUser = (userDoc) => {
   const user = userDoc.toObject();
   delete user.password;
   delete user.resetPasswordToken;
   delete user.resetPasswordExpires;
+  delete user.resetPasswordAttempts;
   return user;
 };
 
@@ -53,14 +54,22 @@ const getUserStats = async () => {
   return { total, approved, rejected };
 };
 
-const approveUser = async (id, permissions) => {
+// Roles a super admin can give here. 'accountant' always has Petty Cash.
+// (super_admin can never be given from this screen.)
+const ASSIGNABLE_ROLES = ['employee', 'accountant'];
+
+const approveUser = async (id, permissions, role) => {
   const cleanPermissions = normalizePermissions(permissions);
+  if (role !== undefined && !ASSIGNABLE_ROLES.includes(role)) {
+    throw new ApiError(400, `Role must be one of: ${ASSIGNABLE_ROLES.join(', ')}`);
+  }
 
   const user = await findOrFail(User, id, 'User not found');
   assertNotSuperAdmin(user);
 
   user.status = 'approved';
   user.permissions = cleanPermissions;
+  if (role !== undefined) user.role = role;
   await user.save();
 
   return { message: 'User permissions saved successfully', user: sanitizeUser(user) };

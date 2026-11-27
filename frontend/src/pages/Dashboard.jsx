@@ -3,20 +3,25 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import useTabState from '../hooks/useTabState';
 import { getSavedUser, saveUser, logout } from '../utils/session';
-import { sectionsForUser } from '../config/permissionSections';
+import { PERMISSION_SECTIONS, hasSectionAccess, withLegacyFinance } from '../config/permissionSections';
 import PettyCashPanel from './PettyCashPanel';
 import StaffSalary from './StaffSalary';
+import LecturerSalary from './LecturerSalary';
+import GrandTotal from './GrandTotal';
 import Settings from './Settings';
+import { Constructions, OfficeExpenses, SidebarIcon } from './SuperAdminDashboard';
 import './SuperAdminDashboard.css';
 import './UserDashboard.css';
 
-// The dashboard every non-super-admin user lands on. What shows up in the
-// sidebar depends ONLY on the permissions the super admin ticked for that
-// user in User Management - nothing is hard-coded per person or per job title.
+// The dashboard every non-super-admin user lands on. The sidebar is the same
+// as the super admin's (Constructions ... Grand Total, Settings), but a section
+// only works if the super admin ticked it for this user in User Management.
+// Sections without access show a lock; inside a section, the Add / Edit /
+// Delete actions that were not given are greyed out.
 function Dashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(getSavedUser);
-  const [activeTab, setActiveTab] = useTabState('tab', 'overview');
+  const [activeTab, setActiveTab] = useTabState('tab', getSavedUser()?.role === 'accountant' ? 'petty-cash' : PERMISSION_SECTIONS[0].key);
 
   // Re-read the user from the server so a permission the super admin just
   // changed shows up without having to log out and in again.
@@ -30,10 +35,10 @@ function Dashboard() {
       .catch(() => {});
   }, []);
 
-  const sections = sectionsForUser(user);
-  const active = sections.find((s) => s.key === activeTab);
-  // If the tab in the URL is not one this user may open (or was just revoked), show the overview.
-  const tab = activeTab === 'settings' ? 'settings' : active ? active.key : 'overview';
+  const section = PERMISSION_SECTIONS.find((s) => s.key === activeTab);
+  const tab = activeTab === 'settings' ? 'settings' : section ? section.key : PERMISSION_SECTIONS[0].key;
+  const active = PERMISSION_SECTIONS.find((s) => s.key === tab);
+  const allowed = active ? hasSectionAccess(user, active) : false;
 
   const handleLogout = async () => {
     await logout();
@@ -42,7 +47,7 @@ function Dashboard() {
 
   return (
     <div className="sa-container">
-      <div className="sa-sidebar">
+      <div className="sa-sidebar ud-sidebar">
         <div className="sa-sidebar-header">
           <div className="sa-avatar" role="img" aria-label="User">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -53,100 +58,59 @@ function Dashboard() {
           <p>{user?.name || 'User'}</p>
         </div>
 
-        <div className={`sa-sidebar-item ${tab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
-          <span>Overview</span>
-        </div>
-        {sections.map((section) => (
+        {PERMISSION_SECTIONS.map((s) => (
           <div
-            key={section.key}
-            className={`sa-sidebar-item ${tab === section.key ? 'active' : ''}`}
-            onClick={() => setActiveTab(section.key)}
+            key={s.key}
+            className={`sa-sidebar-item ${tab === s.key ? 'active' : ''}`}
+            onClick={() => setActiveTab(s.key)}
           >
-            <span>{section.label}</span>
+            <SidebarIcon name={s.icon} />
+            <span>{s.label}</span>
           </div>
         ))}
         <div className={`sa-sidebar-item ${tab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
+          <SidebarIcon name="settings" />
           <span>Settings</span>
         </div>
         <div className="sa-sidebar-item ud-logout" onClick={handleLogout}>
+          <SidebarIcon name="logout" />
           <span>Log out</span>
         </div>
       </div>
 
       <div className="sa-content">
         {tab === 'settings' && <Settings />}
-        {tab === 'overview' && <Overview user={user} sections={sections} onOpen={setActiveTab} />}
-        {active?.kind === 'petty-cash' && <PettyCashPanel />}
-        {active?.kind === 'staff-salary' && <StaffSalary />}
-        {active?.kind === 'demo' && <DemoSection section={active} user={user} />}
-      </div>
-    </div>
-  );
-}
-
-function Overview({ user, sections, onOpen }) {
-  const owned = user?.permissions || [];
-
-  return (
-    <div className="sa-page">
-      <h1 className="sa-page-title">
-        Welcome, {user?.name || 'User'}!<span className="ud-role">{user?.role}</span>
-      </h1>
-
-      {sections.length === 0 ? (
-        <div className="ud-card ud-empty">
-          No access has been given to your account yet. Please ask the Super Admin to grant you permissions.
-        </div>
-      ) : (
-        <>
-          <p className="ud-sub">These are the areas the Super Admin has given you access to. Click one to open it.</p>
-          <div className="ud-grid">
-            {sections.map((section) => (
-              <div key={section.key} className="ud-card clickable" onClick={() => onOpen(section.key)}>
-                <h3>{section.label}</h3>
-                <p>{section.description || 'Open this section'}</p>
-                {section.permissions.map((perm) => {
-                  const on = owned.includes(perm.key);
-                  return (
-                    <div key={perm.key} className={`ud-perm ${on ? 'on' : 'off'}`}>
-                      <span className="mark">{on ? '✓' : '–'}</span>
-                      {perm.label}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+        {active && !allowed && (
+          <div className="ud-locked">
+            <div className="ud-lock-icon">🔒</div>
+            <h2>{active.label}</h2>
+            <p>You do not have access to this section. Please ask the Super Admin to give you access.</p>
           </div>
-        </>
-      )}
+        )}
+        {active && allowed && active.kind === 'constructions' && (
+          <div className={blockedActions(user, 'constructions')}><Constructions /></div>
+        )}
+        {active && allowed && active.kind === 'office-expenses' && (
+          <div className={blockedActions(user, 'office_expenses')}><OfficeExpenses /></div>
+        )}
+        {active && allowed && active.kind === 'petty-cash' && <PettyCashPanel />}
+        {active && allowed && active.kind === 'lecturer-salary' && <LecturerSalary isAdmin={false} />}
+        {active && allowed && active.kind === 'staff-salary' && <StaffSalary />}
+        {active && allowed && active.kind === 'grand-total' && <GrandTotal />}
+      </div>
     </div>
   );
 }
 
-// Placeholder for permission groups whose real screens are not built yet. It
-// proves the access wiring works: only the actions the user was granted are enabled.
-function DemoSection({ section, user }) {
-  const owned = user?.permissions || [];
-
-  return (
-    <div className="sa-page">
-      <h1 className="sa-page-title">{section.label}</h1>
-      <p className="ud-sub">{section.description}</p>
-
-      <div className="ud-actions">
-        {section.permissions.map((perm) => (
-          <button key={perm.key} disabled={!owned.includes(perm.key)}>
-            {perm.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="ud-demo-note">
-        Demo screen — the real {section.label} pages will appear here later. Buttons that are greyed out are actions
-        the Super Admin has not given you.
-      </div>
-    </div>
-  );
+// Class names that grey out the Add / Edit / Delete buttons (data-perm="add" etc.
+// in SuperAdminDashboard.jsx) the user was NOT given for this area. The server
+// refuses those actions anyway - this just stops the buttons being clickable.
+function blockedActions(user, area) {
+  const owned = withLegacyFinance(user?.permissions || []);
+  return ['add', 'edit', 'delete']
+    .filter((action) => !owned.includes(`${area}_${action}`))
+    .map((action) => `perm-no-${action}`)
+    .join(' ');
 }
 
 export default Dashboard;

@@ -2,10 +2,10 @@ const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload');
 const { protect, requireApproved } = require('../middleware/auth.middleware');
-const { requireFinanceAccess } = require('../middleware/permission.middleware');
+const { requireConstructionsAccess } = require('../middleware/permission.middleware');
 const { getPayments, createInvoice, payInvoice, updateInvoice, deletePayment } = require('../controllers/constructionPayment.controller');
 
-router.use(protect, requireApproved, requireFinanceAccess);
+router.use(protect, requireApproved, requireConstructionsAccess);
 
 router.get('/', getPayments);
 

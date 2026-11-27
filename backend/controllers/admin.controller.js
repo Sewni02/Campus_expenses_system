@@ -12,7 +12,7 @@ const getUserStats = asyncHandler(async (req, res) => {
 });
 
 const approveUser = asyncHandler(async (req, res) => {
-  const result = await adminService.approveUser(req.params.id, req.body.permissions);
+  const result = await adminService.approveUser(req.params.id, req.body.permissions, req.body.role);
   res.json(result);
 });
 

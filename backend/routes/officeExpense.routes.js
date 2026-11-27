@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload');
 const { protect, requireApproved } = require('../middleware/auth.middleware');
-const { requireFinanceAccess } = require('../middleware/permission.middleware');
+const { requireOfficeExpensesAccess } = require('../middleware/permission.middleware');
 const {
   getLocations,
   addLocation,
@@ -17,7 +17,7 @@ const {
   deleteExpense,
 } = require('../controllers/officeExpense.controller');
 
-router.use(protect, requireApproved, requireFinanceAccess);
+router.use(protect, requireApproved, requireOfficeExpensesAccess);
 
 router.get('/locations', getLocations);
 router.post('/locations', addLocation);

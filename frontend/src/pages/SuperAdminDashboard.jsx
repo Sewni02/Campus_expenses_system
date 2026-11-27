@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { logout } from '../utils/session';
 import useTabState from '../hooks/useTabState';
 import axios from 'axios';
 import { API_BASE_URL } from '../config/api';
@@ -10,6 +12,7 @@ import StaffSalary from './StaffSalary';
 import GrandTotal from './GrandTotal';
 import Settings from './Settings';
 import './SuperAdminDashboard.css';
+import './UserDashboard.css';
 
 // Sidebar icons: inline SVG (Lucide-style line icons). They take the colour of the
 // tab text automatically, so no image files are needed.
@@ -62,6 +65,13 @@ const SIDEBAR_ICONS = {
       <rect x="14" y="3" width="7" height="7" rx="1" />
       <rect x="14" y="14" width="7" height="7" rx="1" />
       <rect x="3" y="14" width="7" height="7" rx="1" />
+    </>
+  ),
+  logout: (
+    <>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
     </>
   ),
   settings: (
@@ -252,58 +262,56 @@ function ProjectNameField({ value, onChange, projectNames, required = true }) {
   );
 }
 
+// One group per page of the system (same order as the sidebar). Settings is not
+// here on purpose: every user always gets Settings.
+const areaOptions = (prefix) => [
+  { key: `${prefix}_view`, label: 'View' },
+  { key: `${prefix}_add`, label: 'Add' },
+  { key: `${prefix}_edit`, label: 'Edit' },
+  { key: `${prefix}_delete`, label: 'Delete' },
+];
+
 const PERMISSION_GROUPS = [
-  {
-    category: 'Audit',
-    options: [
-      { key: 'audit_view_calculations', label: 'View Calculations' },
-      { key: 'audit_add_comments', label: 'Add Comments' },
-    ],
-  },
-  {
-    category: 'Human Resources',
-    options: [
-      { key: 'hr_view_expenses', label: 'View Expenses' },
-      { key: 'hr_calculate_expenses', label: 'Calculate Expenses' },
-    ],
-  },
-  {
-    category: 'Finance',
-    options: [
-      { key: 'finance_add_payments', label: 'Add Payments' },
-      { key: 'finance_view_payments', label: 'View Payments' },
-      { key: 'finance_edit_payments', label: 'Edit Payments' },
-      { key: 'finance_delete_payments', label: 'Delete Payments' },
-    ],
-  },
-  {
-    category: 'Petty Cash',
-    options: [
-      { key: 'petty_cash_manage', label: 'Manage Petty Cash (Accountant)' },
-    ],
-  },
+  { category: 'Constructions', options: areaOptions('constructions') },
+  { category: 'Office Expenses', options: areaOptions('office_expenses') },
   {
     category: 'Lecturer Salary',
-    options: [
-      { key: 'lecturer_salary_manage', label: 'Manage Lecturer Salary (Accountant)' },
-    ],
+    options: [{ key: 'lecturer_salary_manage', label: 'Manage Lecturer Salary (Accountant)' }],
   },
   {
     category: 'Staff Salary',
-    options: [
-      { key: 'staff_salary_manage', label: 'Manage Staff Salary (Accountant)' },
-    ],
+    options: [{ key: 'staff_salary_manage', label: 'Manage Staff Salary (Accountant)' }],
   },
   {
-    category: 'Academic / Non-Academic Staff',
-    options: [
-      { key: 'staff_view_salary_receipts', label: 'View Salary Receipts' },
-    ],
+    category: 'Grand Total',
+    options: [{ key: 'grand_total_view', label: 'View Grand Total' }],
   },
 ];
 
+// Users saved before Constructions / Office Expenses had their own permissions
+// hold the old finance_* keys. Show them as the matching new keys (and drop the
+// old ones) so the checkboxes are correct and the next Save upgrades them.
+const KNOWN_PERMISSIONS = PERMISSION_GROUPS.flatMap((g) => g.options.map((o) => o.key));
+const migrateLegacyPermissions = (permissions = []) => {
+  const out = new Set(permissions.filter((k) => KNOWN_PERMISSIONS.includes(k)));
+  ['view', 'add', 'edit', 'delete'].forEach((action) => {
+    const old = permissions.includes(`finance_${action}_payments`);
+    if (old) {
+      out.add(`constructions_${action}`);
+      out.add(`office_expenses_${action}`);
+    }
+  });
+  return [...out];
+};
+
 function SuperAdminDashboard() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useTabState('tab', 'A');
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
+  };
 
   const sidebarItems = [
     { key: 'A', label: 'User Management', icon: 'user-management' },
@@ -318,7 +326,7 @@ function SuperAdminDashboard() {
 
   return (
     <div className="sa-container">
-      <div className="sa-sidebar">
+      <div className="sa-sidebar ud-sidebar">
         <div className="sa-sidebar-header">
           <div className="sa-avatar" role="img" aria-label="Super Admin">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -338,6 +346,10 @@ function SuperAdminDashboard() {
             <span>{item.label}</span>
           </div>
         ))}
+        <div className="sa-sidebar-item ud-logout" onClick={handleLogout}>
+          <SidebarIcon name="logout" />
+          <span>Log out</span>
+        </div>
       </div>
 
       <div className="sa-content">
@@ -1126,7 +1138,7 @@ function OfficeExpenses() {
             ]}
             disabled={expenses.length === 0}
           />
-          <button className="ge-add-btn" onClick={() => { setShowBillForm(!showBillForm); resetBillForm(); }}>
+          <button data-perm="add" className="ge-add-btn" onClick={() => { setShowBillForm(!showBillForm); resetBillForm(); }}>
             {showBillForm ? 'Cancel' : '+ Add New Bill'}
           </button>
         </div>
@@ -1154,7 +1166,7 @@ function OfficeExpenses() {
                 <option key={loc._id} value={loc._id}>{loc.name}</option>
               ))}
             </select>
-            <button
+            <button data-perm="add"
               type="button"
               className="hw-finder-add-btn"
               onClick={() => setShowAddLocation(!showAddLocation)}
@@ -1162,7 +1174,7 @@ function OfficeExpenses() {
               {showAddLocation ? 'Cancel' : '+ Add Location'}
             </button>
             {selectedLocation && (
-              <button type="button" className="hw-delete-btn" onClick={handleDeleteLocation}>
+              <button data-perm="delete" type="button" className="hw-delete-btn" onClick={handleDeleteLocation}>
                 Delete Location
               </button>
             )}
@@ -1178,7 +1190,7 @@ function OfficeExpenses() {
                   value={newLocationName}
                   onChange={(e) => setNewLocationName(e.target.value)}
                 />
-                <button
+                <button data-perm="add"
                   type="button"
                   className="ge-save-btn"
                   disabled={isAddingLocation || !newLocationName.trim()}
@@ -1202,7 +1214,7 @@ function OfficeExpenses() {
                 <option key={bt._id || bt.name} value={bt.name}>{bt.name}</option>
               ))}
             </select>
-            <button
+            <button data-perm="add"
               type="button"
               className="hw-finder-add-btn"
               disabled={!selectedLocation}
@@ -1211,7 +1223,7 @@ function OfficeExpenses() {
               {showAddBillType ? 'Cancel' : '+ Add Bill Type'}
             </button>
             {selectedBillType && (
-              <button type="button" className="hw-delete-btn" onClick={handleDeleteBillType}>
+              <button data-perm="delete" type="button" className="hw-delete-btn" onClick={handleDeleteBillType}>
                 Delete Bill Type
               </button>
             )}
@@ -1227,7 +1239,7 @@ function OfficeExpenses() {
                   value={newBillTypeName}
                   onChange={(e) => setNewBillTypeName(e.target.value)}
                 />
-                <button
+                <button data-perm="add"
                   type="button"
                   className="ge-save-btn"
                   disabled={isAddingBillType || !newBillTypeName.trim()}
@@ -1553,13 +1565,13 @@ function OfficeExpenses() {
                   <td><span className="sa-badge sa-badge-pending">Pending</span></td>
                   <td>
                     <div className="hw-supplier-actions">
-                      <button className="sa-manage-btn" onClick={() => startPayingExpense(exp)}>
+                      <button data-perm="edit" className="sa-manage-btn" onClick={() => startPayingExpense(exp)}>
                         Mark as Paid
                       </button>
-                      <button className="sa-manage-btn" onClick={() => startEditingExpense(exp)}>
+                      <button data-perm="edit" className="sa-manage-btn" onClick={() => startEditingExpense(exp)}>
                         Edit
                       </button>
-                      <button className="hw-delete-btn" onClick={() => handleDeleteExpense(exp._id)}>
+                      <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeleteExpense(exp._id)}>
                         Delete
                       </button>
                     </div>
@@ -1618,10 +1630,10 @@ function OfficeExpenses() {
                   <td><span className="sa-badge sa-badge-approved">Paid</span></td>
                   <td>
                     <div className="hw-supplier-actions">
-                      <button className="sa-manage-btn" onClick={() => startEditingExpense(exp)}>
+                      <button data-perm="edit" className="sa-manage-btn" onClick={() => startEditingExpense(exp)}>
                         Edit
                       </button>
-                      <button className="hw-delete-btn" onClick={() => handleDeleteExpense(exp._id)}>
+                      <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeleteExpense(exp._id)}>
                         Delete
                       </button>
                     </div>
@@ -2422,6 +2434,7 @@ function UserManagement() {
   const [stats, setStats] = useState({ total: 0, approved: 0, rejected: 0 });
   const [managingUser, setManagingUser] = useState(null);
   const [checkedPermissions, setCheckedPermissions] = useState([]);
+  const [role, setRole] = useState('employee');
 
   useEffect(() => {
     fetchUsers();
@@ -2448,7 +2461,9 @@ function UserManagement() {
 
   const openManagePanel = (user) => {
     setManagingUser(user);
-    setCheckedPermissions(user.permissions || []);
+    setCheckedPermissions(migrateLegacyPermissions(user.permissions || []));
+    // Users who had the old "Petty Cash" permission become Accountants
+    setRole(user.role === 'accountant' || (user.permissions || []).includes('petty_cash_manage') ? 'accountant' : 'employee');
   };
 
   const closeManagePanel = () => {
@@ -2467,7 +2482,7 @@ function UserManagement() {
     try {
       await axios.put(
         `${API_BASE_URL}/api/admin/users/${managingUser._id}/approve`,
-        { permissions: checkedPermissions }
+        { permissions: checkedPermissions, role }
       );
       closeManagePanel();
       fetchUsers();
@@ -2552,6 +2567,18 @@ function UserManagement() {
             <p className="sa-panel-email">{managingUser.email}</p>
 
             <div className="sa-permission-list">
+              <div className="sa-permission-group">
+                <p className="sa-group-title">Role</p>
+                <label className="sa-checkbox-row">
+                  <select value={role} onChange={(e) => setRole(e.target.value)}>
+                    <option value="employee">Employee</option>
+                    <option value="accountant">Accountant (Petty Cash)</option>
+                  </select>
+                </label>
+                {role === 'accountant' && (
+                  <p className="sa-panel-email">An Accountant always has Petty Cash. Tick the other sections below if needed.</p>
+                )}
+              </div>
               {PERMISSION_GROUPS.map((group) => (
                 <div key={group.category} className="sa-permission-group">
                   <p className="sa-group-title">{group.category}</p>
@@ -2576,6 +2603,10 @@ function UserManagement() {
                   })}
                 </div>
               ))}
+              <div className="sa-permission-group">
+                <p className="sa-group-title">Settings</p>
+                <p className="sa-panel-email">Every user gets Settings automatically.</p>
+              </div>
             </div>
 
             <div className="sa-panel-actions">
@@ -2865,7 +2896,7 @@ function Contractors() {
             ]}
             disabled={contractors.length === 0}
           />
-          <button className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
+          <button data-perm="add" className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
             {showForm ? 'Cancel' : '+ Add Contractor'}
           </button>
         </div>
@@ -2982,15 +3013,15 @@ function Contractors() {
                 </div>
 
                 <div className="sa-panel-actions">
-                  <button className="sa-save-btn" onClick={startEdit}>Update</button>
-                  <button className="sa-reject-btn" onClick={handleDeleteContractor}>Delete</button>
+                  <button data-perm="edit" className="sa-save-btn" onClick={startEdit}>Update</button>
+                  <button data-perm="delete" className="sa-reject-btn" onClick={handleDeleteContractor}>Delete</button>
                 </div>
 
                 {/* ---------- Estimation Plans ---------- */}
                 <div className="plan-section">
                   <div className="ge-header plan-section-header">
                     <p className="sa-group-title plan-section-title">Estimation Plans</p>
-                    <button
+                    <button data-perm="add"
                       type="button"
                       className="hw-finder-add-btn"
                       onClick={() => setShowPlanForm(!showPlanForm)}
@@ -3090,10 +3121,10 @@ function Contractors() {
                                     View Plan
                                   </a>
                                 )}
-                                <button className="hw-edit-btn" onClick={() => startEditPlan(plan)}>
+                                <button data-perm="edit" className="hw-edit-btn" onClick={() => startEditPlan(plan)}>
                                   Edit
                                 </button>
-                                <button className="hw-delete-btn" onClick={() => handleDeletePlan(plan._id)}>
+                                <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeletePlan(plan._id)}>
                                   Delete
                                 </button>
                               </div>
@@ -3461,7 +3492,7 @@ function ConstructionPayments() {
             buildTotals={(filtered) => ['', '', '', '', formatLKR(filtered.reduce((s, p) => s + p.amount, 0)), '', '', '', '', '', '']}
             disabled={payments.length === 0}
           />
-          <button className="ge-add-btn" onClick={() => setShowInvoiceForm(!showInvoiceForm)}>
+          <button data-perm="add" className="ge-add-btn" onClick={() => setShowInvoiceForm(!showInvoiceForm)}>
             {showInvoiceForm ? 'Cancel' : '+ Raise Invoice'}
           </button>
         </div>
@@ -3732,13 +3763,13 @@ function ConstructionPayments() {
                   <td><span className="sa-badge sa-badge-pending">Pending</span></td>
                   <td>
                     <div className="hw-supplier-actions">
-                      <button className="sa-manage-btn" onClick={() => startPayingInvoice(p)}>
+                      <button data-perm="edit" className="sa-manage-btn" onClick={() => startPayingInvoice(p)}>
                         Mark as Paid
                       </button>
-                      <button className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
+                      <button data-perm="edit" className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
                         Edit
                       </button>
-                      <button className="hw-delete-btn" onClick={() => handleDeletePayment(p._id)}>
+                      <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeletePayment(p._id)}>
                         Delete
                       </button>
                     </div>
@@ -3795,10 +3826,10 @@ function ConstructionPayments() {
                   <td><span className="sa-badge sa-badge-approved">Paid</span></td>
                   <td>
                     <div className="hw-supplier-actions">
-                      <button className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
+                      <button data-perm="edit" className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
                         Edit
                       </button>
-                      <button className="hw-delete-btn" onClick={() => handleDeletePayment(p._id)}>
+                      <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeletePayment(p._id)}>
                         Delete
                       </button>
                     </div>
@@ -4144,7 +4175,7 @@ function ContractorPayments() {
             buildTotals={(filtered) => ['', '', '', '', formatLKR(filtered.reduce((s, p) => s + p.amount, 0)), '', '', '', '', '', '']}
             disabled={allInvoices.length === 0}
           />
-          <button className="ge-add-btn" onClick={() => setShowInvoiceForm(!showInvoiceForm)}>
+          <button data-perm="add" className="ge-add-btn" onClick={() => setShowInvoiceForm(!showInvoiceForm)}>
             {showInvoiceForm ? 'Cancel' : '+ Raise Invoice'}
           </button>
         </div>
@@ -4188,7 +4219,7 @@ function ContractorPayments() {
                 </option>
               ))}
             </select>
-            <button
+            <button data-perm="add"
               type="button"
               className="hw-finder-add-btn"
               disabled={!selectedContractor}
@@ -4234,7 +4265,7 @@ function ContractorPayments() {
                 onChange={(e) => setNewPlanForm({ ...newPlanForm, note: e.target.value })}
                 rows={2}
               />
-              <button
+              <button data-perm="add"
                 type="button"
                 className="ge-save-btn"
                 disabled={isNewPlanSubmitting || !newPlanForm.projectName || !newPlanForm.totalEstimate}
@@ -4479,13 +4510,13 @@ function ContractorPayments() {
                   <td><span className="sa-badge sa-badge-pending">Pending</span></td>
                   <td>
                     <div className="hw-supplier-actions">
-                      <button className="sa-manage-btn" onClick={() => startPayingInvoice(p)}>
+                      <button data-perm="edit" className="sa-manage-btn" onClick={() => startPayingInvoice(p)}>
                         Mark as Paid
                       </button>
-                      <button className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
+                      <button data-perm="edit" className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
                         Edit
                       </button>
-                      <button className="hw-delete-btn" onClick={() => handleDeletePayment(p)}>
+                      <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeletePayment(p)}>
                         Delete
                       </button>
                     </div>
@@ -4542,10 +4573,10 @@ function ContractorPayments() {
                   <td><span className="sa-badge sa-badge-approved">Paid</span></td>
                   <td>
                     <div className="hw-supplier-actions">
-                      <button className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
+                      <button data-perm="edit" className="hw-edit-btn" onClick={() => startEditInvoice(p)}>
                         Edit
                       </button>
-                      <button className="hw-delete-btn" onClick={() => handleDeletePayment(p)}>
+                      <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeletePayment(p)}>
                         Delete
                       </button>
                     </div>
@@ -5139,7 +5170,7 @@ function Hardware() {
               buildTotals={(filtered) => ['', '', '', formatLKR(filtered.reduce((s, e) => s + e.amount, 0)), '', '', '', '']}
               disabled={hwReportEntries.length === 0}
             />
-            <button className="ge-add-btn" onClick={() => setShowHwInvoiceForm(!showHwInvoiceForm)}>
+            <button data-perm="add" className="ge-add-btn" onClick={() => setShowHwInvoiceForm(!showHwInvoiceForm)}>
               {showHwInvoiceForm ? 'Cancel' : '+ Raise Invoice'}
             </button>
           </div>
@@ -5572,20 +5603,20 @@ function Hardware() {
                           <td>
                             <div className="hw-supplier-actions">
                               {inv._source === 'invoice' ? (
-                                <button className="sa-manage-btn" onClick={() => startPayingHwInvoice(inv.hardwareObj, inv)}>
+                                <button data-perm="edit" className="sa-manage-btn" onClick={() => startPayingHwInvoice(inv.hardwareObj, inv)}>
                                   Mark Paid
                                 </button>
                               ) : (
-                                <button className="sa-manage-btn" onClick={() => handleConfirmHardwarePayment(inv.hardwareId, inv._id)}>
+                                <button data-perm="edit" className="sa-manage-btn" onClick={() => handleConfirmHardwarePayment(inv.hardwareId, inv._id)}>
                                   Confirm
                                 </button>
                               )}
                               {inv._source === 'invoice' && (
-                                <button className="hw-edit-btn" onClick={() => startEditHwInvoice(inv.hardwareObj, inv)}>
+                                <button data-perm="edit" className="hw-edit-btn" onClick={() => startEditHwInvoice(inv.hardwareObj, inv)}>
                                   Edit
                                 </button>
                               )}
-                              <button
+                              <button data-perm="delete"
                                 className="hw-delete-btn"
                                 onClick={() => (inv._source === 'invoice'
                                   ? handleDeleteHwInvoice(inv.hardwareId, inv._id)
@@ -5648,11 +5679,11 @@ function Hardware() {
                           <td>
                             <div className="hw-supplier-actions">
                               {inv._source === 'invoice' && (
-                                <button className="hw-edit-btn" onClick={() => startEditHwInvoice(inv.hardwareObj, inv)}>
+                                <button data-perm="edit" className="hw-edit-btn" onClick={() => startEditHwInvoice(inv.hardwareObj, inv)}>
                                   Edit
                                 </button>
                               )}
-                              <button
+                              <button data-perm="delete"
                                 className="hw-delete-btn"
                                 onClick={() => (inv._source === 'invoice'
                                   ? handleDeleteHwInvoice(inv.hardwareId, inv._id)
@@ -5699,7 +5730,7 @@ function Hardware() {
                 ]}
                 disabled={hardwareList.length === 0}
               />
-              <button className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
+              <button data-perm="add" className="ge-add-btn" onClick={() => setShowForm(!showForm)}>
                 {showForm ? 'Cancel' : '+ Add Hardware Supplier'}
               </button>
             </div>
@@ -5782,10 +5813,10 @@ function Hardware() {
                     <p className="hw-supplier-phone">A/C: {hw.accountNumber || '-'} &nbsp; | &nbsp; Bank: {hw.bankName || '-'} &nbsp; | &nbsp; Branch: {hw.bankBranch || '-'}</p>
                   </div>
                   <div className="hw-supplier-actions">
-                    <button className="sa-manage-btn" onClick={() => openItemForm(hw)}>+ Add Item</button>
-                    <button className="sa-manage-btn" onClick={() => openOrderForm(hw)}>Place Order</button>
-                    <button className="sa-manage-btn" onClick={() => startEditSupplier(hw)}>Edit</button>
-                    <button className="hw-delete-btn" onClick={() => handleDeleteSupplier(hw._id)}>Delete</button>
+                    <button data-perm="add" className="sa-manage-btn" onClick={() => openItemForm(hw)}>+ Add Item</button>
+                    <button data-perm="add" className="sa-manage-btn" onClick={() => openOrderForm(hw)}>Place Order</button>
+                    <button data-perm="edit" className="sa-manage-btn" onClick={() => startEditSupplier(hw)}>Edit</button>
+                    <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeleteSupplier(hw._id)}>Delete</button>
                   </div>
                 </div>
               )}
@@ -5935,10 +5966,10 @@ function Hardware() {
                         <td>{item.quantity}</td>
                         <td>{formatLKR(itemTotal(item))}</td>
                         <td className="hw-item-actions-cell">
-                          <button className="hw-edit-btn" onClick={() => openEditItem(hw._id, item)}>
+                          <button data-perm="edit" className="hw-edit-btn" onClick={() => openEditItem(hw._id, item)}>
                             Edit
                           </button>
-                          <button className="hw-delete-btn" onClick={() => handleDeleteItem(hw._id, item._id)}>
+                          <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeleteItem(hw._id, item._id)}>
                             Delete
                           </button>
                         </td>
@@ -6008,14 +6039,14 @@ function Hardware() {
                           <td>
                             <div className="hw-supplier-actions">
                               {inv.status !== 'paid' && (
-                                <button className="sa-manage-btn" onClick={() => startPayingHwInvoice(hw, inv)}>
+                                <button data-perm="edit" className="sa-manage-btn" onClick={() => startPayingHwInvoice(hw, inv)}>
                                   Mark Paid
                                 </button>
                               )}
-                              <button className="hw-edit-btn" onClick={() => startEditHwInvoice(hw, inv)}>
+                              <button data-perm="edit" className="hw-edit-btn" onClick={() => startEditHwInvoice(hw, inv)}>
                                 Edit
                               </button>
-                              <button className="hw-delete-btn" onClick={() => handleDeleteHwInvoice(hw._id, inv._id)}>
+                              <button data-perm="delete" className="hw-delete-btn" onClick={() => handleDeleteHwInvoice(hw._id, inv._id)}>
                                 Delete
                               </button>
                             </div>
@@ -6376,13 +6407,13 @@ function ProjectSummary() {
         <div className="ge-header project-quick-actions-header">
           <p className="sa-group-title project-section-title">Add to "{searchedFor}"</p>
           <div className="project-quick-actions">
-            <button type="button" className="hw-finder-add-btn" onClick={() => setQuickAction(quickAction === 'plan' ? null : 'plan')}>
+            <button data-perm="add" type="button" className="hw-finder-add-btn" onClick={() => setQuickAction(quickAction === 'plan' ? null : 'plan')}>
               {quickAction === 'plan' ? 'Cancel' : '+ Upload Estimation Plan'}
             </button>
-            <button type="button" className="hw-finder-add-btn" onClick={() => setQuickAction(quickAction === 'hardware' ? null : 'hardware')}>
+            <button data-perm="add" type="button" className="hw-finder-add-btn" onClick={() => setQuickAction(quickAction === 'hardware' ? null : 'hardware')}>
               {quickAction === 'hardware' ? 'Cancel' : '+ Raise Hardware Invoice'}
             </button>
-            <button type="button" className="hw-finder-add-btn" onClick={() => setQuickAction(quickAction === 'other' ? null : 'other')}>
+            <button data-perm="add" type="button" className="hw-finder-add-btn" onClick={() => setQuickAction(quickAction === 'other' ? null : 'other')}>
               {quickAction === 'other' ? 'Cancel' : '+ Other Payment'}
             </button>
           </div>
@@ -6743,4 +6774,5 @@ function ProjectSummary() {
   );
 }
 
+export { Constructions, OfficeExpenses, SidebarIcon };
 export default SuperAdminDashboard;

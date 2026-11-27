@@ -175,10 +175,23 @@ const loginUser = async ({ email, password }, meta = {}) => {
   };
 };
 
+// ---- Forgot password (OTP flow) ----
+// Step 1: user enters email -> we email a 6-digit OTP (valid 10 minutes).
+// Step 2: user enters email + OTP + new password on the same page -> password changes.
+const OTP_MINUTES = 10;
+const MAX_OTP_ATTEMPTS = 5;
+
+// The OTP is stored hashed (HMAC with the email mixed in), never in plain text.
+const hashOtp = (email, otp) =>
+  crypto
+    .createHmac('sha256', process.env.JWT_SECRET || 'otp-secret')
+    .update(`${email.toLowerCase()}:${otp}`)
+    .digest('hex');
+
 // Deliberately never reveals whether the email exists - always returns the
-// same generic message, whether or not a reset email was actually sent.
+// same generic message, whether or not an OTP was actually sent.
 const requestPasswordReset = async ({ email }, meta = {}) => {
-  const genericMessage = { message: 'If that email is registered, a reset link has been sent.' };
+  const genericMessage = { message: 'If that email is registered, a 6-digit OTP has been sent.' };
 
   const cleanEmail = validateEmail(email);
 
@@ -187,24 +200,23 @@ const requestPasswordReset = async ({ email }, meta = {}) => {
     return genericMessage;
   }
 
-  const resetToken = crypto.randomBytes(32).toString('hex');
-  const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+  // crypto.randomInt is cryptographically secure (Math.random is not).
+  const otp = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
 
-  user.resetPasswordToken = hashedToken;
-  user.resetPasswordExpires = Date.now() + 15 * 60 * 1000;
+  user.resetPasswordToken = hashOtp(user.email, otp);
+  user.resetPasswordExpires = Date.now() + OTP_MINUTES * 60 * 1000;
+  user.resetPasswordAttempts = 0;
   await user.save();
-
-  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
   try {
     await transporter.sendMail({
       from: `"Campus Expense System" <${process.env.EMAIL_USER}>`,
       to: user.email,
-      subject: 'Password Reset Request',
+      subject: 'Your Password Reset OTP',
       html: `
       <p>Hi ${escapeHtml(user.name)},</p>
-      <p>You requested a password reset. Click the link below to set a new password. This link expires in 15 minutes.</p>
-      <p><a href="${resetUrl}">${resetUrl}</a></p>
+      <p>Use this OTP to reset your password. It expires in ${OTP_MINUTES} minutes.</p>
+      <p style="font-size:28px;font-weight:bold;letter-spacing:6px;">${otp}</p>
       <p>If you did not request this, please ignore this email.</p>
     `,
     });
@@ -219,26 +231,39 @@ const requestPasswordReset = async ({ email }, meta = {}) => {
   return genericMessage;
 };
 
-const resetPassword = async ({ token, password }, meta = {}) => {
-  if (typeof token !== 'string' || !token) {
-    throw new ApiError(400, 'Reset link is invalid or has expired');
-  }
+const resetPassword = async ({ email, otp, password }, meta = {}) => {
+  const invalid = () => new ApiError(400, 'OTP is invalid or has expired');
+
+  const cleanEmail = validateEmail(email);
+  if (typeof otp !== 'string' && typeof otp !== 'number') throw invalid();
+  const cleanOtp = String(otp).trim();
+  if (!/^\d{6}$/.test(cleanOtp)) throw invalid();
   validatePassword(password);
 
-  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+  const user = await findUserByEmail(cleanEmail);
+  if (!user || !user.resetPasswordToken || !user.resetPasswordExpires || user.resetPasswordExpires.getTime() < Date.now()) {
+    throw invalid();
+  }
 
-  const user = await User.findOne({
-    resetPasswordToken: hashedToken,
-    resetPasswordExpires: { $gt: Date.now() },
-  });
+  // Too many wrong guesses: kill this OTP so a new one must be requested.
+  if ((user.resetPasswordAttempts || 0) >= MAX_OTP_ATTEMPTS) {
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    user.resetPasswordAttempts = 0;
+    await user.save();
+    throw new ApiError(400, 'Too many wrong attempts. Please request a new OTP.');
+  }
 
-  if (!user) {
-    throw new ApiError(400, 'Reset link is invalid or has expired');
+  if (!safeEqual(hashOtp(user.email, cleanOtp), user.resetPasswordToken)) {
+    await User.updateOne({ _id: user._id }, { $inc: { resetPasswordAttempts: 1 } });
+    recordAudit({ action: 'PASSWORD_RESET', outcome: 'failed', user, meta, details: { reason: 'wrong otp' } });
+    throw invalid();
   }
 
   user.password = await bcrypt.hash(password, 10);
   user.resetPasswordToken = undefined;
   user.resetPasswordExpires = undefined;
+  user.resetPasswordAttempts = 0;
   // Log out every device that was using the old password, and unlock the account.
   user.passwordChangedAt = new Date();
   user.failedLoginAttempts = 0;

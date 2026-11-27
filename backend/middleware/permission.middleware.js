@@ -42,7 +42,8 @@ const requirePermission = (...keys) => {
     }
     if (isSuperAdmin(req.user)) return next();
 
-    const owned = req.user.permissions || [];
+    // An accountant (role set in User Management) always has Petty Cash.
+    const owned = [...(req.user.permissions || []), ...(req.user.role === 'accountant' ? ['petty_cash_manage'] : [])];
     if (keys.some((key) => owned.includes(key))) return next();
 
     return forbid(res, keys);
@@ -84,7 +85,52 @@ const requireFinanceAccess = (req, res, next) => {
   }
 };
 
+// ---- Per-area access (Constructions / Office Expenses) ----
+// Same method rules as requireFinanceAccess, but each area has its own keys:
+//   constructions_view / _add / _edit / _delete
+//   office_expenses_view / _add / _edit / _delete
+// The OLD finance_* keys still work for both areas (users saved earlier).
+const ACTIONS = ['view', 'add', 'edit', 'delete'];
+
+const requireAreaAccess = (area) => {
+  const keysFor = (action) => [`${area}_${action}`, FINANCE[action]];
+  const guards = {
+    view: requirePermission(...ACTIONS.flatMap(keysFor)), // reading: any permission of the area
+    add: requirePermission(...keysFor('add')),
+    edit: requirePermission(...keysFor('edit')),
+    delete: requirePermission(...keysFor('delete')),
+  };
+
+  return (req, res, next) => {
+    switch (req.method) {
+      case 'GET':
+      case 'HEAD':
+        return guards.view(req, res, next);
+      case 'POST':
+        return guards.add(req, res, next);
+      case 'PUT':
+      case 'PATCH':
+        return guards.edit(req, res, next);
+      case 'DELETE':
+        return guards.delete(req, res, next);
+      default:
+        return res.status(405).json({ message: 'Method not allowed' });
+    }
+  };
+};
+
+// Read-only guard (e.g. hardware price finder: a POST that only reads).
+const requireAreaRead = (area) =>
+  requirePermission(...ACTIONS.flatMap((a) => [`${area}_${a}`, FINANCE[a]]));
+
+const requireConstructionsAccess = requireAreaAccess('constructions');
+const requireConstructionsRead = requireAreaRead('constructions');
+const requireOfficeExpensesAccess = requireAreaAccess('office_expenses');
+
 module.exports = {
+  requireConstructionsAccess,
+  requireConstructionsRead,
+  requireOfficeExpensesAccess,
   requirePermission,
   requireFinanceAccess,
   requireFinanceRead,
