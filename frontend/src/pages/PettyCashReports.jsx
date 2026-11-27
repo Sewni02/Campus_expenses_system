@@ -199,7 +199,7 @@ function ReportView({ report, periodLabel }) {
 
       <div className="pc-panel">
         <h3>Spending by category</h3>
-        {categories.length === 0 && <p style={{ color: '#7C8FAD', margin: 0 }}>No spending in this period.</p>}
+        {categories.length === 0 && <p style={{ color: 'var(--ui-faint)', margin: 0 }}>No spending in this period.</p>}
         {categories.map((c) => (
           <div className="pc-bar-row" key={c.category}>
             <span>{c.category}</span>
