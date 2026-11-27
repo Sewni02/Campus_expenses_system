@@ -25,7 +25,7 @@ const cleanAmount = (v) => {
   return c;
 };
 
-const infoBox = { background: '#F4F8FD', border: '1px solid #DCE6F4', borderRadius: 10, padding: '12px 16px', fontSize: 14 };
+const infoBox = { background: 'var(--ui-soft)', border: '1px solid var(--ui-line)', borderRadius: 10, padding: '12px 16px', fontSize: 14 };
 const actionsCell = { display: 'flex', gap: 8, justifyContent: 'flex-end' };
 
 // ---------------------------------------------------------------------------
@@ -78,7 +78,7 @@ function StaffSalary() {
       {loadError && <div className="pc-alert err">{loadError}</div>}
 
       {locations === null ? (
-        <p style={{ color: '#7C8FAD' }}>Loading...</p>
+        <p style={{ color: 'var(--ui-faint)' }}>Loading...</p>
       ) : section === 'attendance' ? (
         <StaffAttendance locations={locations} />
       ) : section === 'totals' ? (
@@ -153,7 +153,7 @@ function StaffSection({ locations, onLocationsChanged }) {
       {location ? (
         <LocationStaff key={location._id} location={location} onLocationsChanged={onLocationsChanged} onDeleted={() => setWanted('')} />
       ) : (
-        <div className="pc-panel" style={{ textAlign: 'center', color: '#4A6288' }}>
+        <div className="pc-panel" style={{ textAlign: 'center', color: 'var(--ui-muted)' }}>
           No locations yet. Click “+ Add location” above to create the first one (for example Head Office), then add its staff.
         </div>
       )}
@@ -252,7 +252,7 @@ function LocationStaff({ location, onLocationsChanged, onDeleted }) {
       <div className="pc-toolbar">
         <h2 style={{ fontSize: 18 }}>
           {location.name}
-          <span style={{ marginLeft: 10, fontSize: 13, fontWeight: 400, color: '#4A6288' }}>
+          <span style={{ marginLeft: 10, fontSize: 13, fontWeight: 400, color: 'var(--ui-muted)' }}>
             {(staff ? staff.length : location.staffCount)} staff member{(staff ? staff.length : location.staffCount) === 1 ? '' : 's'}
           </span>
         </h2>
@@ -352,7 +352,7 @@ function LocationStaff({ location, onLocationsChanged, onDeleted }) {
             )}
             {staff && staff.map((s) => (
               <tr key={s._id}>
-                <td>{s.employeeNo || <span style={{ color: '#B3382C' }} title="Edit this employee and add the employee number">— add</span>}</td>
+                <td>{s.employeeNo || <span style={{ color: 'var(--ui-danger)' }} title="Edit this employee and add the employee number">— add</span>}</td>
                 <td>{s.name}</td>
                 <td>{s.nic}</td>
                 <td>{s.mobile}</td>
@@ -418,7 +418,7 @@ function SalarySection({ locations }) {
         // key = month: picking another month starts a clean form and loads that month's salaries.
         <MonthWorkspace key={month} month={month} locations={locations} onChanged={loadSavedMonths} />
       ) : (
-        <p style={{ color: '#7C8FAD' }}>Pick a month to create or view its salaries.</p>
+        <p style={{ color: 'var(--ui-faint)' }}>Pick a month to create or view its salaries.</p>
       )}
     </>
   );
@@ -434,7 +434,7 @@ function SummaryLine({ label, value, strong = false, color }) {
         gap: 16,
         padding: strong ? '8px 0 0' : '4px 0',
         marginTop: strong ? 4 : 0,
-        borderTop: strong ? '1px solid #DCE6F4' : 'none',
+        borderTop: strong ? '1px solid var(--ui-line)' : 'none',
         fontWeight: strong ? 700 : 400,
         color: color || 'inherit',
       }}
@@ -474,7 +474,7 @@ const lineKindOfAllowance = (name) => (name === HOLIDAY_ALLOWANCE ? 'days' : 'am
 function LineRows({ rows, itemLabel, onToggle, onAmount, onDays }) {
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: LINE_GRID, gap: 10, marginBottom: 6, fontSize: 12, fontWeight: 600, color: '#7C8FAD' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: LINE_GRID, gap: 10, marginBottom: 6, fontSize: 12, fontWeight: 600, color: 'var(--ui-faint)' }}>
         <span>{itemLabel}</span>
         <span>{itemLabel === 'Allowance' ? 'Add to this employee?' : 'Deduct from this employee?'}</span>
         <span>Amount (Rs.)</span>
@@ -484,7 +484,7 @@ function LineRows({ rows, itemLabel, onToggle, onAmount, onDays }) {
           <span style={{ fontWeight: 500, overflowWrap: 'anywhere' }}>
             {r.name}
             {r.kind === 'percent' && (
-              <span style={{ display: 'block', fontWeight: 400, fontSize: 12, color: '#7C8FAD' }}>
+              <span style={{ display: 'block', fontWeight: 400, fontSize: 12, color: 'var(--ui-faint)' }}>
                 {r.rate}% of {formatMoney(r.base || 0)}{r.baseHasHoliday ? ' (basic + holiday payments)' : ' (basic salary)'}
               </span>
             )}
@@ -508,10 +508,10 @@ function LineRows({ rows, itemLabel, onToggle, onAmount, onDays }) {
             />
           </div>
           {r.kind === 'days' && r.on && (
-            <div style={{ gridColumn: '1 / -1', display: 'grid', gap: 12, padding: '10px 12px', background: '#F4F8FD', border: '1px solid #DCE6F4', borderRadius: 10 }}>
+            <div style={{ gridColumn: '1 / -1', display: 'grid', gap: 12, padding: '10px 12px', background: 'var(--ui-soft)', border: '1px solid var(--ui-line)', borderRadius: 10 }}>
               {r.partRows.map((p) => (
                 <div key={p.key}>
-                  {p.label && <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6, color: '#1F3C6B' }}>{p.label}</div>}
+                  {p.label && <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6, color: 'var(--ui-text)' }}>{p.label}</div>}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
                     <label className="pc-field">
                       Full days
@@ -526,14 +526,14 @@ function LineRows({ rows, itemLabel, onToggle, onAmount, onDays }) {
                       <input type="text" inputMode="decimal" placeholder="Enter day salary" value={p.daySalary} onChange={(e) => onDays(r.name, p.key, 'daySalary', cleanAmount(e.target.value))} />
                     </label>
                   </div>
-                  <p style={{ margin: '6px 0 0', fontSize: 12, color: '#4A6288' }}>
+                  <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--ui-muted)' }}>
                     {p.days > 0
                       ? `${p.fullDays || 0} full + ${p.halfDays || 0} half = ${p.days} day${p.days === 1 ? '' : 's'} × ${formatMoney(toNumber(p.daySalary))} = ${formatMoney(p.amount)}`
                       : 'No days entered'}
                   </p>
                 </div>
               ))}
-              <p style={{ margin: 0, fontSize: 12, color: '#4A6288' }}>
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--ui-muted)' }}>
                 {r.name} = (full days + half days × ½) × day salary{r.partRows.length > 1 ? `, added together (${r.partRows.map((p) => p.label).join(' + ')})` : ''}. Type the day salary for each part separately.
                 {r.partRows.length > 1 ? ` Total: ${formatMoney(toNumber(r.amount))}` : ''}
               </p>
@@ -569,7 +569,7 @@ function NewTypeControl({ noun, onAdd }) {
   };
 
   return (
-    <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px dashed #DCE6F4' }}>
+    <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px dashed var(--ui-line)' }}>
       {adding ? (
         // not a <form>: this sits inside the salary form, and Enter must add the item, not save the salary
         <div className="pc-add-degree">
@@ -594,7 +594,7 @@ function NewTypeControl({ noun, onAdd }) {
       ) : (
         <button className="pc-btn-sm" type="button" onClick={() => { setAdding(true); setMsg(null); }}>+ New {noun}</button>
       )}
-      <p style={{ margin: '8px 0 0', fontSize: 12, color: '#7C8FAD' }}>A new {noun} is added to the list for every employee.</p>
+      <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--ui-faint)' }}>A new {noun} is added to the list for every employee.</p>
       {msg && <div className={`pc-alert ${msg.type}`} style={{ marginTop: 8 }}>{msg.text}</div>}
     </div>
   );
@@ -968,7 +968,7 @@ function MonthWorkspace({ month, locations, onChanged }) {
             Basic salary
             <input type="text" readOnly value={basic === null ? '' : formatMoney(basic)} placeholder="Fills in when you pick an employee" />
           </label>
-          <p style={{ margin: 0, alignSelf: 'center', fontSize: 13, color: '#4A6288' }}>
+          <p style={{ margin: 0, alignSelf: 'center', fontSize: 13, color: 'var(--ui-muted)' }}>
             The basic salary comes from the staff profile. To change it, edit the employee in “Staff &amp; Locations”.
           </p>
 
@@ -985,12 +985,12 @@ function MonthWorkspace({ month, locations, onChanged }) {
             {lineTab === 'allowances' ? (
               <div>
                 {!showAllowances ? (
-                  <p style={{ margin: '0 0 12px', color: '#7C8FAD', fontSize: 14 }}>Select an employee to see the allowances.</p>
+                  <p style={{ margin: '0 0 12px', color: 'var(--ui-faint)', fontSize: 14 }}>Select an employee to see the allowances.</p>
                 ) : allowanceTypes === null ? (
-                  <p style={{ margin: '0 0 12px', color: '#7C8FAD', fontSize: 14 }}>Loading the allowances...</p>
+                  <p style={{ margin: '0 0 12px', color: 'var(--ui-faint)', fontSize: 14 }}>Loading the allowances...</p>
                 ) : (
                   <>
-                    <p style={{ margin: '0 0 12px', color: '#4A6288', fontSize: 13 }}>
+                    <p style={{ margin: '0 0 12px', color: 'var(--ui-muted)', fontSize: 13 }}>
                       Choose <strong>Yes</strong> for the allowances this employee gets and type the amount. <strong>No</strong> is saved as 0.
                     </p>
                     <LineRows rows={allowanceRows} itemLabel="Allowance" onToggle={toggleAllowance} onAmount={setAllowanceAmount} onDays={setDays(setAllowValues)} />
@@ -1001,12 +1001,12 @@ function MonthWorkspace({ month, locations, onChanged }) {
             ) : (
               <div>
                 {!showAllowances ? (
-                  <p style={{ margin: '0 0 12px', color: '#7C8FAD', fontSize: 14 }}>Select an employee to see the deductions.</p>
+                  <p style={{ margin: '0 0 12px', color: 'var(--ui-faint)', fontSize: 14 }}>Select an employee to see the deductions.</p>
                 ) : deductionTypes === null ? (
-                  <p style={{ margin: '0 0 12px', color: '#7C8FAD', fontSize: 14 }}>Loading the deductions...</p>
+                  <p style={{ margin: '0 0 12px', color: 'var(--ui-faint)', fontSize: 14 }}>Loading the deductions...</p>
                 ) : (
                   <>
-                    <p style={{ margin: '0 0 12px', color: '#4A6288', fontSize: 13 }}>
+                    <p style={{ margin: '0 0 12px', color: 'var(--ui-muted)', fontSize: 13 }}>
                       Choose <strong>Yes</strong> for the deductions that apply. EPF and ETF are taken from the <strong>basic salary</strong>; if this month has a <strong>Holiday Payments</strong> amount (Normal holiday + Poya together), it is added to the basic salary first. The total of all
                       deductions is taken off the gross salary (basic + allowances) to give the net salary. <strong>No</strong> is saved as 0.
                     </p>
@@ -1028,8 +1028,8 @@ function MonthWorkspace({ month, locations, onChanged }) {
             <SummaryLine label="+ Allowances" value={formatMoney(totalAllowances)} />
             <SummaryLine label="Gross salary" value={formatMoney(gross)} strong />
             <SummaryLine label="− Deductions" value={formatMoney(totalDeductions)} />
-            <SummaryLine label="Net salary" value={formatMoney(net)} strong color={net < 0 ? '#B3382C' : '#2F7D57'} />
-            {net < 0 && <p style={{ margin: '8px 0 0', color: '#B3382C' }}>The deductions are more than the gross salary.</p>}
+            <SummaryLine label="Net salary" value={formatMoney(net)} strong color={net < 0 ? 'var(--ui-danger)' : 'var(--ui-ok)'} />
+            {net < 0 && <p style={{ margin: '8px 0 0', color: 'var(--ui-danger)' }}>The deductions are more than the gross salary.</p>}
           </div>
 
           <div className="wide" style={{ display: 'flex', gap: 8 }}>
@@ -1096,7 +1096,7 @@ function MonthWorkspace({ month, locations, onChanged }) {
                   {r.employeeNo && <b>{r.employeeNo} · </b>}
                   {r.staffName}
                   <br />
-                  <small style={{ color: '#4A6288' }}>{r.nic}</small>
+                  <small style={{ color: 'var(--ui-muted)' }}>{r.nic}</small>
                 </td>
                 <td>{r.locationName}</td>
                 <td className="num">{formatMoney(r.basicSalary)}</td>

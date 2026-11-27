@@ -41,7 +41,7 @@ function Login() {
   };
 
   return (
-    <AuthShell title="Sign in" headline={['Manage every expense']} accent="with total clarity.">
+    <AuthShell title="Sign in" headline={['Manage every expense']} accent="with total clarity">
       <form onSubmit={handleLogin}>
         <AuthField label="Email address" icon="mail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="yourname@gmail.com" autoComplete="email" required />
         <AuthField label="Password" icon="lock" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" autoComplete="current-password" required />

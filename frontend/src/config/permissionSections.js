@@ -77,8 +77,14 @@ export const withLegacyFinance = (owned) => {
   return out;
 };
 
+// A super admin has full access to every section and every action
+// (the server stores that as the '*' permission and the 'super_admin' role).
+export const isSuperAdminUser = (user) =>
+  user?.role === 'super_admin' || (user?.permissions || []).includes('*');
+
 // Does this user hold at least one permission of the section?
 export const hasSectionAccess = (user, section) => {
+  if (isSuperAdminUser(user)) return true;
   const owned = withLegacyFinance(user?.permissions || []);
   if (section.roles?.includes(user?.role)) return true;
   return section.permissions.some((p) => owned.includes(p.key));
@@ -86,6 +92,7 @@ export const hasSectionAccess = (user, section) => {
 
 // The sections this user may open = every group where they hold at least one permission.
 export const sectionsForUser = (user) => {
+  if (isSuperAdminUser(user)) return [...PERMISSION_SECTIONS];
   const owned = withLegacyFinance(user?.permissions || []);
   return PERMISSION_SECTIONS.filter((section) => section.permissions.some((p) => owned.includes(p.key)));
 };

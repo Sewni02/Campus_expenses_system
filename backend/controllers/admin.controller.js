@@ -12,12 +12,12 @@ const getUserStats = asyncHandler(async (req, res) => {
 });
 
 const approveUser = asyncHandler(async (req, res) => {
-  const result = await adminService.approveUser(req.params.id, req.body.permissions, req.body.role);
+  const result = await adminService.approveUser(req.params.id, req.body.permissions, req.body.role, req.user.id);
   res.json(result);
 });
 
 const rejectUser = asyncHandler(async (req, res) => {
-  const result = await adminService.rejectUser(req.params.id);
+  const result = await adminService.rejectUser(req.params.id, req.user.id);
   res.json(result);
 });
 

@@ -142,9 +142,9 @@ function PettyCashPanel() {
         )}
 
         {pending.length > 0 && (
-          <div className="pc-panel" style={{ borderColor: '#F1D79A', background: '#FFFBF0' }}>
+          <div className="pc-panel" style={{ borderColor: 'var(--ui-warn-line)', background: 'var(--ui-warn-bg)' }}>
             <h3>Funds waiting for your confirmation ({pending.length})</h3>
-            <p style={{ marginTop: 0, color: '#8A5A0F', fontSize: 14 }}>
+            <p style={{ marginTop: 0, color: 'var(--ui-warn-ink)', fontSize: 14 }}>
               Check the slip / voucher, then accept. The amount is added to your petty cash balance for the month it is meant for.
             </p>
             <div className="pc-table-wrap">

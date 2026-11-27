@@ -1,19 +1,28 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import wordmark from '../assets/xpendly-wordmark.png';
+import ThemeToggle from './ThemeToggle';
 import './AuthShell.css';
 
 // Shared layout for Sign in, Sign up and Forgot password:
 // artwork + headline on the left, the form on the right.
-// The artwork is pure CSS / SVG (no photo), so it stays sharp on every screen.
+// The artwork is a small animated preview of what Xpendly actually does
+// (spending by area, a monthly trend, an invoice going from pending to paid,
+// an access approval). It is pure CSS / SVG - no photo - so it stays sharp on
+// every screen and follows the light / dark theme.
 
-// Fixed positions (not random) so the sky looks the same on every visit.
-const STARS = [
-  [6, 12, 2], [14, 30, 1.5], [22, 8, 1], [30, 22, 2], [38, 40, 1], [46, 14, 1.5], [54, 6, 1],
-  [63, 28, 2], [71, 16, 1], [80, 9, 1.5], [88, 24, 1], [94, 12, 2], [9, 52, 1], [19, 64, 1.5],
-  [27, 78, 1], [36, 58, 2], [58, 48, 1], [67, 60, 1.5], [76, 44, 1], [85, 56, 2], [92, 70, 1],
-  [12, 86, 1.5], [44, 90, 1], [60, 82, 2], [74, 88, 1], [90, 92, 1.5], [49, 30, 1], [3, 40, 1.5],
+// Spending by area - same areas and colours as the Grand Total screen. Decorative sample values.
+const AREAS = [
+  { label: 'Constructions', pct: 38, color: '#2469C9' },
+  { label: 'Office Expenses', pct: 16, color: '#1FB5A4' },
+  { label: 'Petty Cash', pct: 8, color: '#D69E2E' },
+  { label: 'Lecturer Salary', pct: 22, color: '#7C5CCB' },
+  { label: 'Staff Salary', pct: 16, color: '#2F7D57' },
 ];
+const RING_R = 46;
+const RING_C = 2 * Math.PI * RING_R;
+// where each segment starts on the ring (running total of the earlier segments)
+const RING_OFFSETS = AREAS.map((_, i) => AREAS.slice(0, i).reduce((sum, a) => sum + (a.pct / 100) * RING_C, 0));
 
 export const ICONS = {
   mail: (
@@ -109,27 +118,85 @@ export function AuthNotice({ kind = 'info', children }) {
 function AuthShell({ title, headline, accent, children }) {
   return (
     <div className="xa-page">
+      <ThemeToggle floating />
       <aside className="xa-art">
-        {/* artwork */}
         <div className="xa-glow" />
         <div className="xa-gridlines" />
-        <svg className="xa-orbits" viewBox="0 0 600 800" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-          <ellipse cx="170" cy="190" rx="360" ry="150" transform="rotate(-24 170 190)" />
-          <ellipse cx="170" cy="190" rx="470" ry="210" transform="rotate(-24 170 190)" />
-          <ellipse cx="420" cy="430" rx="150" ry="52" transform="rotate(-20 420 430)" />
-        </svg>
-        <div className="xa-planet xa-planet-main"><i /><i /><i /></div>
-        <div className="xa-planet xa-planet-mid" />
-        <div className="xa-planet xa-planet-small" />
-        <div className="xa-streak xa-streak-a" />
-        <div className="xa-streak xa-streak-b" />
-        {STARS.map(([x, y, s], i) => (
-          <span key={i} className="xa-star" style={{ left: `${x}%`, top: `${y}%`, width: s * 2, height: s * 2, animationDelay: `${(i % 7) * 0.45}s` }} />
-        ))}
 
         <Link to="/" className="xa-logo" aria-label="Xpendly home">
           <img src={wordmark} alt="Xpendly" />
         </Link>
+
+        {/* animated preview of the system (decorative, no real data) */}
+        <div className="xa-visual" aria-hidden="true">
+          <div className="xa-vcard xa-spend">
+            <div className="xa-card-head"><span>Spending by area</span><em>This month</em></div>
+            <div className="xa-spend-body">
+              <svg className="xa-ring" viewBox="0 0 120 120">
+                <circle className="xa-ring-track" cx="60" cy="60" r={RING_R} />
+                {AREAS.map((a, i) => (
+                  <circle
+                    key={a.label}
+                    className="xa-ring-seg"
+                    cx="60" cy="60" r={RING_R}
+                    stroke={a.color}
+                    strokeDasharray={`${(a.pct / 100) * RING_C - 2} ${RING_C}`}
+                    strokeDashoffset={-RING_OFFSETS[i]}
+                    style={{ animationDelay: `${0.25 + i * 0.16}s` }}
+                  />
+                ))}
+                <text x="60" y="57" textAnchor="middle" className="xa-ring-num">5</text>
+                <text x="60" y="73" textAnchor="middle" className="xa-ring-sub">areas</text>
+              </svg>
+              <ul className="xa-legend">
+                {AREAS.map((a) => (
+                  <li key={a.label}><i style={{ background: a.color }} />{a.label}<b>{a.pct}%</b></li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          <div className="xa-vcard xa-invoice">
+            <span className="xa-inv-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3z" /><path d="M9 8h6M9 12h6" /></svg>
+            </span>
+            <div className="xa-inv-text">
+              <strong>Invoice #0042</strong>
+              <small>Supplier bill</small>
+            </div>
+            <span className="xa-status">
+              <span className="xa-status-pending">Pending</span>
+              <span className="xa-status-paid">Paid</span>
+            </span>
+          </div>
+
+          <div className="xa-vcard xa-trend">
+            <div className="xa-card-head"><span>Monthly spending</span><em><i />Live</em></div>
+            <svg viewBox="0 0 300 96" preserveAspectRatio="none" className="xa-chart">
+              <defs>
+                <linearGradient id="xa-area" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#1FB5A4" stopOpacity=".38" />
+                  <stop offset="100%" stopColor="#1FB5A4" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <path className="xa-grid-line" d="M0 24H300M0 48H300M0 72H300" />
+              <path className="xa-area" d="M0 78 C30 70 44 60 70 62 S116 48 142 44 S190 56 214 36 S262 22 300 12 V96 H0 Z" fill="url(#xa-area)" />
+              <path className="xa-line" pathLength="1" d="M0 78 C30 70 44 60 70 62 S116 48 142 44 S190 56 214 36 S262 22 300 12" />
+              <circle className="xa-dot" cx="300" cy="12" r="4" />
+            </svg>
+            <div className="xa-months"><span>Jun</span><span>Jul</span><span>Aug</span><span>Sep</span><span>Oct</span><span>Nov</span></div>
+          </div>
+
+          <div className="xa-vcard xa-approve">
+            <span className="xa-ok-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+            </span>
+            <div className="xa-inv-text">
+              <strong>Access approved</strong>
+              <small>Role-based permissions</small>
+            </div>
+          </div>
+        </div>
 
         <div className="xa-headline">
           {headline.map((line) => (

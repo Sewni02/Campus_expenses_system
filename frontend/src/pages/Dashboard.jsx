@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import axios from 'axios';
 import useTabState from '../hooks/useTabState';
 import { getSavedUser, saveUser, logout } from '../utils/session';
-import { PERMISSION_SECTIONS, hasSectionAccess, withLegacyFinance } from '../config/permissionSections';
+import { PERMISSION_SECTIONS, hasSectionAccess, isSuperAdminUser, withLegacyFinance } from '../config/permissionSections';
 import PettyCashPanel from './PettyCashPanel';
 import StaffSalary from './StaffSalary';
 import LecturerSalary from './LecturerSalary';
@@ -34,6 +34,9 @@ function Dashboard() {
       })
       .catch(() => {});
   }, []);
+
+  // Super admins have their own full workspace (every section + User Management + Audit Log).
+  if (isSuperAdminUser(user)) return <Navigate to="/admin/users" replace />;
 
   const section = PERMISSION_SECTIONS.find((s) => s.key === activeTab);
   const tab = activeTab === 'settings' ? 'settings' : section ? section.key : PERMISSION_SECTIONS[0].key;
@@ -106,6 +109,7 @@ function Dashboard() {
 // in SuperAdminDashboard.jsx) the user was NOT given for this area. The server
 // refuses those actions anyway - this just stops the buttons being clickable.
 function blockedActions(user, area) {
+  if (isSuperAdminUser(user)) return '';
   const owned = withLegacyFinance(user?.permissions || []);
   return ['add', 'edit', 'delete']
     .filter((action) => !owned.includes(`${area}_${action}`))

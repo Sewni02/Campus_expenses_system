@@ -58,7 +58,7 @@ const allowanceFor = (percent, ranges) => {
 };
 
 const actionsCell = { display: 'flex', gap: 8, justifyContent: 'flex-end' };
-const cellInput = { width: 62, padding: '5px 6px', border: '1px solid #DCE6F4', borderRadius: 5, textAlign: 'center', font: 'inherit', fontSize: 14 };
+const cellInput = { width: 62, padding: '5px 6px', border: '1px solid var(--ui-line)', borderRadius: 5, textAlign: 'center', font: 'inherit', fontSize: 14 };
 const centered = { textAlign: 'center' };
 
 // ---------------------------------------------------------------------------
@@ -394,12 +394,12 @@ function StaffAttendance({ locations }) {
                 value={totalShown}
                 disabled={saving}
                 onChange={(e) => setTotalDraft(cleanCount(e.target.value))}
-                style={!totalValid ? { borderColor: '#B3382C' } : undefined}
+                style={!totalValid ? { borderColor: 'var(--ui-danger)' } : undefined}
               />
             </label>
           )}
           {sheet && (
-            <span style={{ fontSize: 12, color: '#4A6288', maxWidth: 260, paddingBottom: 8 }}>
+            <span style={{ fontSize: 12, color: 'var(--ui-muted)', maxWidth: 260, paddingBottom: 8 }}>
               Same for every month. Change it only when the number of days changes - then press Save attendance.
             </span>
           )}
@@ -407,7 +407,7 @@ function StaffAttendance({ locations }) {
         {sheet && (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {hasChanges && (
-              <span style={{ fontSize: 13, color: '#8A5A0F' }}>
+              <span style={{ fontSize: 13, color: 'var(--ui-warn-ink)' }}>
                 {dirtyIds.length > 0 && `${dirtyIds.length} employee${dirtyIds.length === 1 ? '' : 's'} changed`}
                 {dirtyIds.length > 0 && totalDirty && ' · '}
                 {totalDirty && 'total days changed'}
@@ -435,9 +435,9 @@ function StaffAttendance({ locations }) {
       {locations.length === 0 ? (
         <div className="pc-alert warn">Add a location and its staff (with their employee numbers) in the “Staff &amp; Locations” tab first.</div>
       ) : !validMonth ? (
-        <p style={{ color: '#7C8FAD' }}>Pick a month to see its attendance.</p>
+        <p style={{ color: 'var(--ui-faint)' }}>Pick a month to see its attendance.</p>
       ) : sheet === null ? (
-        !loadError && <p style={{ color: '#7C8FAD' }}>Loading...</p>
+        !loadError && <p style={{ color: 'var(--ui-faint)' }}>Loading...</p>
       ) : (
         <>
           <div style={{ textAlign: 'center', margin: '8px 0 14px' }}>
@@ -459,7 +459,7 @@ function StaffAttendance({ locations }) {
             </div>
           )}
 
-          <p style={{ margin: '0 0 10px', fontSize: 13, color: '#4A6288' }}>
+          <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--ui-muted)' }}>
             Type the numbers like on the paper report (whole or half days: 25, 25.5 ...). Arrival days = Arrived days + Extra days.
             Arrival Allowance % = Arrival days ÷ Total days × 100. The <b>Total</b> column adds up every day typed on the row; it turns orange
             when it is not the total days of the month.
@@ -495,7 +495,7 @@ function StaffAttendance({ locations }) {
                   const changed = dirtyIds.includes(r._id);
                   const totalOk = totalValid && r.accounted === totalValue;
                   return (
-                    <tr key={r._id} style={changed ? { background: '#FFF9E8' } : undefined}>
+                    <tr key={r._id} style={changed ? { background: 'var(--ui-warn-bg)' } : undefined}>
                       <td className="num">{String(index + 1).padStart(2, '0')}</td>
                       <td>{r.name}</td>
                       <td style={{ fontWeight: 600 }}>{r.employeeNo}</td>
@@ -513,13 +513,13 @@ function StaffAttendance({ locations }) {
                         </td>
                       ))}
                       <td
-                        style={{ ...centered, fontWeight: 700, color: totalOk ? '#2F7D57' : '#B8730A' }}
+                        style={{ ...centered, fontWeight: 700, color: totalOk ? 'var(--ui-ok)' : 'var(--ui-warn)' }}
                         title={`Arrived ${r.n.arrived} + Extra ${r.n.extra} + Leave ${r.n.leave} + M ${r.n.medical} + C ${r.n.casual} + No pay ${r.n.noPay} = ${r.accounted} (total days ${totalValid ? totalValue : '?'})`}
                       >
                         {r.accounted}
                       </td>
                       <td className="num" style={{ fontWeight: 700 }} title={`Arrival days ${r.arrival}`}>{r.percent === null ? '—' : `${round2(r.percent)}%`}</td>
-                      <td className="num" style={{ fontWeight: 700, color: r.allowance > 0 ? '#2F7D57' : '#7C8FAD' }}>{formatMoney(r.allowance)}</td>
+                      <td className="num" style={{ fontWeight: 700, color: r.allowance > 0 ? 'var(--ui-ok)' : 'var(--ui-faint)' }}>{formatMoney(r.allowance)}</td>
                       <td>
                         <div style={actionsCell}>
                           <button className="pc-btn-sm pc-btn-danger" type="button" disabled={saving} onClick={() => removeEmployee(r)}>Remove</button>
@@ -530,13 +530,13 @@ function StaffAttendance({ locations }) {
                 })}
 
                 {/* the last row: type the employee number, the name comes by itself */}
-                <tr style={{ background: '#F4F8FD' }}>
+                <tr style={{ background: 'var(--ui-soft)' }}>
                   <td className="num">{String(rows.length + 1).padStart(2, '0')}</td>
                   <td>
                     {match ? (
                       <b>{match.name}</b>
                     ) : (
-                      <span style={{ color: typedNo ? '#B3382C' : '#7C8FAD', fontSize: 13 }}>
+                      <span style={{ color: typedNo ? 'var(--ui-danger)' : 'var(--ui-faint)', fontSize: 13 }}>
                         {typedNo ? `No employee ${typedNo} in ${location.name}` : 'Type the employee number →'}
                       </span>
                     )}
@@ -568,14 +568,14 @@ function StaffAttendance({ locations }) {
                   <td colSpan={10}>
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                       <button className="pc-btn-sm" type="button" disabled={saving || !match || alreadyOn} onClick={addEmployee}>Add</button>
-                      {alreadyOn && <span style={{ fontSize: 13, color: '#8A5A0F' }}>{match.name} is already on this report</span>}
+                      {alreadyOn && <span style={{ fontSize: 13, color: 'var(--ui-warn-ink)' }}>{match.name} is already on this report</span>}
                       {notOnSheet.length > 0 && (
                         <button className="pc-btn-sm" type="button" disabled={saving} onClick={addAll}>
                           Add all employees of {location.name} ({notOnSheet.length})
                         </button>
                       )}
                       {candidates.some((c) => !c.employeeNo) && (
-                        <span style={{ fontSize: 12, color: '#7C8FAD' }}>
+                        <span style={{ fontSize: 12, color: 'var(--ui-faint)' }}>
                           Some staff have no employee number yet - add it in “Staff &amp; Locations” to use them here.
                         </span>
                       )}
@@ -602,7 +602,7 @@ function StaffAttendance({ locations }) {
 
           <div className="pc-panel" style={{ marginTop: 24 }}>
             <h3>Saved months · {location.name}</h3>
-            <p style={{ margin: '0 0 12px', fontSize: 13, color: '#4A6288' }}>
+            <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--ui-muted)' }}>
               Every month you save is kept here. <b>Open</b> shows it on the report above; <b>Download PDF</b> gives the report exactly as it was saved.
             </p>
             {savedError && (
@@ -612,7 +612,7 @@ function StaffAttendance({ locations }) {
               </div>
             )}
             {saved === null && !savedError ? (
-              <p style={{ color: '#7C8FAD' }}>Loading...</p>
+              <p style={{ color: 'var(--ui-faint)' }}>Loading...</p>
             ) : (
               <div className="pc-table-wrap">
                 <table className="pc-table">
@@ -631,7 +631,7 @@ function StaffAttendance({ locations }) {
                       <tr><td colSpan={6} className="pc-empty">No saved months yet. Type the attendance above and press “Save attendance”.</td></tr>
                     )}
                     {saved && saved.months.map((m) => (
-                      <tr key={m.month} style={m.month === month ? { background: '#EAF1FC' } : undefined}>
+                      <tr key={m.month} style={m.month === month ? { background: 'var(--ui-primary-soft)' } : undefined}>
                         <td style={{ fontWeight: 600 }}>{monthLabel(m.month)}{m.month === month && ' (open)'}</td>
                         <td style={centered}>{m.employees}</td>
                         <td style={centered}>{m.totalDays}</td>
@@ -655,7 +655,7 @@ function StaffAttendance({ locations }) {
 
           <div className="pc-panel" style={{ marginTop: 24 }}>
             <h3>Arrival allowance ranges</h3>
-            <p style={{ margin: '0 0 12px', fontSize: 13, color: '#4A6288' }}>
+            <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--ui-muted)' }}>
               The allowance depends on the Arrival Allowance % (arrival days ÷ total days × 100). Change the “from %” or the amount of a range,
               add or remove ranges, then press <b>Save ranges</b>. The new ranges are used for months that are not saved yet. A month that was
               already saved keeps the ranges it was saved with, so old reports never change.
@@ -709,7 +709,7 @@ function StaffAttendance({ locations }) {
                 </tbody>
               </table>
             </div>
-            <p style={{ margin: '10px 0 12px', fontSize: 13, color: '#4A6288' }}>
+            <p style={{ margin: '10px 0 12px', fontSize: 13, color: 'var(--ui-muted)' }}>
               {draftMins.length > 0 ? `Below ${Math.min(...draftMins)}%: no arrival allowance (Rs. 0).` : 'Nobody gets an arrival allowance.'}
             </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

@@ -196,10 +196,10 @@ function BankSelect({ value, onChange }) {
 // Status of one salary record.
 //   draft -> awaiting verification -> verified -> paid
 const STATUS_INFO = {
-  none: { label: 'Not calculated', style: { background: '#EEF2F8', color: '#7C8FAD', borderColor: '#D3DCEB' } },
+  none: { label: 'Not calculated', style: { background: 'var(--ui-soft-2)', color: 'var(--ui-faint)', borderColor: 'var(--ui-border-strong)' } },
   pending: { label: 'Draft', cls: 'low' },
-  submitted: { label: 'Awaiting verification', style: { background: 'rgba(30,86,194,.10)', color: '#1E56C2', borderColor: 'rgba(30,86,194,.3)' } },
-  verified: { label: 'Verified', style: { background: 'rgba(15,122,111,.12)', color: '#0F7A6F', borderColor: 'rgba(15,122,111,.3)' } },
+  submitted: { label: 'Awaiting verification', style: { background: 'rgba(30,86,194,.10)', color: 'var(--ui-primary)', borderColor: 'rgba(30,86,194,.3)' } },
+  verified: { label: 'Verified', style: { background: 'rgba(15,122,111,.12)', color: 'var(--ui-teal-ink)', borderColor: 'rgba(15,122,111,.3)' } },
   paid: { label: 'Paid', cls: 'ok' },
 };
 function StatusBadge({ status }) {
@@ -355,7 +355,7 @@ function CoursesPanel({ courses, active, onSelect, onChanged }) {
       {message && <div className={`pc-alert ${message.type}`}>{message.text}</div>}
       {current && (
         <div>
-          <small style={{ color: '#4A6288' }}>Selected degree: <strong>{current.name}</strong> ({current.batchCount} batch{current.batchCount === 1 ? '' : 'es'}) </small>{' '}
+          <small style={{ color: 'var(--ui-muted)' }}>Selected degree: <strong>{current.name}</strong> ({current.batchCount} batch{current.batchCount === 1 ? '' : 'es'}) </small>{' '}
           <button className="pc-btn-sm" disabled={busy} onClick={rename}>Rename</button>{' '}
           <button className="pc-btn-sm pc-btn-danger" disabled={busy || current.batchCount > 0} title={current.batchCount > 0 ? 'Delete its batches first' : ''} onClick={remove}>Delete</button>
         </div>
@@ -463,7 +463,7 @@ function BatchList({ faculty, isAdmin, formulas = [], onOpen, readOnly = false }
               <p>{faculty}</p>
               <h2>{b.year} Batch</h2>
               <small>{b.lecturerCount} lecturer(s) · {b.formulaName || defaultFormula?.name || 'Standard'}</small>
-              {b.legacyDeduction > 0 && <><br /><small style={{ color: '#B7791F' }}>Old −{b.legacyDeduction}% deduction no longer used — choose a formula</small></>}
+              {b.legacyDeduction > 0 && <><br /><small style={{ color: 'var(--ui-warn)' }}>Old −{b.legacyDeduction}% deduction no longer used — choose a formula</small></>}
               <div style={{ marginTop: 12 }}>
                 <button className="pc-btn-sm" onClick={(e) => { e.stopPropagation(); onOpen(b._id); }}>Open</button>{' '}
                 {canManage && (
@@ -556,11 +556,11 @@ function BatchFormula({ batch, isAdmin, formulas, onBatchChange }) {
             <strong>Salary formula:</strong> {current ? current.name : '…'}
             {current && <><br /><code style={{ fontSize: 13 }}>{current.expression}</code></>}
             <br />
-            <small style={{ color: '#4A6288' }}>
+            <small style={{ color: 'var(--ui-muted)' }}>
               English medium: <strong>{nameOf(savedEnglish || batch.formula)}</strong> · Sinhala medium: <strong>{nameOf(savedSinhala || batch.formula)}</strong>
             </small>
             {legacy && (
-              <><br /><small style={{ color: '#B7791F' }}>
+              <><br /><small style={{ color: 'var(--ui-warn)' }}>
                 This batch had an old −{batch.deductionPercent}% deduction setting. It is no longer used — add a formula for it
                 (Formulas tab) and choose it here.
               </small></>
@@ -592,7 +592,7 @@ function BatchFormula({ batch, isAdmin, formulas, onBatchChange }) {
             </div>
           )}
         </div>
-        <p style={{ margin: '10px 0 0', fontSize: 12.5, color: '#4A6288' }}>
+        <p style={{ margin: '10px 0 0', fontSize: 12.5, color: 'var(--ui-muted)' }}>
           English and Sinhala can use different formulas (the sub fee changes with the medium). When a salary is entered, the formula can also be picked on the salary form.
         </p>
       </div>
@@ -765,7 +765,7 @@ function LecturersPanel({ batch, isAdmin, formulas = [], onFormulasChanged, onBa
           </label>
           <div className="pc-field">
             Teaches (tick all that apply)
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', minHeight: 40, textTransform: 'none', letterSpacing: 0, fontWeight: 500, fontSize: 14, color: '#0A1F44' }}>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', minHeight: 40, textTransform: 'none', letterSpacing: 0, fontWeight: 500, fontSize: 14, color: 'var(--ui-text)' }}>
               {MODES.map(([key, label]) => (
                 <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                   <input type="checkbox" style={{ width: 16, height: 16, padding: 0 }} checked={form.modes.includes(key)} onChange={() => toggleMode(key)} />
@@ -784,7 +784,7 @@ function LecturersPanel({ batch, isAdmin, formulas = [], onFormulasChanged, onBa
 
           {fixed ? (
             <>
-              {taught.length === 0 && <p className="wide" style={{ margin: 0, fontSize: 13, color: '#4A6288' }}>Choose the medium above, then enter the fixed salary for each medium.</p>}
+              {taught.length === 0 && <p className="wide" style={{ margin: 0, fontSize: 13, color: 'var(--ui-muted)' }}>Choose the medium above, then enter the fixed salary for each medium.</p>}
               {taught.map((m) => (
                 <label key={m} className="pc-field">
                   Fixed salary — {MEDIUM_NAME[m]} medium (Rs.)
@@ -822,17 +822,17 @@ function LecturersPanel({ batch, isAdmin, formulas = [], onFormulasChanged, onBa
                       </button>
                     </div>
                   </div>
-                  <small style={{ color: '#4A6288' }}>You can use attendance, subFee, percentage, hours, hourRate, numbers, + - * / ( ) and %. This formula is then used only for this lecturer. For attendance ranges, use the Formulas tab.</small>
+                  <small style={{ color: 'var(--ui-muted)' }}>You can use attendance, subFee, percentage, hours, hourRate, numbers, + - * / ( ) and %. This formula is then used only for this lecturer. For attendance ranges, use the Formulas tab.</small>
                 </div>
               )}
-              {taught.length === 0 && <p className="wide" style={{ margin: 0, fontSize: 13, color: '#4A6288' }}>Choose the medium above, then enter the rates for each medium.</p>}
+              {taught.length === 0 && <p className="wide" style={{ margin: 0, fontSize: 13, color: 'var(--ui-muted)' }}>Choose the medium above, then enter the rates for each medium.</p>}
               {taught.map((m) => {
                 const mf = mediumFormula(m);
                 const u = formulaUses(mf);
                 return (
                   <div key={m} className="wide pc-panel" style={{ margin: 0, padding: '12px 16px' }}>
                     <strong>{MEDIUM_NAME[m]} medium rates</strong>
-                    <small style={{ color: '#4A6288' }}> — paid by “{mf ? mf.name : 'Standard'}”</small>
+                    <small style={{ color: 'var(--ui-muted)' }}> — paid by “{mf ? mf.name : 'Standard'}”</small>
                     <div className="pc-form" style={{ marginTop: 8 }}>
                       {u.includes('subFee') && (
                         <label className="pc-field">
@@ -853,7 +853,7 @@ function LecturersPanel({ batch, isAdmin, formulas = [], onFormulasChanged, onBa
                         </label>
                       )}
                       {mf && mf.kind === 'range' && (
-                        <p className="wide" style={{ margin: 0, fontSize: 13, color: '#4A6288' }}>
+                        <p className="wide" style={{ margin: 0, fontSize: 13, color: 'var(--ui-muted)' }}>
                           Pays by ranges ({mf.expression}){u.includes('percentage') ? ' — the percentage is needed.' : ' — no sub fee or percentage is needed.'}
                         </p>
                       )}
@@ -864,7 +864,7 @@ function LecturersPanel({ batch, isAdmin, formulas = [], onFormulasChanged, onBa
             </>
           )}
 
-          <p className="wide" style={{ margin: '6px 0 0', fontWeight: 600, color: '#4A6288' }}>
+          <p className="wide" style={{ margin: '6px 0 0', fontWeight: 600, color: 'var(--ui-muted)' }}>
             Bank details (optional — can be added or changed later)
           </p>
           <label className="pc-field">
@@ -908,7 +908,7 @@ function LecturersPanel({ batch, isAdmin, formulas = [], onFormulasChanged, onBa
                 <td>{l.name}{l.phone && <><br /><small>{l.phone}</small></>}</td>
                 <td>{l.subject}</td>
                 <td>{mediumLabel(l.medium)}</td>
-                <td>{l.modes && l.modes.length ? l.modes.map(modeLabel).join(', ') : <span style={{ color: '#8FA3C0' }}>Not set</span>}</td>
+                <td>{l.modes && l.modes.length ? l.modes.map(modeLabel).join(', ') : <span style={{ color: 'var(--ui-faint)' }}>Not set</span>}</td>
                 <td>
                   {l.payType === 'fixed' ? 'Fixed' : <>Formula · {l.formula && formulas.find((f) => f._id === l.formula) ? formulas.find((f) => f._id === l.formula).name : 'batch formula'}</>}
                   {(mediumsOf(l.medium).length ? mediumsOf(l.medium) : [null]).map((m) => (
@@ -928,7 +928,7 @@ function LecturersPanel({ batch, isAdmin, formulas = [], onFormulasChanged, onBa
                       {l.bankUpdatedByName && <><br /><small>Updated by {l.bankUpdatedByName}, {formatDate(l.bankUpdatedAt)}</small></>}
                     </>
                   ) : (
-                    <small style={{ color: '#B7791F' }}>Not added</small>
+                    <small style={{ color: 'var(--ui-warn)' }}>Not added</small>
                   )}
                 </td>
                 <td style={{ whiteSpace: 'nowrap' }}>
@@ -963,7 +963,7 @@ function SalariesSection({ isAdmin, formulas, courses, onCoursesChanged }) {
 
   return (
     <>
-      <p style={{ margin: '0 0 14px', color: '#4A6288', fontSize: 13 }}>Choose a batch to enter its salaries.</p>
+      <p style={{ margin: '0 0 14px', color: 'var(--ui-muted)', fontSize: 13 }}>Choose a batch to enter its salaries.</p>
       <CourseTabs courses={courses} value={active} onChange={setFaculty} canAdd={isAdmin} onChanged={onCoursesChanged} />
       <BatchList faculty={active} isAdmin={isAdmin} formulas={formulas} readOnly onOpen={setBatchId} />
     </>
@@ -1081,7 +1081,7 @@ function BatchSummary({ batchId, month, setMonth, refreshKey }) {
 
   const cell = (row, part, medium) => row.cells[`${part}|${medium}`] || 0;
   const other = (row) => round2(Object.entries(row.cells).filter(([k]) => k.includes('none')).reduce((t, [, v]) => t + v, 0));
-  const show = (n) => (n ? formatMoney(n) : <span style={{ color: '#B8C4D8' }}>—</span>);
+  const show = (n) => (n ? formatMoney(n) : <span style={{ color: 'var(--ui-border-strong)' }}>—</span>);
   const hasOther = data ? other(data.totals) > 0 : false;
 
   return (
@@ -1095,7 +1095,7 @@ function BatchSummary({ batchId, month, setMonth, refreshKey }) {
           <MonthYearPicker value={month} onChange={setMonth} disabled={allMonths} />
         </div>
       </div>
-      <p style={{ margin: '0 0 14px', color: '#4A6288', fontSize: 13 }}>
+      <p style={{ margin: '0 0 14px', color: 'var(--ui-muted)', fontSize: 13 }}>
         What every lecturer of this batch earned: split by part (online / physical / recording) and medium (English / Sinhala), with the grand total.
       </p>
       {error && <div className="pc-alert err">{error}</div>}
@@ -1121,8 +1121,8 @@ function BatchSummary({ batchId, month, setMonth, refreshKey }) {
               {data.rows.map((r) => (
                 <tr key={String(r.lecturerId)}>
                   <td>
-                    {r.name}{r.removed && <small style={{ color: '#B7791F' }}> (removed)</small>}
-                    <br /><small style={{ color: '#4A6288' }}>{r.subject}{r.medium ? ` · ${mediumLabel(r.medium)}` : ''}</small>
+                    {r.name}{r.removed && <small style={{ color: 'var(--ui-warn)' }}> (removed)</small>}
+                    <br /><small style={{ color: 'var(--ui-muted)' }}>{r.subject}{r.medium ? ` · ${mediumLabel(r.medium)}` : ''}</small>
                   </td>
                   {MODES.map(([key]) => ENTRY_MEDIUMS.map(([m]) => <td key={`${key}-${m}`} className="num">{show(cell(r, key, m))}</td>))}
                   {hasOther && <td className="num">{show(other(r))}</td>}
@@ -1132,7 +1132,7 @@ function BatchSummary({ batchId, month, setMonth, refreshKey }) {
                 </tr>
               ))}
               {data.rows.length > 0 && (
-                <tr style={{ background: '#F1F6FD', fontWeight: 700 }}>
+                <tr style={{ background: 'var(--ui-soft-3)', fontWeight: 700 }}>
                   <td>Batch total</td>
                   {MODES.map(([key]) => ENTRY_MEDIUMS.map(([m]) => <td key={`${key}-${m}`} className="num">{show(cell(data.totals, key, m))}</td>))}
                   {hasOther && <td className="num">{show(other(data.totals))}</td>}
@@ -1329,23 +1329,23 @@ function SalaryForm({ batch, mode, medium, formulas = [], editing, defaultMonth,
         </label>
 
         {batch.lecturers.length === 0 && (
-          <p className="wide" style={{ margin: 0, color: '#B7791F' }}>
+          <p className="wide" style={{ margin: 0, color: 'var(--ui-warn)' }}>
             This batch has no lecturers yet — add them in the “Batches &amp; Lecturers” tab.
           </p>
         )}
         {mode === 'recording' && (
-          <p className="wide" style={{ margin: 0, fontSize: 13, color: '#4A6288' }}>
+          <p className="wide" style={{ margin: 0, fontSize: 13, color: 'var(--ui-muted)' }}>
             Recordings are made from online classes, so the lecturers who teach Online are listed here too.
           </p>
         )}
         {batch.lecturers.length > 0 && lecturersHere.length === 0 && (
-          <p className="wide" style={{ margin: 0, color: '#B7791F' }}>
+          <p className="wide" style={{ margin: 0, color: 'var(--ui-warn)' }}>
             No lecturer of this batch teaches {modeLabel(mode)} in {entryMediumLabel(medium)}. Set each lecturer's medium and parts (Online / Physical / Recording) in the “Batches &amp; Lecturers” tab.
           </p>
         )}
 
         {lecturer && (
-          <div className="wide" style={{ background: '#F4F8FD', border: '1px solid #DCE6F4', borderRadius: 10, padding: '12px 16px', fontSize: 14 }}>
+          <div className="wide" style={{ background: 'var(--ui-soft)', border: '1px solid var(--ui-line)', borderRadius: 10, padding: '12px 16px', fontSize: 14 }}>
             <strong>{lecturer.name}</strong> · {lecturer.subject}{lecturer.phone && ` · ${lecturer.phone}`}
             <br />
             Normally paid: <strong>{payTypeLabel(lecturer.payType)}</strong>
@@ -1356,11 +1356,11 @@ function SalaryForm({ batch, mode, medium, formulas = [], editing, defaultMonth,
             Bank:{' '}
             {lecturer.accountNumber
               ? `${lecturer.bankName} · ${lecturer.accountNumber}${lecturer.bankBranch ? ` · ${lecturer.bankBranch}` : ''}${lecturer.accountHolder ? ` · ${lecturer.accountHolder}` : ''}`
-              : <span style={{ color: '#B7791F' }}>no bank details added yet</span>}
+              : <span style={{ color: 'var(--ui-warn)' }}>no bank details added yet</span>}
             {existing.length > 0 && (
               <>
                 <br />
-                <span style={{ color: '#1E56C2' }}>
+                <span style={{ color: 'var(--ui-primary)' }}>
                   Already has {existing.length} salary entr{existing.length === 1 ? 'y' : 'ies'} in {monthLabel(month)}
                   {' '}({existing.map((r) => `${modeLabel(r.mode)} / ${entryMediumLabel(r.medium)} ${formatMoney(r.amount)}`).join(', ')}). You can still add another one.
                 </span>
@@ -1439,15 +1439,15 @@ function SalaryForm({ batch, mode, medium, formulas = [], editing, defaultMonth,
             </label>
 
             {type === 'formula' && missing.length > 0 && (
-              <p className="wide" style={{ margin: 0, color: '#B3382C' }}>
+              <p className="wide" style={{ margin: 0, color: 'var(--ui-danger)' }}>
                 This formula needs the {missing.join(' and ')}. Type {missing.length > 1 ? 'them' : 'it'} above, or choose “Fixed amount”.
               </p>
             )}
-            {calc?.error && <p className="wide" style={{ margin: 0, color: '#B3382C' }}>{calc.error}</p>}
+            {calc?.error && <p className="wide" style={{ margin: 0, color: 'var(--ui-danger)' }}>{calc.error}</p>}
 
-            <div className="wide" style={{ background: '#fff', border: '1px dashed #B8C8E0', borderRadius: 10, padding: '12px 16px' }}>
+            <div className="wide" style={{ background: 'var(--ui-surface)', border: '1px dashed var(--ui-border-strong)', borderRadius: 10, padding: '12px 16px' }}>
               {type === 'formula' && formula ? (
-                <div style={{ color: '#4A6288', fontSize: 13 }}>
+                <div style={{ color: 'var(--ui-muted)', fontSize: 13 }}>
                   <strong>{formula.name}:</strong> <code>{formula.expression}</code>
                   {lecturer && inputsOk && (
                     <><br />
@@ -1463,7 +1463,7 @@ function SalaryForm({ batch, mode, medium, formulas = [], editing, defaultMonth,
                   )}
                 </div>
               ) : (
-                <div style={{ color: '#4A6288', fontSize: 13 }}>Fixed amount — no formula is used.</div>
+                <div style={{ color: 'var(--ui-muted)', fontSize: 13 }}>Fixed amount — no formula is used.</div>
               )}
               <div style={{ fontSize: 20, fontWeight: 700, marginTop: 4 }}>
                 Salary: {amount === null ? '-' : formatMoney(amount)}
@@ -1574,7 +1574,7 @@ function SalaryList({ batchId, mode, medium, month, setMonth, refreshKey, reload
         </div>
       </div>
 
-      <p style={{ margin: '0 0 14px', color: '#4A6288', fontSize: 13 }}>
+      <p style={{ margin: '0 0 14px', color: 'var(--ui-muted)', fontSize: 13 }}>
         Steps: add the salary above (draft) → Submit → Super Admin verifies → paid from the “Payments” tab (one payment per lecturer, all their batches together).
       </p>
 
@@ -1609,7 +1609,7 @@ function SalaryList({ batchId, mode, medium, month, setMonth, refreshKey, reload
                   <tr key={rec._id}>
                     <td>
                       {rec.lecturerName}<br /><small>{rec.subject}</small>
-                      {rec.note && <><br /><small style={{ color: '#1E56C2' }}>{rec.note}</small></>}
+                      {rec.note && <><br /><small style={{ color: 'var(--ui-primary)' }}>{rec.note}</small></>}
                     </td>
                     <td>
                       {rec.type === 'fixed' ? (
@@ -1642,7 +1642,7 @@ function SalaryList({ batchId, mode, medium, month, setMonth, refreshKey, reload
                     <td className="num">{formatMoney(rec.amount)}</td>
                     <td>
                       <StatusBadge status={rec.status} />
-                      {rec.status === 'pending' && rec.returnNote && <><br /><small style={{ color: '#B3382C' }}>Sent back: {rec.returnNote}</small></>}
+                      {rec.status === 'pending' && rec.returnNote && <><br /><small style={{ color: 'var(--ui-danger)' }}>Sent back: {rec.returnNote}</small></>}
                       {rec.status === 'submitted' && <><br /><small>by {rec.submittedByName}, {formatDate(rec.submittedAt)}</small></>}
                       {rec.status === 'verified' && <><br /><small>by {rec.verifiedByName}, {formatDate(rec.verifiedAt)}</small></>}
                       {rec.status === 'paid' && (
@@ -1959,7 +1959,7 @@ function DegreePaymentPanel({ degree, month, lecturers, isAdmin }) {
   return (
     <div className="pc-panel" style={{ marginTop: 18 }}>
       <h3 style={{ marginTop: 0 }}>{degree} — payment slip &amp; report · {monthLabel(month)}</h3>
-      <p style={{ margin: '0 0 12px', color: '#4A6288', fontSize: 13 }}>
+      <p style={{ margin: '0 0 12px', color: 'var(--ui-muted)', fontSize: 13 }}>
         {lecturers.length} lecturer{lecturers.length === 1 ? '' : 's'} · total <strong>{formatMoney(total)}</strong> · paid <strong>{formatMoney(paid)}</strong> · waiting <strong>{formatMoney(round2(total - paid))}</strong>.
         One bank slip is kept for all {degree} lecturers of this month.
       </p>
@@ -1969,13 +1969,13 @@ function DegreePaymentPanel({ degree, month, lecturers, isAdmin }) {
         {slip ? (
           <>
             <span>Payment slip: <strong>{slip.slipFileName || 'uploaded'}</strong>
-              <small style={{ color: '#4A6288' }}>{slip.uploadedByName ? ` · by ${slip.uploadedByName}` : ''} · {formatDate(slip.updatedAt || slip.createdAt)}</small>
+              <small style={{ color: 'var(--ui-muted)' }}>{slip.uploadedByName ? ` · by ${slip.uploadedByName}` : ''} · {formatDate(slip.updatedAt || slip.createdAt)}</small>
             </span>
             <button className="pc-btn-sm" onClick={() => viewDegreeSlip(slip)}>View slip</button>
             {isAdmin && <button className="pc-btn-sm pc-btn-danger" disabled={busy} onClick={remove}>Remove</button>}
           </>
         ) : (
-          <span style={{ color: '#B7791F' }}>No payment slip uploaded for {degree} yet.</span>
+          <span style={{ color: 'var(--ui-warn)' }}>No payment slip uploaded for {degree} yet.</span>
         )}
       </div>
 
@@ -1994,7 +1994,7 @@ function DegreePaymentPanel({ degree, month, lecturers, isAdmin }) {
       <button className="pc-btn" disabled={reporting || lecturers.length === 0} onClick={report}>
         {reporting ? 'Preparing…' : `Download ${degree} report`}
       </button>
-      <small style={{ marginLeft: 10, color: '#4A6288' }}>All {degree} lecturers of {monthLabel(month)}, with the payment slip. Opens a print window — choose “Save as PDF”.</small>
+      <small style={{ marginLeft: 10, color: 'var(--ui-muted)' }}>All {degree} lecturers of {monthLabel(month)}, with the payment slip. Opens a print window — choose “Save as PDF”.</small>
     </div>
   );
 }
@@ -2081,7 +2081,7 @@ function PaymentsSection({ isAdmin, courses }) {
         <h3 style={{ margin: 0 }}>Payments — {monthLabel(month)}</h3>
         <MonthYearPicker value={month} onChange={(v) => { setMonth(v); setMessage(null); }} />
       </div>
-      <p style={{ margin: '0 0 14px', color: '#4A6288', fontSize: 13 }}>
+      <p style={{ margin: '0 0 14px', color: 'var(--ui-muted)', fontSize: 13 }}>
         Salaries are listed degree by degree. A lecturer who teaches in more than one degree is still paid <strong>once</strong>:
         the <strong>Verify</strong> button (Super Admin) shows their whole month (every batch, degree and online / physical / recording part), you enter the
         payment date and confirm — all their entries become <strong>Paid</strong>, and a printable report is available. People are matched by phone number (or by name when there is no phone number).
@@ -2116,40 +2116,40 @@ function PaymentsSection({ isAdmin, courses }) {
             <div className="pc-toolbar" style={{ marginBottom: 8 }}>
               <div>
                 <h3 style={{ margin: 0 }}>{p.name}</h3>
-                <small style={{ color: '#4A6288' }}>{p.subjects.join(', ')}{p.phone ? ` · ${p.phone}` : ''}</small>
+                <small style={{ color: 'var(--ui-muted)' }}>{p.subjects.join(', ')}{p.phone ? ` · ${p.phone}` : ''}</small>
                 <br />
                 <small>
                   Bank: {p.bank
                     ? `${p.bank.bankName} · ${p.bank.accountNumber}${p.bank.bankBranch ? ` · ${p.bank.bankBranch}` : ''}${p.bank.accountHolder ? ` · ${p.bank.accountHolder}` : ''}`
-                    : <span style={{ color: '#B7791F' }}>no bank details added yet</span>}
+                    : <span style={{ color: 'var(--ui-warn)' }}>no bank details added yet</span>}
                 </small>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 22, fontWeight: 700 }}>{formatMoney(totalOf(p.here))}</div>
-                <small style={{ color: '#4A6288' }}>{active} total for {monthLabel(month)}</small>
-                {p.others.length > 0 && <small style={{ display: 'block', color: '#4A6288' }}>All degrees together: <strong>{formatMoney(p.total)}</strong></small>}
+                <small style={{ color: 'var(--ui-muted)' }}>{active} total for {monthLabel(month)}</small>
+                {p.others.length > 0 && <small style={{ display: 'block', color: 'var(--ui-muted)' }}>All degrees together: <strong>{formatMoney(p.total)}</strong></small>}
                 {unpaid > 0 && isAdmin && verifyKey !== p.key && (
                   <div style={{ marginTop: 8 }}>
                     <button className="pc-btn" disabled={busyKey === p.key} onClick={() => openVerify(p)}>Verify</button>
                   </div>
                 )}
-                {unpaid > 0 && !isAdmin && <small style={{ display: 'block', color: '#B7791F' }}>Waiting for the Super Admin to verify</small>}
+                {unpaid > 0 && !isAdmin && <small style={{ display: 'block', color: 'var(--ui-warn)' }}>Waiting for the Super Admin to verify</small>}
               </div>
             </div>
 
             {verifyKey === p.key && isAdmin && unpaid > 0 && (
-              <div className="pc-panel" style={{ background: '#F4F8FD', margin: '4px 0 14px' }}>
+              <div className="pc-panel" style={{ background: 'var(--ui-soft)', margin: '4px 0 14px' }}>
                 <h3 style={{ margin: '0 0 10px' }}>Verify salary — {p.name} · {monthLabel(month)}</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px 24px', fontSize: 14, marginBottom: 12 }}>
-                  <div><small style={{ color: '#4A6288' }}>Lecturer</small><br /><strong>{p.name}</strong></div>
-                  <div><small style={{ color: '#4A6288' }}>Subject</small><br />{p.subjects.join(', ')}</div>
-                  <div><small style={{ color: '#4A6288' }}>Phone</small><br />{p.phone || '—'}</div>
-                  <div><small style={{ color: '#4A6288' }}>Month</small><br />{monthLabel(month)}</div>
+                  <div><small style={{ color: 'var(--ui-muted)' }}>Lecturer</small><br /><strong>{p.name}</strong></div>
+                  <div><small style={{ color: 'var(--ui-muted)' }}>Subject</small><br />{p.subjects.join(', ')}</div>
+                  <div><small style={{ color: 'var(--ui-muted)' }}>Phone</small><br />{p.phone || '—'}</div>
+                  <div><small style={{ color: 'var(--ui-muted)' }}>Month</small><br />{monthLabel(month)}</div>
                   <div style={{ gridColumn: '1 / -1' }}>
-                    <small style={{ color: '#4A6288' }}>Bank</small><br />
+                    <small style={{ color: 'var(--ui-muted)' }}>Bank</small><br />
                     {p.bank
                       ? `${p.bank.bankName} · ${p.bank.accountNumber}${p.bank.bankBranch ? ` · ${p.bank.bankBranch}` : ''}${p.bank.accountHolder ? ` · ${p.bank.accountHolder}` : ''}`
-                      : <span style={{ color: '#B7791F' }}>no bank details added yet</span>}
+                      : <span style={{ color: 'var(--ui-warn)' }}>no bank details added yet</span>}
                   </div>
                 </div>
                 <div className="pc-table-wrap">
@@ -2158,14 +2158,14 @@ function PaymentsSection({ isAdmin, courses }) {
                     <tbody>
                       {p.items.filter((i) => i.status !== 'paid').map((i) => (
                         <tr key={i._id}>
-                          <td>{entryBatchText(i)}{i.note && i.note !== '-' && <><br /><small style={{ color: '#1E56C2' }}>{i.note}</small></>}</td>
+                          <td>{entryBatchText(i)}{i.note && i.note !== '-' && <><br /><small style={{ color: 'var(--ui-primary)' }}>{i.note}</small></>}</td>
                           <td>{i.mode ? modeLabel(i.mode) : 'Not set'}{i.type === 'fixed' ? ' · fixed' : ''}</td>
                           <td>{i.medium ? entryMediumLabel(i.medium) : 'Not set'}</td>
                           <td><StatusBadge status={i.status} /></td>
                           <td className="num">{formatMoney(i.amount)}</td>
                         </tr>
                       ))}
-                      <tr style={{ background: '#EAF1FB', fontWeight: 700 }}>
+                      <tr style={{ background: 'var(--ui-soft-2)', fontWeight: 700 }}>
                         <td colSpan="4">Total to be paid</td>
                         <td className="num">{formatMoney(unpaid)}</td>
                       </tr>
@@ -2197,15 +2197,15 @@ function PaymentsSection({ isAdmin, courses }) {
                     const sub = round2(rowsHere.reduce((t, i) => t + i.amount, 0));
                     return (
                       <Fragment key={key || 'none'}>
-                        <tr style={{ background: '#F1F6FD' }}>
+                        <tr style={{ background: 'var(--ui-soft-3)' }}>
                           <td colSpan="4"><strong>{title}</strong></td>
                           <td className="num"><strong>{formatMoney(sub)}</strong></td>
                         </tr>
                         {rowsHere.map((i) => (
                           <tr key={i._id} style={i.other ? { opacity: 0.6 } : undefined}>
-                            <td>{entryBatchText(i)}{i.other && <> <small>(other degree)</small></>}{i.note && i.note !== '-' && <><br /><small style={{ color: '#1E56C2' }}>{i.note}</small></>}</td>
-                            <td>{i.mode ? modeLabel(i.mode) : <span style={{ color: '#8FA3C0' }}>Not set</span>}{i.type === 'fixed' ? ' · fixed' : ''}</td>
-                            <td>{i.medium ? entryMediumLabel(i.medium) : <span style={{ color: '#8FA3C0' }}>Not set</span>}</td>
+                            <td>{entryBatchText(i)}{i.other && <> <small>(other degree)</small></>}{i.note && i.note !== '-' && <><br /><small style={{ color: 'var(--ui-primary)' }}>{i.note}</small></>}</td>
+                            <td>{i.mode ? modeLabel(i.mode) : <span style={{ color: 'var(--ui-faint)' }}>Not set</span>}{i.type === 'fixed' ? ' · fixed' : ''}</td>
+                            <td>{i.medium ? entryMediumLabel(i.medium) : <span style={{ color: 'var(--ui-faint)' }}>Not set</span>}</td>
                             <td className="num">{formatMoney(i.amount)}</td>
                             <td><StatusBadge status={i.status} /></td>
                           </tr>
@@ -2218,15 +2218,15 @@ function PaymentsSection({ isAdmin, courses }) {
             </div>
 
             {p.items.some((i) => !i.mode || !i.medium) && (
-              <p style={{ margin: '8px 0 0', fontSize: 12.5, color: '#B7791F' }}>
+              <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--ui-warn)' }}>
                 “Not set” entries were saved before the parts / mediums existed. Open them in the Salaries tab (they show under Online · English) and press Update to set them.
               </p>
             )}
 
             <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              {unpaid > 0 && <small style={{ color: '#B7791F' }}>{formatMoney(unpaid)} is waiting to be paid.</small>}
+              {unpaid > 0 && <small style={{ color: 'var(--ui-warn)' }}>{formatMoney(unpaid)} is waiting to be paid.</small>}
               {p.paidTotal > 0 && (
-                <small style={{ color: '#0F7A6F' }}>
+                <small style={{ color: 'var(--ui-teal-ink)' }}>
                   Paid {formatMoney(p.paidTotal)}{p.paidDate ? ` on ${formatDate(p.paidDate)}` : ''}{p.paidByName ? ` by ${p.paidByName}` : ''}
                 </small>
               )}
@@ -2387,7 +2387,7 @@ function FormulasSection({ formulas, courses = [], onChanged }) {
             <input type="text" maxLength={200} value={form.description} onChange={setField('description')} />
           </label>
 
-          <p className="wide" style={{ margin: 0, fontSize: 13, color: '#4A6288' }}>
+          <p className="wide" style={{ margin: 0, fontSize: 13, color: 'var(--ui-muted)' }}>
             {isRange
               ? 'Ranges: you list the ranges yourself (as many as you need). The attendance (or hours) typed when entering the salary decides which range is used.'
               : 'Maths formula: you type the calculation, for example attendance × sub fee × percentage, or hours × hourly rate.'}
@@ -2408,7 +2408,7 @@ function FormulasSection({ formulas, courses = [], onChanged }) {
                 />
               </label>
 
-              <div className="wide" style={{ fontSize: 13, color: '#4A6288' }}>
+              <div className="wide" style={{ fontSize: 13, color: 'var(--ui-muted)' }}>
                 Click to add a name:{' '}
                 {VARIABLES.map((v) => (
                   <button
@@ -2446,7 +2446,7 @@ function FormulasSection({ formulas, courses = [], onChanged }) {
           )}
 
           {isRange && (
-            <div className="wide" style={{ background: '#F4F8FD', border: '1px solid #DCE6F4', borderRadius: 10, padding: '12px 16px' }}>
+            <div className="wide" style={{ background: 'var(--ui-soft)', border: '1px solid var(--ui-line)', borderRadius: 10, padding: '12px 16px' }}>
               <label className="pc-field" style={{ maxWidth: 320, marginBottom: 10 }}>
                 Ranges are counted on
                 <select value={form.rangeBy} onChange={setField('rangeBy')}>
@@ -2498,7 +2498,7 @@ function FormulasSection({ formulas, courses = [], onChanged }) {
                 </table>
               </div>
               <button type="button" className="pc-btn-sm" style={{ marginTop: 8 }} onClick={addTier}>+ Add a range</button>
-              <p style={{ margin: '8px 0 0', fontSize: 13, color: '#4A6288' }}>
+              <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--ui-muted)' }}>
                 Each range has its own “Pays” choice. Type a <strong>Percentage</strong> on a range to get “{byHours ? 'Hours' : 'Attendance'} × (sub fee × percentage)”: the Amount is the sub fee for that
                 range, and the salary = {byHours ? 'hours' : 'attendance'} × sub fee × percentage ÷ 100. Leave the percentage empty (with that Pays choice) to use each lecturer's own percentage, typed when entering the salary.
                 Other examples: 1 to 10 = 500 in total, 11 to 50 = 400 in total, 101 and above (leave “to” empty) = 25 × attendance.
@@ -2508,7 +2508,7 @@ function FormulasSection({ formulas, courses = [], onChanged }) {
             </div>
           )}
 
-          <div className="wide" style={{ background: '#F4F8FD', border: '1px solid #DCE6F4', borderRadius: 10, padding: '12px 16px' }}>
+          <div className="wide" style={{ background: 'var(--ui-soft)', border: '1px solid var(--ui-line)', borderRadius: 10, padding: '12px 16px' }}>
             <strong>Try it</strong>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', margin: '8px 0' }}>
               {(isRange ? [byHours ? 'hours' : 'attendance', ...(form.tiers.some((t) => t.payBy === 'rate') ? ['percentage'] : [])] : VARIABLES).map((v) => (
@@ -2518,12 +2518,12 @@ function FormulasSection({ formulas, courses = [], onChanged }) {
                 </label>
               ))}
             </div>
-            {result === null && <span style={{ color: '#4A6288' }}>{isRange ? 'Fill in the ranges to test them.' : 'Type a formula to test it.'}</span>}
-            {result?.error && <span style={{ color: '#B3382C' }}>{result.error}</span>}
+            {result === null && <span style={{ color: 'var(--ui-muted)' }}>{isRange ? 'Fill in the ranges to test them.' : 'Type a formula to test it.'}</span>}
+            {result?.error && <span style={{ color: 'var(--ui-danger)' }}>{result.error}</span>}
             {result && result.amount !== undefined && (
               <span style={{ fontSize: 18, fontWeight: 700 }}>
                 Result: {formatMoney(result.amount)}
-                {result.tier && <small style={{ fontWeight: 400, color: '#4A6288' }}> (range {tierLabel(result.tier)})</small>}
+                {result.tier && <small style={{ fontWeight: 400, color: 'var(--ui-muted)' }}> (range {tierLabel(result.tier)})</small>}
               </span>
             )}
           </div>
@@ -2533,7 +2533,7 @@ function FormulasSection({ formulas, courses = [], onChanged }) {
               {saving ? 'Saving…' : editingId ? 'Update formula' : 'Add formula'}
             </button>
             {editingId && <button type="button" className="pc-btn-sm" style={{ marginLeft: 10 }} onClick={reset}>Cancel</button>}
-            <small style={{ marginLeft: 12, color: '#4A6288' }}>
+            <small style={{ marginLeft: 12, color: 'var(--ui-muted)' }}>
               Salaries already calculated keep the formula they were calculated with. Drafts use the new one when you press Update.
             </small>
           </div>

@@ -148,7 +148,7 @@ function Overview({ month, refreshKey }) {
       <div className="pc-two-col">
         <div className="pc-panel">
           <h3>Where the money went</h3>
-          {categories.length === 0 && <p style={{ color: '#7C8FAD' }}>No spending this month.</p>}
+          {categories.length === 0 && <p style={{ color: 'var(--ui-faint)' }}>No spending this month.</p>}
           {categories.map((c) => (
             <div className="pc-bar-row" key={c.category}>
               <span>{c.category}</span>
@@ -339,14 +339,14 @@ function Allocate({ month, onMonthChange, accountants, onChanged, refreshKey }) 
           <div className="wide">
             <button className="pc-btn" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Issue fund'}</button>
             {form.method === 'cash' && (
-              <small style={{ marginLeft: 12, color: '#4A6288' }}>
+              <small style={{ marginLeft: 12, color: 'var(--ui-muted)' }}>
                 For cash, a fund allocation voucher (PDF) is generated for the accountant to sign.
               </small>
             )}
           </div>
         </form>
         {accountants.length === 0 && (
-          <p style={{ color: '#B7791F', marginBottom: 0 }}>
+          <p style={{ color: 'var(--ui-warn)', marginBottom: 0 }}>
             No accountants found. Tick “Manage Petty Cash” for the accountant in User Management first.
           </p>
         )}

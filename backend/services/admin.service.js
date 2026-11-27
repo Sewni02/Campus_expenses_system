@@ -32,12 +32,20 @@ const normalizePermissions = (permissions) => {
   return unique;
 };
 
-// Super admin accounts are not managed through approve/reject. Without this,
-// one super admin could reject another (or themselves) and lock everyone
-// out, or overwrite their '*' permissions with a shorter list.
-const assertNotSuperAdmin = (user) => {
-  if (user.role === 'super_admin') {
-    throw new ApiError(400, 'Super admin accounts cannot be changed here');
+// A super admin has full access, and that includes managing every other account -
+// other super admins too. Two guards stop a super admin from locking everyone out:
+//   1. you cannot reject or demote YOUR OWN account (ask another super admin), and
+//   2. the last approved super admin can never be rejected or demoted.
+const activeSuperAdminCount = (excludeId) =>
+  User.countDocuments({ role: 'super_admin', status: 'approved', _id: { $ne: excludeId } });
+
+const assertSafeToDemote = async (target, actorId, action) => {
+  if (target.role !== 'super_admin') return;
+  if (actorId && String(target._id) === String(actorId)) {
+    throw new ApiError(400, `You cannot ${action} your own account. Ask another super admin to do it.`);
+  }
+  if (target.status === 'approved' && (await activeSuperAdminCount(target._id)) === 0) {
+    throw new ApiError(400, `At least one approved super admin must remain, so this account cannot be ${action === 'reject' ? 'rejected' : 'demoted'}.`);
   }
 };
 
@@ -54,30 +62,37 @@ const getUserStats = async () => {
   return { total, approved, rejected };
 };
 
-// Roles a super admin can give here. 'accountant' always has Petty Cash.
-// (super_admin can never be given from this screen.)
-const ASSIGNABLE_ROLES = ['employee', 'accountant'];
+// Roles a super admin can give from User Management. 'accountant' always has Petty Cash.
+// 'super_admin' = full access to everything (stored as the '*' permission, which is
+// never accepted from the request body - it is set here only).
+const ASSIGNABLE_ROLES = ['employee', 'accountant', 'super_admin'];
 
-const approveUser = async (id, permissions, role) => {
+const approveUser = async (id, permissions, role, actorId) => {
   const cleanPermissions = normalizePermissions(permissions);
   if (role !== undefined && !ASSIGNABLE_ROLES.includes(role)) {
     throw new ApiError(400, `Role must be one of: ${ASSIGNABLE_ROLES.join(', ')}`);
   }
 
   const user = await findOrFail(User, id, 'User not found');
-  assertNotSuperAdmin(user);
+  const finalRole = role !== undefined ? role : user.role;
+
+  // Taking the super admin role away from someone (or from yourself) needs the guards.
+  if (user.role === 'super_admin' && finalRole !== 'super_admin') {
+    await assertSafeToDemote(user, actorId, 'demote');
+  }
 
   user.status = 'approved';
-  user.permissions = cleanPermissions;
-  if (role !== undefined) user.role = role;
+  user.role = finalRole;
+  // A super admin always has full access; everyone else gets exactly the ticked permissions.
+  user.permissions = finalRole === 'super_admin' ? ['*'] : cleanPermissions;
   await user.save();
 
   return { message: 'User permissions saved successfully', user: sanitizeUser(user) };
 };
 
-const rejectUser = async (id) => {
+const rejectUser = async (id, actorId) => {
   const user = await findOrFail(User, id, 'User not found');
-  assertNotSuperAdmin(user);
+  await assertSafeToDemote(user, actorId, 'reject');
 
   user.status = 'rejected';
   user.permissions = [];
