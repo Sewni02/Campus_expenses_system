@@ -34,7 +34,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at 50% 40%, rgba(10, 31, 68, 0.45), rgba(5, 15, 36, 0.7));
+  background: radial-gradient(circle at 50% 40%, rgba(4, 12, 30, 0.6), rgba(2, 6, 16, 0.85));
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   animation: gl-fade 0.2s ease-out;
@@ -51,10 +51,10 @@
   max-width: calc(100vw - 40px);
   padding: 34px 32px 28px;
   text-align: center;
-  background: #FFFFFF;
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  border-radius: 20px;
-  box-shadow: 0 24px 60px rgba(5, 15, 36, 0.35), 0 2px 8px rgba(5, 15, 36, 0.12);
+  background: linear-gradient(160deg, #0B2C61 0%, #071634 60%, #050F24 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 60px rgba(36, 105, 201, 0.18);
   font-family: var(--font-main);
   animation: gl-pop 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
@@ -104,7 +104,7 @@
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  border: 3px solid #EAF1FC;
+  border: 3px solid rgba(255, 255, 255, 0.1);
 }
 
 .gl-mark {
@@ -126,7 +126,7 @@
   font-size: 1.05rem;
   font-weight: 700;
   letter-spacing: -0.2px;
-  color: var(--slate-800, #0A1F44);
+  color: #FFFFFF;
 }
 
 .gl-dots {
@@ -140,7 +140,7 @@
   height: 4px;
   margin-top: 9px;
   border-radius: 50%;
-  background: #2469C9;
+  background: #5ED6C6;
   animation: gl-dot 1.2s ease-in-out infinite;
 }
 
@@ -155,14 +155,14 @@
 .gl-hint {
   margin: 6px 0 18px;
   font-size: 0.85rem;
-  color: var(--slate-500, #4A6288);
+  color: #8FA3C4;
 }
 
 /* ---------- progress track ---------- */
 .gl-track {
   height: 5px;
   overflow: hidden;
-  background: #EAF1FC;
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 99px;
 }
 
@@ -187,12 +187,12 @@
   margin-top: 18px;
   padding: 11px 14px;
   text-align: left;
-  background: #FFF6E0;
-  border: 1px solid #F1D79A;
+  background: rgba(241, 215, 154, 0.1);
+  border: 1px solid rgba(241, 215, 154, 0.35);
   border-radius: 10px;
   font-size: 0.8rem;
   line-height: 1.4;
-  color: #8A5A0F;
+  color: #F1D79A;
   animation: gl-fade 0.3s ease-out;
 }
 
