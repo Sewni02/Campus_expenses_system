@@ -2,9 +2,9 @@ import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { saveUser } from '../utils/session';
-import ThemeToggle from '../components/ThemeToggle';
-import AuthBrandPanel from '../components/AuthBrandPanel';
-import './Login.css';
+import { pathAfterLogin } from '../utils/authRedirect';
+import AuthShell, { AuthField, AuthNotice } from '../components/AuthShell';
+import SocialButtons from '../components/SocialButtons';
 
 function Login() {
   const navigate = useNavigate();
@@ -12,82 +12,57 @@ function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
 
   // Set by ProtectedRoute / the 401 interceptor: the exact page + tab the
   // user was on before being bounced to login.
   const next = searchParams.get('next');
 
+  // The server puts the login token in an httpOnly cookie by itself.
+  // Only the profile is kept here, and any old token from earlier versions is removed.
+  const finish = (user) => {
+    localStorage.removeItem('token');
+    saveUser(user);
+    navigate(pathAfterLogin(user, next), { replace: true });
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
+    setMessage('');
+    setBusy(true);
     try {
-      const res = await axios.post('/api/auth/login', {
-        email,
-        password,
-      });
-
-      // The server puts the login token in an httpOnly cookie by itself.
-      // Only the profile is kept here, and any old token from earlier versions is removed.
-      localStorage.removeItem('token');
-      saveUser(res.data.user);
-
-      const { role, status } = res.data.user;
-
-      if (role !== 'super_admin' && status !== 'approved') {
-        navigate('/waiting-approval', { replace: true });
-      } else if (next) {
-        navigate(next, { replace: true });
-      } else if (role === 'super_admin') {
-        navigate('/admin/users', { replace: true });
-      } else {
-        navigate('/dashboard', { replace: true });
-      }
+      const res = await axios.post('/api/auth/login', { email, password });
+      finish(res.data.user);
     } catch (err) {
       setMessage(err.response?.data?.message || 'Login failed');
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <div className="auth-page">
-      <ThemeToggle floating />
-      <AuthBrandPanel />
-      <div className="auth-card">
-        <h2 className="auth-title">Login</h2>
-        <p className="auth-subtitle">Sign in to your account</p>
+    <AuthShell title="Sign in" headline={['Manage every expense']} accent="with total clarity.">
+      <form onSubmit={handleLogin}>
+        <AuthField label="Email address" icon="mail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="yourname@gmail.com" autoComplete="email" required />
+        <AuthField label="Password" icon="lock" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" autoComplete="current-password" required />
 
-        <form onSubmit={handleLogin}>
-          <div className="auth-field">
-            <label>Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </div>
-          <div className="auth-field">
-            <label>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
+        <div className="xa-forgot">
+          <Link to="/forgot-password">Forgot Password?</Link>
+        </div>
 
-          <div className="auth-forgot-row">
-            <Link to="/forgot-password" className="auth-link-small">Forgot Password?</Link>
-          </div>
+        <button type="submit" className="xa-btn" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
+      </form>
 
-          <button type="submit" className="auth-submit-btn">Login</button>
-        </form>
+      {message && <AuthNotice kind="err">{message}</AuthNotice>}
 
-        {message && <p className="auth-message">{message}</p>}
+      <SocialButtons mode="login" onAuthenticated={finish} onError={setMessage} />
 
-        <p className="auth-bottom-text">
-          Don't have an account? <Link to="/signup" className="auth-link">Sign Up</Link>
-        </p>
-      </div>
-    </div>
+      <p className="xa-legal">Access to each section is approved by your administrator after you sign up.</p>
+
+      <p className="xa-switch">
+        Don&apos;t have an account? <Link to="/signup">Sign Up</Link>
+      </p>
+    </AuthShell>
   );
 }
 

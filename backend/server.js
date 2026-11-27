@@ -95,6 +95,7 @@ const forgotPasswordLimiter = rateLimit({
 
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/signup', authLimiter);
+app.use('/api/auth/social', authLimiter);
 app.use('/api/auth/reset-password', authLimiter);
 app.use('/api/auth/forgot-password', forgotPasswordLimiter);
 

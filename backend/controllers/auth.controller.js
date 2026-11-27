@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const asyncHandler = require('../utils/asyncHandler');
 const authService = require('../services/auth.service');
+const socialAuthService = require('../services/socialAuth.service');
 const User = require('../models/user.model');
 const { COOKIE_NAME, setAuthCookie, clearAuthCookie } = require('../config/auth');
 const { recordAudit, requestMeta } = require('../utils/audit');
@@ -17,6 +18,16 @@ const login = asyncHandler(async (req, res) => {
   setAuthCookie(res, token);
   res.json(result);
 });
+
+// Google / Facebook sign-in or sign-up. Same cookie as a normal login.
+const social = asyncHandler(async (req, res) => {
+  const { token, ...result } = await socialAuthService.socialAuth(req.body, requestMeta(req));
+  setAuthCookie(res, token);
+  res.json(result);
+});
+
+// Which providers are switched on (client ids are public, secrets never leave the server).
+const socialConfig = (req, res) => res.json(socialAuthService.getConfig());
 
 // Works even if the cookie already expired (it just clears whatever is there).
 const logout = asyncHandler(async (req, res) => {
@@ -61,4 +72,4 @@ const me = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { signup, login, logout, forgotPassword, resetPassword, me };
+module.exports = { signup, login, social, socialConfig, logout, forgotPassword, resetPassword, me };
