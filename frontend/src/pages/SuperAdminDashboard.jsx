@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { logout } from '../utils/session';
+import { logout, getSavedUser } from '../utils/session';
 import useTabState from '../hooks/useTabState';
 import axios from 'axios';
 import { API_BASE_URL } from '../config/api';
@@ -11,6 +11,7 @@ import LecturerSalary from './LecturerSalary';
 import StaffSalary from './StaffSalary';
 import GrandTotal from './GrandTotal';
 import Settings from './Settings';
+import AuditLog from './AuditLog';
 import './SuperAdminDashboard.css';
 import './UserDashboard.css';
 
@@ -65,6 +66,12 @@ const SIDEBAR_ICONS = {
       <rect x="14" y="3" width="7" height="7" rx="1" />
       <rect x="14" y="14" width="7" height="7" rx="1" />
       <rect x="3" y="14" width="7" height="7" rx="1" />
+    </>
+  ),
+  'audit-log': (
+    <>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z" />
+      <path d="M14 3v5h5M9 13h6M9 17h6M9 9h2" />
     </>
   ),
   logout: (
@@ -321,6 +328,7 @@ function SuperAdminDashboard() {
     { key: 'L', label: 'Lecturer Salary', icon: 'lecturer-salary' },
     { key: 'S', label: 'Staff Salary', icon: 'staff-salary' },
     { key: 'C', label: 'Grand Total', icon: 'section-c' },
+    { key: 'G', label: 'Audit Log', icon: 'audit-log' },
     { key: 'D', label: 'Settings', icon: 'settings' },
   ];
 
@@ -366,6 +374,7 @@ function SuperAdminDashboard() {
         {activeTab === 'L' && <LecturerSalary />}
         {activeTab === 'S' && <StaffSalary />}
         {activeTab === 'C' && <GrandTotal />}
+        {activeTab === 'G' && <AuditLog />}
         {activeTab === 'D' && <Settings />}
       </div>
     </div>
@@ -2435,6 +2444,10 @@ function UserManagement() {
   const [managingUser, setManagingUser] = useState(null);
   const [checkedPermissions, setCheckedPermissions] = useState([]);
   const [role, setRole] = useState('employee');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const me = getSavedUser();
+  const isSelf = (u) => Boolean(me?.id) && String(u?._id) === String(me.id);
 
   useEffect(() => {
     fetchUsers();
@@ -2461,15 +2474,20 @@ function UserManagement() {
 
   const openManagePanel = (user) => {
     setManagingUser(user);
+    setError('');
     setCheckedPermissions(migrateLegacyPermissions(user.permissions || []));
     // Users who had the old "Petty Cash" permission become Accountants
-    setRole(user.role === 'accountant' || (user.permissions || []).includes('petty_cash_manage') ? 'accountant' : 'employee');
+    if (user.role === 'super_admin') setRole('super_admin');
+    else setRole(user.role === 'accountant' || (user.permissions || []).includes('petty_cash_manage') ? 'accountant' : 'employee');
   };
 
   const closeManagePanel = () => {
     setManagingUser(null);
     setCheckedPermissions([]);
+    setError('');
   };
+
+  const errorText = (err) => err.response?.data?.message || 'Something went wrong. Please try again.';
 
   const togglePermission = (key) => {
     setCheckedPermissions((prev) =>
@@ -2479,30 +2497,40 @@ function UserManagement() {
 
   const handleSave = async () => {
     if (!managingUser) return;
+    setError('');
+    setSaving(true);
     try {
       await axios.put(
         `${API_BASE_URL}/api/admin/users/${managingUser._id}/approve`,
-        { permissions: checkedPermissions, role }
+        { permissions: role === 'super_admin' ? [] : checkedPermissions, role }
       );
       closeManagePanel();
       fetchUsers();
       fetchStats();
     } catch (err) {
-      console.error(err);
+      setError(errorText(err));
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleReject = async () => {
     if (!managingUser) return;
+    setError('');
+    setSaving(true);
     try {
       await axios.put(`${API_BASE_URL}/api/admin/users/${managingUser._id}/reject`);
       closeManagePanel();
       fetchUsers();
       fetchStats();
     } catch (err) {
-      console.error(err);
+      setError(errorText(err));
+    } finally {
+      setSaving(false);
     }
   };
+
+  const managingSelf = isSelf(managingUser);
 
   return (
     <div className="sa-page">
@@ -2540,9 +2568,9 @@ function UserManagement() {
                 key={user._id}
                 className={managingUser?._id === user._id ? 'selected-row' : ''}
               >
-                <td>{user.name}</td>
+                <td>{user.name}{isSelf(user) && <span className="sa-you-tag">You</span>}</td>
                 <td>{user.email}</td>
-                {!managingUser && <td>{user.role}</td>}
+                {!managingUser && <td>{String(user.role).replace(/_/g, ' ')}</td>}
                 <td>
                   <span className={`sa-badge sa-badge-${user.status}`}>
                     {user.status}
@@ -2570,16 +2598,23 @@ function UserManagement() {
               <div className="sa-permission-group">
                 <p className="sa-group-title">Role</p>
                 <label className="sa-checkbox-row">
-                  <select value={role} onChange={(e) => setRole(e.target.value)}>
+                  <select value={role} onChange={(e) => setRole(e.target.value)} disabled={managingSelf}>
                     <option value="employee">Employee</option>
                     <option value="accountant">Accountant (Petty Cash)</option>
+                    <option value="super_admin">Super Admin (full access)</option>
                   </select>
                 </label>
+                {managingSelf && (
+                  <p className="sa-panel-email">This is your own account. Another super admin has to change your role or access.</p>
+                )}
+                {role === 'super_admin' && (
+                  <p className="sa-panel-email">A Super Admin has full access to every section and can manage all users, so no individual permissions are needed.</p>
+                )}
                 {role === 'accountant' && (
                   <p className="sa-panel-email">An Accountant always has Petty Cash. Tick the other sections below if needed.</p>
                 )}
               </div>
-              {PERMISSION_GROUPS.map((group) => (
+              {role !== 'super_admin' && PERMISSION_GROUPS.map((group) => (
                 <div key={group.category} className="sa-permission-group">
                   <p className="sa-group-title">{group.category}</p>
                   {group.options.map((opt) => {
@@ -2609,9 +2644,11 @@ function UserManagement() {
               </div>
             </div>
 
+            {error && <p className="sa-panel-error" role="alert">{error}</p>}
+
             <div className="sa-panel-actions">
-              <button className="sa-save-btn" onClick={handleSave}>Save</button>
-              <button className="sa-reject-btn" onClick={handleReject}>Reject Request</button>
+              <button className="sa-save-btn" onClick={handleSave} disabled={saving || (managingSelf && role !== 'super_admin')}>{saving ? 'Saving…' : 'Save'}</button>
+              <button className="sa-reject-btn" onClick={handleReject} disabled={saving || managingSelf}>Reject Request</button>
             </div>
           </div>
         )}
