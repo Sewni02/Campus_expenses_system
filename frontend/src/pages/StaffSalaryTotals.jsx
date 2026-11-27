@@ -125,9 +125,9 @@ function StaffSalaryTotals({ locations }) {
         </div>
       </div>
 
-      {!validMonth && <p style={{ color: '#7C8FAD' }}>Pick a month to see its total net salary.</p>}
+      {!validMonth && <p style={{ color: 'var(--ui-faint)' }}>Pick a month to see its total net salary.</p>}
       {failed && <div className="pc-alert err">{error.text}</div>}
-      {validMonth && !ready && !failed && <p style={{ color: '#7C8FAD' }}>Loading...</p>}
+      {validMonth && !ready && !failed && <p style={{ color: 'var(--ui-faint)' }}>Loading...</p>}
 
       {ready && (
         <>
@@ -183,8 +183,8 @@ function StaffSalaryTotals({ locations }) {
                   const selected = picked && String(l.location) === locationId;
                   const known = locations.some((x) => x._id === String(l.location));
                   return (
-                    <tr key={l.location} style={selected ? { background: '#EAF1FC' } : undefined}>
-                      <td style={{ fontWeight: 600 }}>{l.name}{!known && <small style={{ color: '#7C8FAD', fontWeight: 400 }}> (deleted location)</small>}</td>
+                    <tr key={l.location} style={selected ? { background: 'var(--ui-primary-soft)' } : undefined}>
+                      <td style={{ fontWeight: 600 }}>{l.name}{!known && <small style={{ color: 'var(--ui-faint)', fontWeight: 400 }}> (deleted location)</small>}</td>
                       <td className="num">{l.count}</td>
                       <td className="num">{formatMoney(l.totalBasic)}</td>
                       <td className="num">{formatMoney(l.totalAllowances)}</td>
